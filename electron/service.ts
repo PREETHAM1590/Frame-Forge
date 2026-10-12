@@ -13,22 +13,31 @@ import {
 } from "../shared/contracts.js";
 import { Repository } from "./repository.js";
 import { OperationEngine } from "./operations.js";
+import { BoostEngine } from "./booster.js";
+import type { DetectionResult } from "./games.js";
 import { fallbackHardware, type Platform } from "./platform.js";
+const restorePointsUnavailable = {
+  points: [],
+  available: false,
+  createdSequence: null,
+  message: "Windows restore points are not available in this build yet.",
+};
 type Handlers = { [M in Method]: (input: Request<M>) => Promise<Response<M>> };
 export interface DesktopServices {
   pickGame: () => Promise<Game | null>;
-  detectGames: () => Promise<Game[]>;
+  detectGames: () => Promise<DetectionResult>;
   setStartup: (enabled: boolean) => void;
   version: string;
   startupSupported?: boolean;
 }
 export class AppService {
   private engine: OperationEngine;
+  private booster: BoostEngine;
   private hardware: Hardware = fallbackHardware();
   private loggingFailed = false;
   private handlers: Handlers;
   get isBusy() {
-    return this.engine.isBusy;
+    return this.engine.isBusy || this.booster.isBusy;
   }
   constructor(
     private repo: Repository,
@@ -36,6 +45,7 @@ export class AppService {
     private desktop: DesktopServices,
   ) {
     this.engine = new OperationEngine(repo, platform);
+    this.booster = new BoostEngine(repo, platform);
     const guard = () => {
       if (this.engine.isBusy)
         throw new Error("Wait for the Windows operation to finish.");
@@ -111,10 +121,10 @@ export class AppService {
       },
       detectGames: async () => {
         guard();
-        const detected = await this.desktop.detectGames();
+        const result = await this.desktop.detectGames();
         guard();
         const state = this.repo.state();
-        const added = detected.filter(
+        const added = result.games.filter(
           (g) =>
             !state.games.some(
               (old) => old.path.toLowerCase() === g.path.toLowerCase(),
@@ -123,10 +133,30 @@ export class AppService {
         const combined = [...state.games, ...added].slice(0, 500);
         this.repo.updateState({ ...state, games: combined });
         this.log(
-          "Steam scan completed",
-          `${combined.length - state.games.length} games added from local Steam metadata.`,
+          "Installed game scan completed",
+          `${combined.length - state.games.length} new of ${result.games.length} found. Scanned: ${result.launchers.length ? result.launchers.join(", ") : "no supported launchers"}.`,
         );
-        return combined;
+        return {
+          games: result.games,
+          warnings: result.warnings,
+          launchers: result.launchers,
+        };
+      },
+      restorePoints: async () => restorePointsUnavailable,
+      createRestorePoint: async () => restorePointsUnavailable,
+      boostTargets: async ({ gameId }) => {
+        guard();
+        const game = this.repo.state().games.find((g) => g.id === gameId);
+        if (!game) throw new Error("Game not found");
+        return this.platform.gameProcesses(game);
+      },
+      boostStart: async ({ gameId, target }) => {
+        guard();
+        return this.booster.start(gameId, target);
+      },
+      boostStop: async () => {
+        guard();
+        return this.booster.stop();
       },
       removeGame: async ({ id }) => {
         guard();
@@ -229,6 +259,10 @@ export class AppService {
       startupSupported: this.desktop.startupSupported ?? false,
       version: this.desktop.version,
       mode: "desktop",
+      boost: {
+        session: this.repo.boostSession(),
+        available: this.platform.boostAvailable,
+      },
     };
   }
   async dispatch(method: unknown, input: unknown): Promise<unknown> {

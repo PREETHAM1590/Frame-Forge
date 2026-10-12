@@ -3,11 +3,13 @@ import { randomUUID } from "node:crypto";
 import {
   ActivitySchema,
   BackupSchema,
+  BoostSessionSchema,
   StateSchema,
   defaultState,
   type Activity,
   type AppState,
   type Backup,
+  type BoostSession,
   type OperationId,
 } from "../shared/contracts.js";
 import { migrations } from "./migrations.js";
@@ -28,7 +30,9 @@ export class Repository {
       );
     for (let i = version; i < migrations.length; i++)
       this.transaction(() => {
-        this.db.exec(migrations[i]);
+        const migration = migrations[i]!;
+        if (typeof migration === "string") this.db.exec(migration);
+        else migration(this.db);
         this.db.exec(`PRAGMA user_version=${i + 1}`);
       });
     this.db
@@ -197,6 +201,43 @@ export class Repository {
         "UPDATE operations SET status='recovery-needed',message='The app stopped during this operation. Inspect and restore the saved Windows snapshot.' WHERE status='running'",
       )
       .run();
+    this.db
+      .prepare(
+        "UPDATE boost_sessions SET status='recovery-needed',message='The app stopped during a game boost. Restore the saved process priority.' WHERE status IN ('preparing','active','restoring')",
+      )
+      .run();
+  }
+  boostSession(): BoostSession | null {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM boost_sessions WHERE status!='ended' ORDER BY started_at DESC, rowid DESC LIMIT 1",
+      )
+      .get();
+    return row
+      ? BoostSessionSchema.parse({
+          id: row.id,
+          gameId: row.game_id,
+          target: JSON.parse(String(row.payload)),
+          startedAt: row.started_at,
+          status: row.status,
+          message: row.message,
+        })
+      : null;
+  }
+  saveBoostSession(session: BoostSession): void {
+    const s = BoostSessionSchema.parse(session);
+    this.db
+      .prepare(
+        "INSERT INTO boost_sessions(id,game_id,status,started_at,message,payload) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,message=excluded.message,payload=excluded.payload",
+      )
+      .run(
+        s.id,
+        s.gameId,
+        s.status,
+        s.startedAt,
+        s.message,
+        JSON.stringify(s.target),
+      );
   }
   clearActivity(): void {
     this.db

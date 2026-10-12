@@ -19,6 +19,9 @@ try
         "apply" when request.Snapshot is not null => Apply(engine, ids, request.Snapshot),
         "verify" when request.Snapshot is null => new { ok = true, message = "Verification completed.", verified = engine.Verify(ids) },
         "restore" when ids.Length == 0 && request.Snapshot is not null && !request.Force => Restore(engine, request.Snapshot),
+        "processes" when request.GamePath is not null && request.Target is null => new { ok = true, message = "Running game processes read.", processes = WindowsProcessStore.Find(request.GamePath, request.ExecutablePath) },
+        "boost-start" when request.Target is not null => new GameProcessOperations(new WindowsProcessStore()).Start(request.Target),
+        "boost-stop" when request.Target is not null => new GameProcessOperations(new WindowsProcessStore()).Stop(request.Target),
         _ => throw new InvalidOperationException("Unsupported helper request.")
     };
 }
@@ -29,4 +32,4 @@ catch (Exception error)
 Console.WriteLine(JsonSerializer.Serialize(response, options));
 static object Apply(RegistryOperations engine, string[] ids, Snapshot snapshot) { engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written." }; }
 static object Restore(RegistryOperations engine, Snapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
-record Request(string Command, string[]? Ids, Snapshot? Snapshot, bool Force = false);
+record Request(string Command, string[]? Ids, Snapshot? Snapshot, bool Force = false, string? GamePath = null, string? ExecutablePath = null, ProcessTarget? Target = null);

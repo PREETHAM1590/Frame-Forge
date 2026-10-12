@@ -182,7 +182,12 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "detectGames":
       throw new Error("Installed game detection requires the desktop app.");
     case "restorePoints":
+    case "createRestorePoint":
       return { points: [], available: false, createdSequence: null, message: "Windows restore points are unavailable in browser demo mode." };
+    case "boostTargets":
+    case "boostStart":
+    case "boostStop":
+      throw new Error("Game booster requires the desktop app.");
     default:
       throw new Error(
         "Windows operations are unavailable in browser demo mode.",

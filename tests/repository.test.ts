@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import os from "node:os";
+import path from "node:path";
 import { Repository } from "../electron/repository";
+import { migrations } from "../electron/migrations";
+import { BoostSessionSchema, type ProcessTarget } from "../shared/contracts";
 describe("SQLite migrations and configuration recovery", () => {
   it("persists validated configuration and restores named backups transactionally", () => {
     const repo = new Repository(":memory:");
@@ -66,6 +72,98 @@ describe("SQLite migrations and configuration recovery", () => {
           !row.rollback && !["running", "recovery-needed"].includes(row.status),
       ),
     ).toHaveLength(500);
+    repo.close();
+  });
+  it("migrates v1 payloads: custom game exe paths move to executablePath in configuration and backups", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "frameforge-repo-"));
+    const file = path.join(dir, "v1.db");
+    const exe = "C:\\Games\\X\\x.exe";
+    const v1 = (gamePath: string) =>
+      JSON.stringify({
+        version: 1,
+        settings: {
+          theme: "dark",
+          startup: false,
+          notifications: true,
+          diagnostics: false,
+        },
+        games: [
+          {
+            id: crypto.randomUUID(),
+            name: "X",
+            path: gamePath,
+            source: "custom",
+            profile: "gaming",
+            notes: "",
+          },
+          {
+            id: crypto.randomUUID(),
+            name: "Steam",
+            path: "C:\\Steam\\common\\Y",
+            source: "steam",
+            profile: "balanced",
+            notes: "",
+          },
+        ],
+        presets: [],
+        gameMode: { gameId: null, active: false },
+      });
+    const old = new DatabaseSync(file);
+    old.exec(migrations[0] as string);
+    old.exec("PRAGMA user_version=1");
+    old
+      .prepare("INSERT INTO configuration(id,payload) VALUES(1,?)")
+      .run(v1(exe));
+    old
+      .prepare("INSERT INTO backups(id,name,at,payload) VALUES(?,?,?,?)")
+      .run(
+        crypto.randomUUID(),
+        "old",
+        new Date().toISOString(),
+        v1(exe.toUpperCase()),
+      );
+    old.close();
+    const repo = new Repository(file);
+    const [custom, steam] = repo.state().games;
+    expect(custom).toMatchObject({
+      path: "C:\\Games\\X",
+      executablePath: exe,
+    });
+    expect(steam).toMatchObject({
+      path: "C:\\Steam\\common\\Y",
+      executablePath: null,
+    });
+    expect(repo.backups()[0]?.state.games[0]).toMatchObject({
+      path: "C:\\GAMES\\X",
+      executablePath: exe.toUpperCase(),
+    });
+    repo.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  it("persists boost sessions and marks interrupted ones as recovery-needed", () => {
+    const repo = new Repository(":memory:");
+    const target: ProcessTarget = {
+      pid: 5,
+      startTime: "2026-10-12T10:00:00.0000000Z",
+      executablePath: "C:\\g\\g.exe",
+      name: "g",
+      priority: "Normal",
+    };
+    const session = BoostSessionSchema.parse({
+      id: crypto.randomUUID(),
+      gameId: crypto.randomUUID(),
+      target,
+      startedAt: new Date().toISOString(),
+      status: "active",
+      message: "ok",
+    });
+    expect(repo.boostSession()).toBeNull();
+    repo.saveBoostSession(session);
+    expect(repo.boostSession()).toEqual(session);
+    repo.recoverInterrupted();
+    expect(repo.boostSession()?.status).toBe("recovery-needed");
+    repo.saveBoostSession({ ...session, status: "ended" });
+    expect(repo.boostSession()).toBeNull();
     repo.close();
   });
 });

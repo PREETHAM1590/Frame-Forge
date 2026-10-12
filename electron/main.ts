@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { Repository } from "./repository.js";
 import { WindowsPlatform, MockPlatform } from "./platform.js";
 import { AppService } from "./service.js";
-import { safeExecutable, detectSteamGames } from "./games.js";
+import { safeExecutable, detectInstalledGames } from "./games.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = !app.isPackaged && process.argv.includes("--dev");
 const rendererFile = path.join(here, "../../dist/index.html");
@@ -59,7 +59,7 @@ if (!app.requestSingleInstanceLock()) {
           }
           app.setLoginItemSettings({ openAtLogin: enabled });
         },
-        detectGames: detectSteamGames,
+        detectGames: () => detectInstalledGames(),
         pickGame: async () => {
           if (!window) return null;
           const result = await dialog.showOpenDialog(window, {
@@ -72,7 +72,8 @@ if (!app.requestSingleInstanceLock()) {
           return {
             id: randomUUID(),
             name: path.basename(selected, ".exe").slice(0, 80),
-            path: selected,
+            path: path.dirname(selected),
+            executablePath: selected,
             source: "custom",
             profile: "balanced",
             notes: "",

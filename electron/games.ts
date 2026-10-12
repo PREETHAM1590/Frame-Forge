@@ -45,6 +45,9 @@ const localPath = z.string().min(1).max(2048).refine(
   (value) => path.isAbsolute(value) && !value.startsWith("\\\\"),
 );
 const gameName = z.string().trim().min(1).max(80);
+// @node-steam/vdf turns numeric-looking strings into numbers ("StateFlags" "4" -> 4, name "1943" -> 1943).
+const vdfString = z.union([z.string(), z.number()]).transform(String);
+const installDir = z.string().min(1).max(255).refine((value) => !/[\\/:]/.test(value) && value !== "." && value !== "..");
 function missing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === "ENOENT";
 }
@@ -145,7 +148,7 @@ export async function detectInstalledGames(options: DetectionOptions = {}): Prom
         .parse(await readVdf(path.join(root, "steamapps", "libraryfolders.vdf")));
       for (const [index, folder] of Object.entries(data.libraryfolders)) {
         if (!/^\d+$/.test(index)) continue;
-        const candidate = typeof folder === "string" ? folder : z.object({ path: localPath }).parse(folder).path;
+        const candidate = typeof folder === "string" ? folder : z.object({ path: vdfString.pipe(localPath) }).parse(folder).path;
         try { await addRoot(candidate); }
         catch (error) { if (!missing(error)) result.warnings.push("A Steam library directory could not be read."); }
       }
@@ -160,9 +163,9 @@ export async function detectInstalledGames(options: DetectionOptions = {}): Prom
         if (file.toLowerCase() === "appmanifest_228980.acf") continue;
         try {
           const data = z.object({ AppState: z.object({
-            name: gameName,
-            installdir: z.string().min(1).max(255).refine((value) => !/[\\/:]/.test(value) && value !== "." && value !== ".."),
-            StateFlags: z.string().regex(/^\d+$/).optional(),
+            name: vdfString.pipe(gameName),
+            installdir: vdfString.pipe(installDir),
+            StateFlags: vdfString.pipe(z.string().regex(/^\d+$/)).optional(),
           }) }).parse(await readVdf(path.join(steamapps, file)));
           if (data.AppState.StateFlags && (Number(data.AppState.StateFlags) & 4) !== 4) continue;
           const common = await directory(path.join(steamapps, "common"));
@@ -207,8 +210,4 @@ export async function detectInstalledGames(options: DetectionOptions = {}): Prom
   for (const [launcher, count] of [["Steam", skippedSteam], ["Epic Games", skippedEpic], ["GOG", skippedGog]] as const)
     if (count) result.warnings.push(`${launcher}: skipped ${count} invalid installation metadata record(s).`);
   return result;
-}
-
-export async function detectSteamGames(): Promise<Game[]> {
-  return (await detectInstalledGames({ epicManifestRoots: [], gogGames: [] })).games.filter((game) => game.source === "steam");
 }

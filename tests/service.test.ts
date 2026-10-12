@@ -7,7 +7,7 @@ describe("validated IPC to SQLite integration", () => {
     const repo = new Repository(":memory:");
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => [],
+      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
       setStartup: () => {},
       version: "test",
     });
@@ -42,7 +42,7 @@ describe("validated IPC to SQLite integration", () => {
     const setStartup = vi.fn();
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => [],
+      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
       setStartup,
       version: "test",
     });
@@ -73,7 +73,7 @@ describe("validated IPC to SQLite integration", () => {
     const setStartup = vi.fn();
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => [],
+      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
       setStartup,
       version: "test",
     });
@@ -98,7 +98,7 @@ describe("validated IPC to SQLite integration", () => {
     const setStartup = vi.fn();
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => [],
+      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
       setStartup,
       version: "test",
     });

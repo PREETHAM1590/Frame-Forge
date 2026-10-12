@@ -2,8 +2,10 @@ import { spawn } from "node:child_process";
 import os from "node:os";
 import {
   HelperResult,
+  type Game,
   type Hardware,
   type OperationId,
+  type ProcessTarget,
   type Snapshot,
 } from "../shared/contracts.js";
 export interface Platform {
@@ -17,13 +19,19 @@ export interface Platform {
   ): Promise<void>;
   verify(ids: OperationId[]): Promise<boolean>;
   restore(snapshot: Snapshot, force: boolean): Promise<void>;
+  boostAvailable: boolean;
+  gameProcesses(game: Game): Promise<ProcessTarget[]>;
+  boostStart(expected: ProcessTarget): Promise<ProcessTarget>;
+  boostStop(snapshot: ProcessTarget): Promise<string>;
 }
 export class WindowsPlatform implements Platform {
   capabilities: OperationId[] = ["mouse-precision", "capture-off"];
+  boostAvailable = true;
   constructor(private executable: string) {}
   private call(
     request: unknown,
     signal?: AbortSignal,
+    timeoutMs = 20000,
   ): Promise<ReturnType<typeof HelperResult.parse>> {
     return new Promise((resolve, reject) => {
       const child = spawn(this.executable, [], {
@@ -55,7 +63,7 @@ export class WindowsPlatform implements Platform {
         );
       const timeout = setTimeout(
         () => terminate(new Error("Windows helper timed out.")),
-        20000,
+        timeoutMs,
       );
       signal?.addEventListener("abort", abort, { once: true });
       child.stdout.on("data", (chunk: Buffer) => {
@@ -118,6 +126,26 @@ export class WindowsPlatform implements Platform {
   async restore(snapshot: Snapshot, force: boolean) {
     await this.call({ command: "restore", snapshot, force });
   }
+  async gameProcesses(game: Game) {
+    const result = await this.call(
+      {
+        command: "processes",
+        gamePath: game.path,
+        executablePath: game.executablePath,
+      },
+      undefined,
+      10000,
+    );
+    return result.processes ?? [];
+  }
+  async boostStart(expected: ProcessTarget) {
+    const result = await this.call({ command: "boost-start", target: expected });
+    if (!result.boostSnapshot) throw new Error("Missing process snapshot");
+    return result.boostSnapshot;
+  }
+  async boostStop(snapshot: ProcessTarget) {
+    return (await this.call({ command: "boost-stop", target: snapshot })).message;
+  }
 }
 export function fallbackHardware(
   warning = "Windows helper unavailable. Only runtime readings are shown.",
@@ -141,6 +169,7 @@ export class MockPlatform implements Platform {
   capabilities: OperationId[] = [];
   applied: OperationId[] = [];
   failVerification = false;
+  boostAvailable = false;
   constructor(testOperations = false) {
     if (testOperations) this.capabilities = ["mouse-precision", "capture-off"];
   }
@@ -168,5 +197,14 @@ export class MockPlatform implements Platform {
   }
   async restore() {
     this.applied = [];
+  }
+  async gameProcesses(): Promise<ProcessTarget[]> {
+    return [];
+  }
+  async boostStart(expected: ProcessTarget): Promise<ProcessTarget> {
+    throw new Error(`Game booster is unavailable for ${expected.name}.`);
+  }
+  async boostStop(): Promise<string> {
+    throw new Error("Game booster is unavailable.");
   }
 }
