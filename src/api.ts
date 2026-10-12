@@ -185,9 +185,11 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
             id,
             available: false,
             detail: desktopOnly,
+            active: false,
           })),
         },
         watching: false,
+        ownedPowerPlan: false,
       };
     case "clearActivity":
       activity = activity.filter((a) => a.rollback);
@@ -211,6 +213,7 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "boostStop":
     case "boostRecover":
     case "runningProcesses":
+    case "boostPowerPlan":
       throw new Error(desktopOnly);
     default:
       throw new Error(

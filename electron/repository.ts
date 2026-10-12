@@ -265,6 +265,20 @@ export class Repository {
         }),
       );
   }
+  meta(key: string): string | null {
+    const row = this.db.prepare("SELECT value FROM meta WHERE key=?").get(key);
+    return row ? String(row.value) : null;
+  }
+  setMeta(key: string, value: string | null): void {
+    if (value === null)
+      this.db.prepare("DELETE FROM meta WHERE key=?").run(key);
+    else
+      this.db
+        .prepare(
+          "INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        )
+        .run(key, value);
+  }
   clearActivity(): void {
     this.db
       .prepare(

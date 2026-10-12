@@ -180,6 +180,10 @@ export class AppService {
         return this.booster.recover(dismiss ?? false);
       },
       runningProcesses: async () => this.platform.backgroundProcesses(),
+      boostPowerPlan: async ({ action }) => {
+        guard();
+        return this.booster.powerPlan(action);
+      },
       removeGame: async ({ id }) => {
         guard();
         const state = this.repo.state();

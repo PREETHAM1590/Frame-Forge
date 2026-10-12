@@ -37,4 +37,6 @@ CREATE INDEX operations_at ON operations(at DESC);
           row.rid as number,
         );
   },
+  // Key/value app metadata (Frameforge-created power plan GUID). Same DDL as Task 2's `meta`; IF NOT EXISTS lets the two merge.
+  "CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
 ];

@@ -330,12 +330,22 @@ export const BoostCapabilitiesSchema = z
           id: MechanismId,
           available: z.boolean(),
           detail: z.string().max(500),
+          // Already in effect on this PC (Game Mode on, performance plan active).
+          active: z.boolean(),
         })
         .strict(),
     ),
   })
   .strict();
 export type BoostCapabilities = z.infer<typeof BoostCapabilitiesSchema>;
+const BoostStatusSchema = z
+  .object({
+    session: BoostSessionSchema.nullable(),
+    capabilities: BoostCapabilitiesSchema,
+    watching: z.boolean(),
+    ownedPowerPlan: z.boolean(),
+  })
+  .strict();
 export const RunningProcessSchema = z
   .object({
     image: z.string().max(260),
@@ -424,6 +434,13 @@ export const requests = {
     .object({ confirmed: z.literal(true), dismiss: z.boolean().optional() })
     .strict(),
   runningProcesses: Empty,
+  // Consent-gated: create (or remove) the Frameforge copy of Windows' High performance plan.
+  boostPowerPlan: z
+    .object({
+      action: z.enum(["create", "remove"]),
+      confirmed: z.literal(true),
+    })
+    .strict(),
   removeGame: z.object({ id: Id }).strict(),
   profile: z
     .object({
@@ -451,18 +468,13 @@ export const responses = {
   detectGames: DetectionSchema,
   restorePoints: RestorePointsSchema,
   createRestorePoint: RestorePointsSchema,
-  boostStatus: z
-    .object({
-      session: BoostSessionSchema.nullable(),
-      capabilities: BoostCapabilitiesSchema,
-      watching: z.boolean(),
-    })
-    .strict(),
+  boostStatus: BoostStatusSchema,
   boostConfig: StateSchema,
   boostStart: BoostSessionSchema,
   boostStop: BoostSessionSchema.nullable(),
   boostRecover: BoostSessionSchema.nullable(),
   runningProcesses: z.array(RunningProcessSchema).max(500),
+  boostPowerPlan: BoostStatusSchema,
   removeGame: StateSchema,
   profile: StateSchema,
   savePreset: StateSchema,
@@ -522,6 +534,7 @@ export const HelperResult = z
     backgroundProcesses: z.array(RunningProcessSchema).optional(),
     capabilities: BoostCapabilitiesSchema.optional(),
     reverts: z.array(MechanismResultSchema).optional(),
+    powerPlan: Id.optional(),
   })
   .strict();
 // A prior state saved by the session helper before each change (GC-10).

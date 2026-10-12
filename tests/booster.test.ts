@@ -6,6 +6,8 @@ import { BoostEngine } from "../electron/booster";
 import { AppService } from "../electron/service";
 import {
   GameSchema,
+  HelperResult,
+  SessionEventSchema,
   type Captured,
   type MechanismResult,
   type ProcessTarget,
@@ -222,6 +224,90 @@ describe("game booster sessions", () => {
       /Start the game first/,
     );
     expect(platform.sessions).toHaveLength(0);
+    repo.close();
+  });
+  it("accepts helper output with absent registry values as explicit null (C-1)", () => {
+    // Exact helper JSON shapes: optimizer capture and a Game Mode capture where one value did not exist.
+    const absent = {
+      operation: "capture-off",
+      path: "Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR",
+      name: "AppCaptureEnabled",
+      kind: "DWord",
+      existed: false,
+      value: null,
+    };
+    expect(
+      HelperResult.safeParse({
+        ok: true,
+        message: "Snapshot captured.",
+        snapshot: { values: [absent] },
+      }).success,
+    ).toBe(true);
+    const line = JSON.parse(
+      '{"event":"captured","mechanism":"gameMode","prior":{"mechanism":"gameMode","registry":{"values":[{"operation":"game-mode","path":"Software\\\\Microsoft\\\\GameBar","name":"AutoGameModeEnabled","kind":"DWord","existed":true,"value":0},{"operation":"game-mode","path":"Software\\\\Microsoft\\\\GameBar","name":"AllowAutoGameMode","kind":"DWord","existed":false,"value":null}]}}}',
+    );
+    expect(SessionEventSchema.safeParse(line).success).toBe(true);
+    const missing: Partial<typeof absent> = { ...absent };
+    delete missing.value;
+    expect(
+      HelperResult.safeParse({
+        ok: true,
+        message: "x",
+        snapshot: { values: [missing] },
+      }).success,
+    ).toBe(false);
+  });
+  it("stops and reverts the session when a capture cannot be saved", async () => {
+    const { repo, game, platform, engine } = setup();
+    platform.onSpawn = (session) => {
+      session.onSend = ({ command }) => {
+        if (command === "start") {
+          session.line({
+            event: "captured",
+            mechanism: "gameMode",
+            prior: { mechanism: "gameMode", unexpected: true },
+          });
+          session.line({ event: "ready" });
+        } else if (command === "stop")
+          session.line({
+            event: "ended",
+            reason: "stop",
+            reverts: [
+              { id: "gameMode", state: "reverted", detail: "restored" },
+            ],
+          });
+      };
+    };
+    await engine.start(game.id, "manual");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(platform.sessions[0]!.sent).toContainEqual({ command: "stop" });
+    expect(repo.boostSession()).toBeNull();
+    expect(
+      repo
+        .activity()
+        .map((a) => a.message)
+        .join(" "),
+    ).toMatch(/invalid session helper report/);
+    repo.close();
+  });
+  it("creates the High performance plan only on request and passes it to sessions", async () => {
+    const { repo, game, platform, engine } = setup();
+    const created = crypto.randomUUID();
+    platform.createPowerPlan = async () => created;
+    let removed = "";
+    platform.deletePowerPlan = async (owned) => {
+      removed = owned;
+      return "removed";
+    };
+    expect((await engine.status()).ownedPowerPlan).toBe(false);
+    expect((await engine.powerPlan("create")).ownedPowerPlan).toBe(true);
+    await expect(engine.powerPlan("create")).rejects.toThrow(/already/);
+    await engine.start(game.id, "manual");
+    expect(platform.sessions[0]!.sent[0]).toMatchObject({ ownedPlan: created });
+    await expect(engine.powerPlan("remove")).rejects.toThrow(/Stop/);
+    await engine.stop();
+    expect((await engine.powerPlan("remove")).ownedPowerPlan).toBe(false);
+    expect(removed).toBe(created);
     repo.close();
   });
   it("quitting with an active session awaits stop and revert", async () => {

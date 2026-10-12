@@ -36,7 +36,12 @@ export const capabilitiesUnavailable = (detail: string): BoostCapabilities => ({
       "timerResolution",
       "standbyPurge",
     ] as const
-  ).map((id) => ({ id, available: false, detail })),
+  ).map((id) => ({
+    id,
+    available: false,
+    detail: detail.slice(0, 500),
+    active: false,
+  })),
 });
 export interface Platform {
   capabilities: OperationId[];
@@ -52,8 +57,14 @@ export interface Platform {
   boostAvailable: boolean;
   runningGames(games: Game[]): Promise<RunningGame[]>;
   backgroundProcesses(): Promise<RunningProcess[]>;
-  boostCapabilities(): Promise<BoostCapabilities>;
-  boostRecover(captured: Captured[]): Promise<MechanismResult[]>;
+  // ownedPlan: GUID of the plan Frameforge created with consent (from SQLite, never from the renderer).
+  boostCapabilities(ownedPlan: string | null): Promise<BoostCapabilities>;
+  boostRecover(
+    captured: Captured[],
+    ownedPlan: string | null,
+  ): Promise<MechanismResult[]>;
+  createPowerPlan(): Promise<string>;
+  deletePowerPlan(ownedPlan: string): Promise<string>;
   spawnSession(): SessionChannel;
 }
 export class WindowsPlatform implements Platform {
@@ -184,15 +195,31 @@ export class WindowsPlatform implements Platform {
     );
     return result.backgroundProcesses ?? [];
   }
-  async boostCapabilities() {
-    const result = await this.call({ command: "boost-capabilities" });
+  async boostCapabilities(ownedPlan: string | null) {
+    const result = await this.call({
+      command: "boost-capabilities",
+      ownedPlan,
+    });
     if (!result.capabilities) throw new Error("Missing booster capabilities");
     return result.capabilities;
   }
-  async boostRecover(captured: Captured[]) {
-    const result = await this.call({ command: "boost-recover", captured });
+  async boostRecover(captured: Captured[], ownedPlan: string | null) {
+    const result = await this.call({
+      command: "boost-recover",
+      captured,
+      ownedPlan,
+    });
     if (!result.reverts) throw new Error("Missing recovery results");
     return result.reverts;
+  }
+  async createPowerPlan() {
+    const result = await this.call({ command: "power-create-plan" });
+    if (!result.powerPlan) throw new Error("Missing created power plan");
+    return result.powerPlan;
+  }
+  async deletePowerPlan(ownedPlan: string) {
+    return (await this.call({ command: "power-delete-plan", ownedPlan }))
+      .message;
   }
   spawnSession(): SessionChannel {
     // detached: libuv otherwise puts the child in a kill-on-close job, and the helper
@@ -292,6 +319,13 @@ export class MockPlatform implements Platform {
   }
   async boostRecover(captured: Captured[]): Promise<MechanismResult[]> {
     void captured;
+    throw new Error("Game booster requires the Windows helper.");
+  }
+  async createPowerPlan(): Promise<string> {
+    throw new Error("Game booster requires the Windows helper.");
+  }
+  async deletePowerPlan(ownedPlan: string): Promise<string> {
+    void ownedPlan;
     throw new Error("Game booster requires the Windows helper.");
   }
   spawnSession(): SessionChannel {

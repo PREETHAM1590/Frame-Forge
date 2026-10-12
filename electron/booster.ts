@@ -21,6 +21,7 @@ import {
 const text = (error: unknown) =>
   (error instanceof Error ? error.message : "Unknown error").slice(0, 500);
 const key = (t: ProcessTarget) => `${t.pid}|${t.startTime}`;
+const planKey = "booster.powerPlan";
 const delay = (ms: number) =>
   new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
 export const modeLabels: Record<BoostMode, string> = {
@@ -97,33 +98,65 @@ export class BoostEngine {
       this.busy = false;
     }
   }
+  // GUID of the plan Frameforge created with the user's consent; only the helper's reply ever writes it.
+  private ownedPlan() {
+    return this.repo.meta(planKey);
+  }
   async status(): Promise<{
     session: BoostSession | null;
     capabilities: BoostCapabilities;
     watching: boolean;
+    ownedPowerPlan: boolean;
   }> {
+    const base = {
+      session: this.live?.session ?? this.repo.boostSession(),
+      watching: this.watching,
+      ownedPowerPlan: this.ownedPlan() !== null,
+    };
     // Plans and timer support rarely change; avoid a helper spawn on every page refresh.
     if (!this.capabilities || Date.now() - this.capabilities.at > 30000) {
       try {
         this.capabilities = {
           at: Date.now(),
-          value: await this.platform.boostCapabilities(),
+          value: await this.platform.boostCapabilities(this.ownedPlan()),
         };
       } catch (error) {
         return {
-          session: this.live?.session ?? this.repo.boostSession(),
+          ...base,
           capabilities: capabilitiesUnavailable(
             `The Windows helper failed: ${text(error)}`,
           ),
-          watching: this.watching,
         };
       }
     }
-    return {
-      session: this.live?.session ?? this.repo.boostSession(),
-      capabilities: this.capabilities.value,
-      watching: this.watching,
-    };
+    return { ...base, capabilities: this.capabilities.value };
+  }
+  // Explicit consent from the UI; creates or removes only Frameforge's own copy of the High performance plan.
+  powerPlan(action: "create" | "remove") {
+    return this.exclusive(async () => {
+      if (!this.platform.boostAvailable)
+        throw new Error(
+          "The Windows helper is missing, so the game booster is unavailable.",
+        );
+      if (this.live)
+        throw new Error("Stop the boost session before changing power plans.");
+      const owned = this.ownedPlan();
+      if (action === "create") {
+        if (owned) throw new Error("Frameforge already created its plan.");
+        const created = await this.platform.createPowerPlan();
+        this.repo.setMeta(planKey, created);
+        this.log(
+          `Created the "Frameforge High performance" power plan (${created}). The active plan was not changed; boost sessions switch to it and back.`,
+        );
+      } else {
+        if (!owned) throw new Error("Frameforge has not created a plan.");
+        const message = await this.platform.deletePowerPlan(owned);
+        this.repo.setMeta(planKey, null);
+        this.log(message);
+      }
+      this.capabilities = undefined;
+      return this.status();
+    });
   }
   start(
     gameId: string,
@@ -220,9 +253,27 @@ export class BoostEngine {
         resolve(result);
       };
       const timer = setTimeout(() => channel.kill(), this.timeouts.start);
+      let aborting = false;
       channel.on("event", (raw) => {
+        if (this.live !== live) return;
         const parsed = SessionEventSchema.safeParse(raw);
-        if (!parsed.success || this.live !== live) return;
+        if (!parsed.success) {
+          // Fail closed (GC-10): a prior state we cannot save must not be left applied.
+          // "stop" makes the helper revert from its in-memory captures; killing it would lose them.
+          if (!aborting) {
+            aborting = true;
+            this.update(live, {
+              message:
+                "The session helper reported state Frameforge could not save. Stopping the session and restoring.",
+            });
+            this.log(
+              `${game.name}: invalid session helper report; the session was stopped and reverted.`,
+              "failed",
+            );
+            channel.send({ command: "stop" });
+          }
+          return;
+        }
         const event = parsed.data;
         try {
           switch (event.event) {
@@ -304,6 +355,7 @@ export class BoostEngine {
         mechanisms,
         background: config.background,
         parentPid: process.pid,
+        ownedPlan: this.ownedPlan(),
       });
     });
   }
@@ -314,6 +366,7 @@ export class BoostEngine {
     detail?: string,
   ) {
     this.live = null;
+    this.capabilities = undefined;
     const count = (state: MechanismResult["state"]) =>
       reverts.filter((r) => r.state === state).length;
     const failed = count("failed");
@@ -385,7 +438,7 @@ export class BoostEngine {
     }
     try {
       const reverts = captured.length
-        ? await this.platform.boostRecover(captured)
+        ? await this.platform.boostRecover(captured, this.ownedPlan())
         : [];
       const failed = reverts.filter((r) => r.state === "failed");
       const conflicts = reverts.filter((r) => r.state === "conflict").length;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Gamepad2,
   Play,
@@ -10,7 +10,14 @@ import {
   Trash2,
   ListRestart,
 } from "lucide-react";
-import { PageTitle, Button, Badge, Empty, Toggle } from "../components/ui";
+import {
+  PageTitle,
+  Button,
+  Badge,
+  Empty,
+  Toggle,
+  Modal,
+} from "../components/ui";
 import { desktopOnly, onEvent, request } from "../api";
 import {
   modeMechanisms,
@@ -99,6 +106,68 @@ function enabled(m: CustomMechanisms): Entry[] {
   ];
   return list.filter((x): x is Entry => !!x);
 }
+type Capability = Response<"boostStatus">["capabilities"]["mechanisms"][number];
+type Background = BoosterConfig["background"];
+const actionOf: Partial<Record<MechanismId, Background[number]["action"]>> = {
+  lowerBackground: "lower",
+  suspendBackground: "suspend",
+  closeBackground: "close",
+};
+// What a mechanism will really do on this PC, so modes show their actual difference.
+function onThisPc(
+  { id, note }: Entry,
+  cap: Capability | undefined,
+  background: Background,
+): { tone: "lime" | "amber" | "neutral"; label: string; reason: string } {
+  const action = actionOf[id];
+  if (action) {
+    const apps = background.filter((b) => b.action === action);
+    return apps.length
+      ? {
+          tone: "lime",
+          label: "applies",
+          reason: apps.map((b) => b.image).join(", "),
+        }
+      : {
+          tone: "amber",
+          label: "not configured",
+          reason: "No apps picked yet. Add them under Background apps.",
+        };
+  }
+  if (!cap) return { tone: "neutral", label: "checking", reason: "" };
+  if (!cap.available)
+    return {
+      tone: "amber",
+      label: id === "timerResolution" ? "unsupported" : "unavailable",
+      reason: cap.detail,
+    };
+  if (cap.active)
+    return { tone: "neutral", label: "already on", reason: cap.detail };
+  return {
+    tone: "lime",
+    label: "applies",
+    reason:
+      id === "priority"
+        ? `${note}; skipped if the game already runs higher.`
+        : (note ?? cap.detail),
+  };
+}
+// Suggested background apps; voice chat, capture and launchers are never suggested.
+const suggestions: [RegExp, Background[number]["action"], string][] = [
+  [
+    /^(chrome|msedge|firefox|opera|opera_gx|brave|vivaldi)\.exe$/i,
+    "lower",
+    "browser",
+  ],
+  [
+    /^(onedrive|dropbox|googledrivefs|megasync|icloud\w*)\.exe$/i,
+    "suspend",
+    "cloud sync",
+  ],
+  [/updat/i, "suspend", "updater"],
+];
+const neverSuggest =
+  /^(discord|teamspeak|ts3client|mumble|skype|teams|ms-teams|zoom|slack|obs|steam|epicgameslauncher|galaxyclient)/i;
 type Status = Response<"boostStatus">;
 export function GameMode({ data, run, pending, navigate }: ViewProps) {
   const [status, setStatus] = useState<Status | null>(null);
@@ -114,6 +183,9 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
   );
   const [gameId, setGameId] = useState(data.state.games[0]?.id ?? "");
   const [now, setNow] = useState(0);
+  const [confirmPlan, setConfirmPlan] = useState(false);
+  // Mechanism results already logged for the current session (events carry the whole session).
+  const logged = useRef({ id: "", count: 0, status: "" });
   const refresh = useCallback(
     () =>
       request("boostStatus", {})
@@ -132,11 +204,21 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
         setStatus((old) =>
           old ? { ...old, session: s.status === "ended" ? null : s } : old,
         );
-        setLog((lines) =>
-          [...lines, `${new Date().toLocaleTimeString()}  ${s.message}`].slice(
-            -60,
-          ),
-        );
+        const seen =
+          logged.current.id === s.id
+            ? logged.current
+            : { id: s.id, count: 0, status: "" };
+        const time = new Date().toLocaleTimeString();
+        const lines = s.mechanisms
+          .slice(seen.count)
+          .map((m) => `${time}  ${labels[m.id]}: ${m.state}. ${m.detail}`);
+        if (s.status !== seen.status) lines.push(`${time}  ${s.message}`);
+        logged.current = {
+          id: s.id,
+          count: s.mechanisms.length,
+          status: s.status,
+        };
+        if (lines.length) setLog((old) => [...old, ...lines].slice(-80));
         if (s.status === "ended" || s.status === "recovery-needed")
           setOutcome({ text: s.message, error: s.status !== "ended" });
       }),
@@ -166,6 +248,30 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
     save({ custom: { ...config.custom, ...next } });
   const mechanisms =
     config.mode === "custom" ? config.custom : modeMechanisms[config.mode];
+  const modeName = (id: BoostMode) =>
+    modes.find((m) => m.id === id)?.label ?? id;
+  const suggested = processes
+    ? [
+        ...new Map(
+          processes
+            .filter(
+              (p) =>
+                !p.protected &&
+                /^[\w .()-]{1,64}\.exe$/i.test(p.image) &&
+                !neverSuggest.test(p.image) &&
+                !config.background.some(
+                  (b) => b.image.toLowerCase() === p.image.toLowerCase(),
+                ),
+            )
+            .map((p) => [p.image.toLowerCase(), p.image]),
+        ).values(),
+      ]
+        .flatMap((image) => {
+          const match = suggestions.find(([pattern]) => pattern.test(image));
+          return match ? [{ image, action: match[1], kind: match[2] }] : [];
+        })
+        .slice(0, 12)
+    : [];
   const game = data.state.games.find((g) => g.id === gameId);
   const gameMode = game
     ? game.boostMode === "global"
@@ -194,7 +300,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
     <>
       <PageTitle
         title="Game Mode"
-        subtitle="Selectable boost modes. Every change is saved first and restored when the game exits."
+        subtitle="Selectable boost modes. Reversible changes are saved first and restored when the game exits; closed apps are not reopened."
         action={
           <Badge tone={session ? statusTones[session.status] : "neutral"}>
             {session ? session.status : "Idle"}
@@ -330,6 +436,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
               className={config.mode === m.id ? "active" : ""}
               aria-pressed={config.mode === m.id}
               disabled={pending}
+              title={pending ? "Wait for the current request." : m.summary}
               onClick={() => void save({ mode: m.id })}
             >
               {m.label}
@@ -338,30 +445,106 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
         </div>
         <p className="muted">
           {modes.find((m) => m.id === config.mode)?.summary} Games set to “Use
-          global” in the library use this mode.
+          global” in the library use this mode. The cards show what each mode
+          does on this PC right now.
         </p>
+        <div className="mode-grid">
+          {modes
+            .filter((m) => m.id !== "off")
+            .map((m) => {
+              const list = enabled(
+                m.id === "custom" ? config.custom : modeMechanisms[m.id],
+              );
+              const plans = list.map((entry) => ({
+                entry,
+                plan: onThisPc(entry, cap(entry.id), config.background),
+              }));
+              const applies = plans.filter(
+                (p) => p.plan.label === "applies",
+              ).length;
+              return (
+                <article
+                  key={m.id}
+                  className={`mode-card ${config.mode === m.id ? "selected" : ""}`}
+                  aria-label={`${m.label} on this PC`}
+                >
+                  <h3>
+                    {m.label}
+                    {config.mode === m.id && (
+                      <Badge tone="cyan">selected</Badge>
+                    )}
+                  </h3>
+                  <p className="muted">
+                    {caps
+                      ? `Changes ${applies} of ${list.length} on this PC.`
+                      : "Checking this PC…"}
+                  </p>
+                  <ul className="mechanism-list">
+                    {plans.map(({ entry, plan }) => (
+                      <li key={entry.id}>
+                        <span>{labels[entry.id]}</span>
+                        <Badge tone={plan.tone}>{plan.label}</Badge>
+                        {plan.reason && (
+                          <small className="muted">{plan.reason}</small>
+                        )}
+                      </li>
+                    ))}
+                    {!list.length && (
+                      <li className="muted">Nothing selected yet.</li>
+                    )}
+                  </ul>
+                </article>
+              );
+            })}
+        </div>
         <ul className="mechanism-list">
-          {enabled(mechanisms).map(({ id, note }) => {
-            const c = cap(id);
-            return (
-              <li key={id}>
-                <span>
-                  {labels[id]}
-                  {note ? ` (${note})` : ""}
-                </span>
-                <Badge tone={c?.available ? "lime" : "amber"}>
-                  {c
-                    ? c.available
-                      ? "available"
-                      : "unsupported here"
-                    : "checking"}
-                </Badge>
-                {c && !c.available && (
-                  <small className="muted">{c.detail}</small>
-                )}
-              </li>
-            );
-          })}
+          <li>
+            <span>{labels.powerPlan} on this PC</span>
+            <Badge tone={cap("powerPlan")?.available ? "lime" : "amber"}>
+              {cap("powerPlan")?.available ? "available" : "unavailable"}
+            </Badge>
+            <small className="muted">
+              {cap("powerPlan")?.detail ?? "Checking…"}
+              {status?.ownedPowerPlan
+                ? " Frameforge created this plan with your consent."
+                : ""}
+            </small>
+            {!unavailable &&
+              caps &&
+              !cap("powerPlan")?.available &&
+              !status?.ownedPowerPlan && (
+                <Button
+                  disabled={pending || !!session}
+                  title={
+                    session
+                      ? "Stop the boost session first."
+                      : "Create a copy of Windows' High performance plan for boost sessions."
+                  }
+                  onClick={() => setConfirmPlan(true)}
+                >
+                  <Plus size={17} /> Create High performance plan…
+                </Button>
+              )}
+            {!unavailable && status?.ownedPowerPlan && (
+              <Button
+                disabled={pending || !!session}
+                title={
+                  session
+                    ? "Stop the boost session first."
+                    : "Remove the plan Frameforge created. Your other plans are untouched."
+                }
+                onClick={async () => {
+                  const result = await run("boostPowerPlan", {
+                    action: "remove",
+                    confirmed: true,
+                  });
+                  if (result) setStatus(result);
+                }}
+              >
+                <Trash2 size={17} /> Remove Frameforge plan
+              </Button>
+            )}
+          </li>
           <li>
             <span>{labels.standbyPurge}</span>
             <Badge tone="amber">unsupported</Badge>
@@ -372,6 +555,39 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
           </li>
         </ul>
       </section>
+      {confirmPlan && (
+        <Modal
+          title="Create a High performance power plan?"
+          description="Windows has no High performance plan on this PC, so the power-plan step of a boost does nothing."
+          onClose={() => setConfirmPlan(false)}
+        >
+          <p className="muted">
+            Frameforge copies Windows' built-in High performance plan into a new
+            plan named “Frameforge High performance”. Your current plan stays
+            active. During a boost Frameforge switches to the new plan and
+            switches back afterwards. High performance uses more power and can
+            run your PC warmer. You can remove the plan here at any time; your
+            other plans are never changed.
+          </p>
+          <div className="dialog-actions">
+            <Button onClick={() => setConfirmPlan(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={pending}
+              onClick={async () => {
+                const result = await run("boostPowerPlan", {
+                  action: "create",
+                  confirmed: true,
+                });
+                setConfirmPlan(false);
+                if (result) setStatus(result);
+              }}
+            >
+              Create plan
+            </Button>
+          </div>
+        </Modal>
+      )}
       {config.mode === "custom" && (
         <section className="booster-section" aria-label="Custom mechanisms">
           <h2>Custom mechanisms</h2>
@@ -402,11 +618,15 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
             label="Performance power plan"
             description={
               cap("powerPlan")?.available === false
-                ? `Unavailable: ${cap("powerPlan")!.detail}`
+                ? `Unavailable: ${cap("powerPlan")!.detail}. Create a plan under Mode to use it.`
                 : "Switches to High performance (or Ultimate, if present) and back."
             }
             checked={config.custom.powerPlan}
-            disabled={pending}
+            disabled={
+              pending ||
+              (cap("powerPlan")?.available === false &&
+                !config.custom.powerPlan)
+            }
             onChange={(v) => void setCustom({ powerPlan: v })}
           />
           <Toggle
@@ -492,6 +712,17 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
           {config.background.map((entry, index) => (
             <li key={entry.image}>
               <span>{entry.image}</span>
+              {mechanisms[
+                entry.action === "lower"
+                  ? "lowerBackground"
+                  : entry.action === "suspend"
+                    ? "suspendBackground"
+                    : "closeBackground"
+              ] ? (
+                <Badge tone="lime">applies in {modeName(config.mode)}</Badge>
+              ) : (
+                <Badge tone="amber">not part of {modeName(config.mode)}</Badge>
+              )}
               <select
                 aria-label={`Action for ${entry.image}`}
                 value={entry.action}
@@ -539,6 +770,24 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
           </Button>
           {processes && (
             <>
+              {suggested.length > 0 && (
+                <div className="booster-chips" aria-label="Suggested apps">
+                  {suggested.map(({ image, action, kind }) => (
+                    <Button
+                      key={image}
+                      disabled={pending || config.background.length >= 50}
+                      title={`Suggested ${kind}: ${action === "lower" ? "lower its priority" : "suspend it"} during a boost.`}
+                      onClick={() =>
+                        void save({
+                          background: [...config.background, { image, action }],
+                        })
+                      }
+                    >
+                      <Plus size={15} /> {image} ({kind})
+                    </Button>
+                  ))}
+                </div>
+              )}
               <select
                 aria-label="Running app"
                 value={pick}
@@ -581,7 +830,13 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
               </select>
               <Button
                 disabled={pending || !pick || config.background.length >= 50}
-                title={!pick ? "Choose an app first." : undefined}
+                title={
+                  config.background.length >= 50
+                    ? "The list is full (50 apps). Remove one first."
+                    : !pick
+                      ? "Choose an app first."
+                      : undefined
+                }
                 onClick={async () => {
                   if (
                     await save({

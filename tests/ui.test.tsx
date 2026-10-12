@@ -82,9 +82,12 @@ describe("configuration and safety UI", () => {
       "Game booster requires the desktop app.",
     );
     fireEvent.click(within(modes).getByRole("button", { name: "Performance" }));
-    expect(
-      await screen.findByText("Performance power plan"),
-    ).toBeInTheDocument();
+    // Each mode card says what it would do on this PC; background apps are not configured yet.
+    const card = await screen.findByRole("article", {
+      name: "Performance on this PC",
+    });
+    expect(within(card).getByText("Performance power plan")).toBeVisible();
+    expect(within(card).getByText("not configured")).toBeVisible();
     expect(screen.getByText("Standby list purge")).toBeInTheDocument();
   });
 });
