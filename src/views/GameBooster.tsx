@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Gamepad2, Play, Square, Search, ArrowUpRight, Info } from "lucide-react";
+import {
+  Gamepad2,
+  Play,
+  Square,
+  Search,
+  ArrowUpRight,
+  Info,
+} from "lucide-react";
 import { PageTitle, Button, Badge, Empty } from "../components/ui";
 import type { ProcessTarget } from "../../shared/contracts";
 import type { ViewProps } from "../types";
@@ -46,7 +53,10 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
           </p>
           <div className="session-details">
             <span>
-              Process<strong>{session.target.name} (pid {session.target.pid})</strong>
+              Process
+              <strong>
+                {session.target.name} (pid {session.target.pid})
+              </strong>
             </span>
             <span>
               Original priority<strong>{session.target.priority}</strong>
@@ -55,10 +65,17 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
           <Button
             variant="primary"
             disabled={
-              pending || !available || session.status === "preparing" || session.status === "restoring"
+              pending ||
+              !available ||
+              session.status === "preparing" ||
+              session.status === "restoring"
             }
             onClick={() =>
-              void run("boostStop", { confirmed: true }, "Game priority restore finished.")
+              void run(
+                "boostStop",
+                { confirmed: true },
+                "Game priority restore finished.",
+              )
             }
           >
             <Square size={17} /> Restore priority
@@ -70,8 +87,9 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
           <Gamepad2 size={64} />
         </div>
         <p className="muted">
-          Changes only the priority of the running game process. Frameforge verifies the change
-          and restores the original priority. It does not claim any FPS gain.
+          Changes only the priority of the running game process. Frameforge
+          verifies the change and restores the original priority. It does not
+          claim any FPS gain.
         </p>
         {data.state.games.length ? (
           <>
@@ -108,11 +126,17 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                   {targets.map((target) => (
                     <li key={`${target.pid}-${target.startTime}`}>
                       <span>
-                        {target.name} (pid {target.pid})<strong>{target.priority}</strong>
+                        {target.name} (pid {target.pid})
+                        <strong>{target.priority}</strong>
                       </span>
                       <Button
                         variant="primary"
-                        disabled={pending || !available || !!session || target.priority !== "Normal"}
+                        disabled={
+                          pending ||
+                          !available ||
+                          !!session ||
+                          target.priority !== "Normal"
+                        }
                         title={
                           target.priority !== "Normal"
                             ? "Only processes at Normal priority can be raised."
@@ -136,7 +160,8 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                 </ul>
               ) : (
                 <p className="muted" role="status">
-                  No running process found for this game. Start the game, then search again.
+                  No running process found for this game. Start the game, then
+                  search again.
                 </p>
               ))}
           </>

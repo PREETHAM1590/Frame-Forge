@@ -14,7 +14,11 @@ export class BoostEngine {
   get isBusy() {
     return this.busy;
   }
-  private save(session: BoostSession, status: BoostSession["status"], message: string) {
+  private save(
+    session: BoostSession,
+    status: BoostSession["status"],
+    message: string,
+  ) {
     const next = { ...session, status, message: message.slice(0, 1000) };
     this.repo.saveBoostSession(next);
     return next;
@@ -40,12 +44,18 @@ export class BoostEngine {
       const game = this.repo.state().games.find((g) => g.id === gameId);
       if (!game) throw new Error("Game not found");
       if (this.repo.boostSession())
-        throw new Error("Restore the current boosted game before starting another.");
+        throw new Error(
+          "Restore the current boosted game before starting another.",
+        );
       const running = await this.platform.gameProcesses(game);
       if (!running.some((p) => isDeepStrictEqual(p, target)))
-        throw new Error("The selected process is no longer a running target for this game. Find running processes again.");
+        throw new Error(
+          "The selected process is no longer a running target for this game. Find running processes again.",
+        );
       if (target.priority !== "Normal")
-        throw new Error("Only a process running at Normal priority can be boosted.");
+        throw new Error(
+          "Only a process running at Normal priority can be boosted.",
+        );
       let session: BoostSession = {
         id: randomUUID(),
         gameId,
@@ -57,19 +67,30 @@ export class BoostEngine {
       this.repo.saveBoostSession(session);
       try {
         const snapshot = await this.platform.boostStart(target);
-        session = this.save({ ...session, target: snapshot }, "active", "Game priority raised to Above normal and verified.");
+        session = this.save(
+          { ...session, target: snapshot },
+          "active",
+          "Game priority raised to Above normal and verified.",
+        );
         this.log(`${game.name}: priority raised to Above normal.`);
         return session;
       } catch (error) {
         try {
           await this.platform.boostStop(target);
         } catch (stopError) {
-          const failed = this.save(session, "recovery-needed", `Boost failed (${text(error)}) and the original priority could not be confirmed: ${text(stopError)}`);
+          const failed = this.save(
+            session,
+            "recovery-needed",
+            `Boost failed (${text(error)}) and the original priority could not be confirmed: ${text(stopError)}`,
+          );
           this.log(failed.message, "failed");
           return failed;
         }
         this.save(session, "ended", `Boost failed: ${text(error)}`);
-        this.log(`${game.name}: boost failed and nothing was changed. ${text(error)}`, "failed");
+        this.log(
+          `${game.name}: boost failed and nothing was changed. ${text(error)}`,
+          "failed",
+        );
         throw error;
       }
     });
@@ -78,13 +99,25 @@ export class BoostEngine {
     return this.exclusive(async () => {
       const session = this.repo.boostSession();
       if (!session) return null;
-      this.save(session, "restoring", "Restoring the original process priority.");
+      this.save(
+        session,
+        "restoring",
+        "Restoring the original process priority.",
+      );
       try {
-        const ended = this.save(session, "ended", await this.platform.boostStop(session.target));
+        const ended = this.save(
+          session,
+          "ended",
+          await this.platform.boostStop(session.target),
+        );
         this.log(ended.message);
         return ended;
       } catch (error) {
-        const failed = this.save(session, "recovery-needed", `Restore failed: ${text(error)}`);
+        const failed = this.save(
+          session,
+          "recovery-needed",
+          `Restore failed: ${text(error)}`,
+        );
         this.log(failed.message, "failed");
         return failed;
       }

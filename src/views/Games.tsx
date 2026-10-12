@@ -18,7 +18,11 @@ export function Games({ data, run, pending }: ViewProps) {
   const [profile, setProfile] = useState<Game["profile"]>("balanced");
   const [notes, setNotes] = useState("");
   const [remove, setRemove] = useState<Game | null>(null);
-  const [scan, setScan] = useState<{ count: number; warnings: string[]; launchers: string[] } | null>(null);
+  const [scan, setScan] = useState<{
+    count: number;
+    warnings: string[];
+    launchers: string[];
+  } | null>(null);
   const games = data.state.games.filter((g) =>
     g.name.toLowerCase().includes(search.toLowerCase()),
   );
@@ -41,8 +45,8 @@ export function Games({ data, run, pending }: ViewProps) {
       {data.mode === "demo" && (
         <div className="notice">
           <Info size={18} />
-          The native executable picker and installed game detection are available in the
-          desktop app.
+          The native executable picker and installed game detection are
+          available in the desktop app.
         </div>
       )}
       <div className="toolbar">
@@ -59,14 +63,34 @@ export function Games({ data, run, pending }: ViewProps) {
           disabled={pending || data.mode === "demo"}
           onClick={async () => {
             const result = await run("detectGames", {});
-            if (result) setScan({ count: result.games.length, warnings: result.warnings, launchers: result.launchers });
+            if (result)
+              setScan({
+                count: result.games.length,
+                warnings: result.warnings,
+                launchers: result.launchers,
+              });
           }}
         >
           <FolderSearch size={17} />
           Scan installed games
         </Button>
       </div>
-      {scan && <div role="status" className="notice"><FolderSearch size={18} /><div><p>{scan.count} installed games found. {scan.launchers.length ? `Scanned: ${scan.launchers.join(", ")}.` : "No supported launchers found."}</p>{scan.warnings.map((warning, index) => <p key={index}>{warning}</p>)}</div></div>}
+      {scan && (
+        <div role="status" className="notice">
+          <FolderSearch size={18} />
+          <div>
+            <p>
+              {scan.count} installed games found.{" "}
+              {scan.launchers.length
+                ? `Scanned: ${scan.launchers.join(", ")}.`
+                : "No supported launchers found."}
+            </p>
+            {scan.warnings.map((warning, index) => (
+              <p key={index}>{warning}</p>
+            ))}
+          </div>
+        </div>
+      )}
       {games.length ? (
         <div className="game-grid">
           {games.map((g) => (

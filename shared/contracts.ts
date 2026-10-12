@@ -134,24 +134,63 @@ export const PreviewSchema = z
   })
   .strict();
 export type Preview = z.infer<typeof PreviewSchema>;
-export const ProcessTargetSchema = z.object({
-  pid: z.number().int().positive(),
-  startTime: z.string().min(1).max(80),
-  executablePath: z.string().min(1).max(2048),
-  name: z.string().max(160),
-  priority: z.enum(["Normal", "AboveNormal", "BelowNormal", "High", "Idle", "RealTime"]),
-}).strict();
+export const ProcessTargetSchema = z
+  .object({
+    pid: z.number().int().positive(),
+    startTime: z.string().min(1).max(80),
+    executablePath: z.string().min(1).max(2048),
+    name: z.string().max(160),
+    priority: z.enum([
+      "Normal",
+      "AboveNormal",
+      "BelowNormal",
+      "High",
+      "Idle",
+      "RealTime",
+    ]),
+  })
+  .strict();
 export type ProcessTarget = z.infer<typeof ProcessTargetSchema>;
-export const BoostSessionSchema = z.object({
-  id: Id, gameId: Id, target: ProcessTargetSchema, startedAt: z.string(),
-  status: z.enum(["preparing", "active", "restoring", "recovery-needed", "ended"]),
-  message: z.string().max(1000),
-}).strict();
+export const BoostSessionSchema = z
+  .object({
+    id: Id,
+    gameId: Id,
+    target: ProcessTargetSchema,
+    startedAt: z.string(),
+    status: z.enum([
+      "preparing",
+      "active",
+      "restoring",
+      "recovery-needed",
+      "ended",
+    ]),
+    message: z.string().max(1000),
+  })
+  .strict();
 export type BoostSession = z.infer<typeof BoostSessionSchema>;
-export const RestorePointSchema = z.object({sequence:z.number().int().nonnegative(),description:z.string().max(256),createdAt:z.string()}).strict();
-export const RestorePointsSchema = z.object({points:z.array(RestorePointSchema),available:z.boolean(),message:z.string().max(1000),createdSequence:z.number().int().nonnegative().nullable()}).strict();
+export const RestorePointSchema = z
+  .object({
+    sequence: z.number().int().nonnegative(),
+    description: z.string().max(256),
+    createdAt: z.string(),
+  })
+  .strict();
+export const RestorePointsSchema = z
+  .object({
+    points: z.array(RestorePointSchema),
+    available: z.boolean(),
+    message: z.string().max(1000),
+    createdSequence: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
 export type RestorePoints = z.infer<typeof RestorePointsSchema>;
-export const DetectionSchema = z.object({games:z.array(GameSchema).max(500),warnings:z.array(z.string().max(1000)),launchers:z.array(z.string().max(80))}).strict();
+export const DetectionSchema = z
+  .object({
+    games: z.array(GameSchema).max(500),
+    warnings: z.array(z.string().max(1000)),
+    launchers: z.array(z.string().max(80)),
+  })
+  .strict();
 export const BootstrapSchema = z
   .object({
     state: StateSchema,
@@ -162,7 +201,12 @@ export const BootstrapSchema = z
     startupSupported: z.boolean(),
     version: z.string(),
     mode: z.enum(["desktop", "demo"]),
-    boost: z.object({session:BoostSessionSchema.nullable(),available:z.boolean()}).strict(),
+    boost: z
+      .object({
+        session: BoostSessionSchema.nullable(),
+        available: z.boolean(),
+      })
+      .strict(),
   })
   .strict();
 export type Bootstrap = z.infer<typeof BootstrapSchema>;
@@ -192,10 +236,18 @@ export const requests = {
   addGame: Empty,
   detectGames: Empty,
   restorePoints: Empty,
-  createRestorePoint: z.object({name:Name,confirmed:z.literal(true)}).strict(),
-  boostTargets: z.object({gameId:Id}).strict(),
-  boostStart: z.object({gameId:Id,target:ProcessTargetSchema,confirmed:z.literal(true)}).strict(),
-  boostStop: z.object({confirmed:z.literal(true)}).strict(),
+  createRestorePoint: z
+    .object({ name: Name, confirmed: z.literal(true) })
+    .strict(),
+  boostTargets: z.object({ gameId: Id }).strict(),
+  boostStart: z
+    .object({
+      gameId: Id,
+      target: ProcessTargetSchema,
+      confirmed: z.literal(true),
+    })
+    .strict(),
+  boostStop: z.object({ confirmed: z.literal(true) }).strict(),
   removeGame: z.object({ id: Id }).strict(),
   profile: z
     .object({

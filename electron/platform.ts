@@ -139,12 +139,16 @@ export class WindowsPlatform implements Platform {
     return result.processes ?? [];
   }
   async boostStart(expected: ProcessTarget) {
-    const result = await this.call({ command: "boost-start", target: expected });
+    const result = await this.call({
+      command: "boost-start",
+      target: expected,
+    });
     if (!result.boostSnapshot) throw new Error("Missing process snapshot");
     return result.boostSnapshot;
   }
   async boostStop(snapshot: ProcessTarget) {
-    return (await this.call({ command: "boost-stop", target: snapshot })).message;
+    return (await this.call({ command: "boost-stop", target: snapshot }))
+      .message;
   }
 }
 export function fallbackHardware(

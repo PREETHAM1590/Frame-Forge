@@ -73,6 +73,7 @@ Tasks reference these as **GC-n**.
   - the game itself, Frameforge, and the helper.
 
   The denylist lives in C#, which is the enforcement point, and is mirrored in a zod refine for UX. Process identity is always pid + start time (UTC "O") + resolved image path.
+
 - **GC-12 Acceptance gate for every task.** All of these must pass:
 
   ```bash
@@ -85,6 +86,7 @@ Tasks reference these as **GC-n**.
   Line endings: `.gitattributes` (`* text=auto eol=lf`) was committed on this branch, because `core.autocrlf=true` here would otherwise make prettier's LF default fail `format:check`.
 
   Then commit with a conventional message whose last lines are a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Tasks that touch real Windows state also list a manual check in `npm run dev:desktop`.
+
 - **GC-13 Style.** Follow the existing patterns: zod-validated boundaries, `repo.transaction`, `Platform` interface plus `MockPlatform` for tests, and C# interfaces (`IRegistryStore`, `IProcessStore`) with in-memory fakes in xUnit. Use no new npm or NuGet dependencies, except a Windows TFM bump if strictly needed (it should not be). Keep the file count low.
 
 ---
@@ -94,6 +96,7 @@ Tasks reference these as **GC-n**.
 **Depends on:** GC-1, GC-2, GC-3, GC-12, GC-13.
 
 **Current failures** (as of 2026-10-13):
+
 - `npm run typecheck` fails, so `npm run build` fails.
 - `npm test` fails in 3 files.
 - `lint` and both dotnet commands pass.
@@ -106,6 +109,7 @@ There are two root causes, and the second one affects real users.
 2. The library converts numeric-looking strings to numbers. Parsing a real manifest yields `{"appid":100,...,"StateFlags":4}`. The zod field `StateFlags: z.string().regex(...)` then rejects it, and the error is silently counted in `skippedSteam`. **The real in-app Steam scan therefore finds 0 games today.** Numeric game names and install directories (for example `"1943"`) also fail.
 
 Fix:
+
 - In the Steam zod shapes, use `const vdfString = z.union([z.string(), z.number()]).transform(String)` for `name`, `installdir`, `StateFlags` and library `path`. Re-apply the existing `gameName` and installdir validators after the transform.
 - Rewrite the fixtures in `tests/games.test.ts` as real multi-line VDF (tabs and newlines, with `appid` and `StateFlags` lines like real files).
 - Add a test with a numeric `name` (`"1943"`).
@@ -121,6 +125,7 @@ Manual check: this PC has `C:\Program Files (x86)\Steam\steamapps\appmanifest_13
   3. logs `"Installed game scan completed"` with the message `"<added> new of <found> found. Scanned: <launchers>."`.
 
   Remove the hard-coded "Steam" wording.
+
 - `electron/main.ts`: pass `detectGames: () => detectInstalledGames()` and delete the `detectSteamGames` import. Delete `detectSteamGames` from `games.ts`, since nothing else uses it.
 - `main.ts pickGame`: set `executablePath: selected` (the picked exe) and `path: path.dirname(selected)`. The library dedupe and the booster match on the install folder, and today `path` is the exe.
   - Existing custom games are stored with `path` set to the exe. Migration #2 (1c) rewrites the JSON in both the `configuration` and `backups` tables (GC-4): for every game whose `path` ends in `.exe` (case-insensitive), set `executablePath = path` and `path = dirname(path)`.
@@ -138,6 +143,7 @@ Manual check: this PC has `C:\Program Files (x86)\Steam\steamapps\appmanifest_13
   `payload` holds the JSON of the session target (Task 4 extends it to a full snapshot).
   - Migration #2 also does the custom-game path rewrite from 1b, which needs code. Change `migrations` to `Array<string | ((db: DatabaseSync) => void)>`.
   - The `Repository` constructor runs a function migration inside the same transaction as its `PRAGMA user_version` bump.
+
 - `electron/repository.ts`:
   - `boostSession(): BoostSession | null` returns the latest row whose status is not `ended`, parsed with `BoostSessionSchema`.
   - `saveBoostSession(s: BoostSession)` upserts.
@@ -149,6 +155,7 @@ Manual check: this PC has `C:\Program Files (x86)\Steam\steamapps\appmanifest_13
   - `boostStop(snapshot: ProcessTarget): Promise<string>`
 
   `WindowsPlatform` implements these with helper commands `processes {gamePath, executablePath}`, `boost-start {target}` and `boost-stop {target}`, and sets `boostAvailable = true`. `MockPlatform` has `boostAvailable = false`, returns `[]` from `gameProcesses`, and throws "unavailable" from start and stop. The test subclasses override them.
+
 - New file `electron/booster.ts`: `export class BoostEngine { constructor(repo, platform) }`.
   - `start(gameId, target)`:
     1. Fails if the game is not in state.
@@ -164,6 +171,7 @@ Manual check: this PC has `C:\Program Files (x86)\Steam\steamapps\appmanifest_13
   - `boost-start` and `boost-stop` → `new GameProcessOperations(new WindowsProcessStore()).Start/Stop`.
 
   Map `ProcessResult` to `{ok, message, code, boostSnapshot}`. `GameProcesses.cs` already exists and has no callers.
+
 - **Process identity fix** in `WindowsProcessStore.Read()`: replace `process.MainModule` with `QueryFullProcessImageNameW` on a handle opened with `PROCESS_QUERY_LIMITED_INFORMATION`. Today `MainModule` throws on protected or anti-cheat processes, which include the Riot titles on this PC, so they are never matched. It is also slow when called for every process.
   - Priority and affinity changes refused by protected processes are reported per mechanism as `failed` with "Windows refused the change for this protected process". Never report them as success.
 - Add xUnit tests `windows/Frameforge.Windows.Tests/GameProcessesTests.cs` with an in-memory `IProcessStore` fake:
@@ -189,6 +197,7 @@ The `restorePoints` and `createRestorePoint` handlers return `{points:[], availa
   - is disabled with a reason when `!data.boost.available` (demo, or helper missing).
 
   Import `Play`, `Square` and the other icons from `lucide-react`. Task 4 rewrites this page.
+
 - `src/api.ts` demo: `boostTargets`, `boostStart` and `boostStop` throw "Game booster requires the desktop app."
 
 ### 1f. Formatting
@@ -198,6 +207,7 @@ Run `npm run format` once, as a separate commit `style: apply prettier`, so that
 **Tests:** fix the existing `booster.test.ts` (it must pass unchanged, except for import extensions if lint requires them), `games.test.ts` and `service.test.ts`. Add the GC-4 v1-payload test to `tests/repository.test.ts`.
 
 **Acceptance:** GC-12. In addition:
+
 - in `npm run dev:desktop`, Scan finds the Steam game above;
 - the Game Mode page opens without errors;
 - with a running game, the priority is visible in Task Manager as Above normal and returns to Normal after Stop.
@@ -213,6 +223,7 @@ Run `npm run format` once, as a separate commit `style: apply prettier`, so that
 Write a throwaway five-line console test. It confirms that `ProcessStartInfo.ArgumentList` is honoured with `UseShellExecute = true` and `Verb = "runas"`: the elevated child must receive a description containing spaces and parentheses as one argument.
 
 If it is not honoured, use the fallback that needs no quoting:
+
 - base64url-encode the description;
 - pass every argument as a validated `[A-Za-z0-9_-]` token joined with single spaces in `Arguments`;
 - have the elevated side decode the description and re-validate it.
@@ -224,6 +235,7 @@ Record the result in the commit message.
 Put the logic behind `IRestoreStore` (WMI and registry access) so xUnit can fake it.
 
 **Unelevated command `restore-status`** (read-only, HKLM read is allowed for standard users):
+
 - `policyDisabled`: `HKLM\SOFTWARE\Policies\Microsoft\Windows NT\SystemRestore` values `DisableSR == 1` or `DisableConfig == 1`.
 - `protection`: `"enabled" | "disabled" | "unknown"`, from `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore\RPSessionInterval` (1 means enabled on at least one drive; 0 means disabled; missing means unknown). This is a hint only, and the UI says "per-drive state is confirmed when creating".
 - `frequency`: `{existed: bool, minutes: int|null}` from the same key, value `SystemRestorePointCreationFrequency` (DWORD minutes; absent means the Windows default of 1440).
@@ -231,6 +243,7 @@ Put the logic behind `IRestoreStore` (WMI and registry access) so xUnit can fake
 - `systemDrive`: `Environment.GetEnvironmentVariable("SystemDrive")`, validated with `^[A-Z]:$`.
 
 **Elevated actions** (via GC-7):
+
 - `restore-list`: WMI `root\default`, `SELECT SequenceNumber, Description, CreationTime, RestorePointType FROM SystemRestore`. Convert `CreationTime` (CIM datetime) with `ManagementDateTimeConverter.ToDateTime(...).ToUniversalTime().ToString("O")`. Return points sorted by sequence, newest first.
 - `restore-create <description> <bypass:0|1> <origExisted:0|1> <origMinutes:int|-1>`:
   1. If the policy disables System Restore, return `outcome:"policy-disabled"`.
@@ -252,16 +265,17 @@ Put the logic behind `IRestoreStore` (WMI and registry access) so xUnit can fake
 
 `RestoreDescription = z.string().trim().regex(/^[\p{L}\p{N} ._()\-]{1,64}$/u)`
 
-| Method | Request | Response |
-|---|---|---|
-| `restoreStatus` (new) | `Empty` | `RestoreStatusSchema {protection, policyDisabled, frequency:{existed, minutes}, elevated, systemDrive, lastAppCreatedAt: string\|null, pendingFrequencyRecovery: boolean, message}` |
-| `restorePoints` | `Empty` | existing `RestorePointsSchema` (elevated list; `available:false` plus a message on cancel or policy) |
-| `createRestorePoint` | `{name: RestoreDescription, confirmed: true, bypassThrottle: z.boolean().default(false)}` | `CreateRestorePointResultSchema {outcome: enum["created","throttled","protection-disabled","policy-disabled","elevation-cancelled","failed"], point: RestorePointSchema.nullable(), lastPoint: RestorePointSchema.nullable(), message}` |
-| `enableSystemProtection` (new) | `{confirmed: true}` | `RestoreStatusSchema` |
-| `recoverRestoreFrequency` (new) | `{confirmed: true}` | `RestoreStatusSchema` |
-| `openSystemRestore` (new) | `Empty` | `z.boolean()` |
+| Method                          | Request                                                                                   | Response                                                                                                                                                                                                                                |
+| ------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restoreStatus` (new)           | `Empty`                                                                                   | `RestoreStatusSchema {protection, policyDisabled, frequency:{existed, minutes}, elevated, systemDrive, lastAppCreatedAt: string\|null, pendingFrequencyRecovery: boolean, message}`                                                     |
+| `restorePoints`                 | `Empty`                                                                                   | existing `RestorePointsSchema` (elevated list; `available:false` plus a message on cancel or policy)                                                                                                                                    |
+| `createRestorePoint`            | `{name: RestoreDescription, confirmed: true, bypassThrottle: z.boolean().default(false)}` | `CreateRestorePointResultSchema {outcome: enum["created","throttled","protection-disabled","policy-disabled","elevation-cancelled","failed"], point: RestorePointSchema.nullable(), lastPoint: RestorePointSchema.nullable(), message}` |
+| `enableSystemProtection` (new)  | `{confirmed: true}`                                                                       | `RestoreStatusSchema`                                                                                                                                                                                                                   |
+| `recoverRestoreFrequency` (new) | `{confirmed: true}`                                                                       | `RestoreStatusSchema`                                                                                                                                                                                                                   |
+| `openSystemRestore` (new)       | `Empty`                                                                                   | `z.boolean()`                                                                                                                                                                                                                           |
 
 Notes on the table:
+
 - `pendingFrequencyRecovery` is true when a bypass journal row is still `running` (see Electron below).
 - `openSystemRestore` lets users actually restore. Main calls `shell.openPath(path.join(SystemRoot, "System32", "rstrui.exe"))`. ShellExecute handles its auto-elevation, and there is no renderer input.
 
@@ -281,6 +295,7 @@ Notes on the table:
      - and so on.
 
   Store `lastAppCreatedAt` in a new key, `restore_meta` (migration #3: `CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)`). It is used to pre-warn about the 24 h limit before a UAC prompt.
+
 - `service.ts`: add the handlers. `createRestorePoint` with `bypassThrottle:true` is only accepted when the request also comes after a `throttled` outcome in the same session. Keep `lastThrottledAt` in memory and reject with "Retry the normal creation first" otherwise. This keeps the bypass to explicit consent after an explanation.
 
 ### UI (`src/views/Recovery.tsx`, `Backups` page "Restore & backups")
@@ -302,6 +317,7 @@ Split the page into two clearly titled sections.
 ### Auto-offer before optimizations
 
 `App.tsx`'s `openPreview(ids)` first calls `restoreStatus`. If protection is not `disabled` or policy-blocked, the preview modal shows a checked checkbox, "Create a Windows restore point first". When the box is checked, Confirm does the following:
+
 1. calls `createRestorePoint`;
 2. on `created` or `throttled` (where the last point is under 24 h old, which counts as covered), calls `preview` again to get a fresh token, because creation can outlast the 5-minute token;
 3. compares the new preview's `changes` with the ones the user reviewed (deep-equal on `setting`, `before` and `after`):
@@ -324,6 +340,7 @@ On `failed`, `elevation-cancelled` or `protection-disabled`, the flow stops and 
 - **UI test**: the Restore page shows both section headings, and the demo create button is disabled with a reason.
 
 **Acceptance:** GC-12. Manual checks on this PC:
+
 1. Create a point. A UAC prompt appears and the point is listed in `rstrui`.
 2. Create again immediately. The result is `throttled` with an explanation.
 3. "Create anyway" creates the point, and `reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore" /v SystemRestorePointCreationFrequency` shows the original state afterwards.
@@ -352,20 +369,20 @@ On `failed`, `elevation-cancelled` or `protection-disabled`, the flow stops and 
 
 Each source is its own `try` block, adds to `perLauncher`, and is capped at 500 games.
 
-| Source | Where | Parse |
-|---|---|---|
-| Steam | existing (Task 1 fixed) | libraryfolders.vdf + appmanifest; skip appid 228980 and other redistributables (`Steamworks Common Redistributables`, `Proton*`, `Steam Linux Runtime*`) |
-| Epic | existing `%ProgramData%\Epic\EpicGamesLauncher\Data\Manifests\*.item` | keep; also skip `AppCategories` containing `"plugins"` or `"engines"` |
-| GOG | existing registry `HKLM\SOFTWARE\WOW6432Node\GOG.com\Games` (+ non-WOW) | keep (`gameName`, `path`, `exe`) |
-| Xbox / MS Store | for each fixed drive, `X:\.GamingRoot`. Verified on C: and D: here: bytes `52 47 42 58` ("RGBX"), uint32 LE `1` (count), then UTF-16LE NUL-terminated folder names (`XboxGames`). Fall back to `X:\XboxGames` | each `<root>\<Game>\Content\MicrosoftGame.config` (XML). Name from `DefaultDisplayName="..."` (if it starts with `ms-resource:`, use the folder name). Exe from the first `<Executable Name="...">` inside `<ExecutableList>`, resolved under `Content`. **The attributes span lines** in the real file (`D:\XboxGames\Roblox\Content\MicrosoftGame.config`), so the regex must allow `\s+` and newlines between attributes. Fixture-test it. UWP games under `WindowsApps` are not readable (ACL), so report "Microsoft Store titles outside XboxGames folders are not detectable without Store APIs" as an info warning only when no GamingRoot exists |
-| EA app | registry `HKLM\SOFTWARE\WOW6432Node\Electronic Arts\*` and `...\EA Games\*`, value `Install Dir` | name = subkey leaf |
-| Ubisoft Connect | `HKLM\SOFTWARE\WOW6432Node\Ubisoft\Launcher\Installs\<id>` value `InstallDir` | name: Uninstall key `Uplay Install <id>` `DisplayName`, else the folder basename |
-| Battle.net | Uninstall keys (below) with `Publisher` = `Blizzard Entertainment`, excluding the `Battle.net` app itself | `DisplayName`, `InstallLocation` |
-| Riot | `%ProgramData%\Riot Games\Metadata\<product>.<patchline>\<same>.product_settings.yaml`, line `product_install_full_path: "D:/Riot Games/League of Legends"` (forward slashes; verified here). Skip folders with no such line (`Riot Client`, `bacon.live`, `lion.live`, `*.game_patch` on this PC), and require the directory to exist | name from a small map keyed by product (`valorant` → `VALORANT`, `league_of_legends` → `League of Legends`, `teamfighttactics` → `Teamfight Tactics`, `bacon` → `Legends of Runeterra`, title-case fallback). Append ` (PBE)` for the `pbe` patchline. `RiotClientInstalls.json` holds only client paths plus `associated_client` keys, so it is not needed; don't parse it |
-| Rockstar | `HKLM\SOFTWARE\WOW6432Node\Rockstar Games\*` value `InstallFolder` (+ Uninstall `Publisher` = `Rockstar Games`) | subkey leaf; exclude `Launcher`, `Social Club` |
-| itch | `%APPDATA%\itch\apps\*\.itch\receipt.json.gz` (gunzip with `node:zlib`, ≤1 MB) | `game.title`; install = app folder |
-| Uninstall heuristic | `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*`, the WOW6432Node equivalent, and HKCU | only when `InstallLocation` exists **and** (`Publisher` is in a small allowlist: Blizzard, Riot, Rockstar, Electronic Arts, Ubisoft, Bethesda, Activision, CD PROJEKT, Square Enix, Bandai Namco, SEGA, Capcom, Paradox **or** the key name matches `Steam App \d+`); source `registry` |
-| Folder scan (user-chosen) | `scanFolder`: each immediate subfolder (≤200), searched to depth 3 | executable = the largest `.exe` excluding `/^(unins|setup|install|vc_?redist|dxsetup|crashreport|unitycrashhandler|crashpad|ue4prereq|dotnet|easyanticheat|be(service|_setup)|launcher_?helper)/i`; source `folder` |
+| Source                    | Where                                                                                                                                                                                                                                                                                                                                  | Parse                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Steam                     | existing (Task 1 fixed)                                                                                                                                                                                                                                                                                                                | libraryfolders.vdf + appmanifest; skip appid 228980 and other redistributables (`Steamworks Common Redistributables`, `Proton*`, `Steam Linux Runtime*`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Epic                      | existing `%ProgramData%\Epic\EpicGamesLauncher\Data\Manifests\*.item`                                                                                                                                                                                                                                                                  | keep; also skip `AppCategories` containing `"plugins"` or `"engines"`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| GOG                       | existing registry `HKLM\SOFTWARE\WOW6432Node\GOG.com\Games` (+ non-WOW)                                                                                                                                                                                                                                                                | keep (`gameName`, `path`, `exe`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Xbox / MS Store           | for each fixed drive, `X:\.GamingRoot`. Verified on C: and D: here: bytes `52 47 42 58` ("RGBX"), uint32 LE `1` (count), then UTF-16LE NUL-terminated folder names (`XboxGames`). Fall back to `X:\XboxGames`                                                                                                                          | each `<root>\<Game>\Content\MicrosoftGame.config` (XML). Name from `DefaultDisplayName="..."` (if it starts with `ms-resource:`, use the folder name). Exe from the first `<Executable Name="...">` inside `<ExecutableList>`, resolved under `Content`. **The attributes span lines** in the real file (`D:\XboxGames\Roblox\Content\MicrosoftGame.config`), so the regex must allow `\s+` and newlines between attributes. Fixture-test it. UWP games under `WindowsApps` are not readable (ACL), so report "Microsoft Store titles outside XboxGames folders are not detectable without Store APIs" as an info warning only when no GamingRoot exists |
+| EA app                    | registry `HKLM\SOFTWARE\WOW6432Node\Electronic Arts\*` and `...\EA Games\*`, value `Install Dir`                                                                                                                                                                                                                                       | name = subkey leaf                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Ubisoft Connect           | `HKLM\SOFTWARE\WOW6432Node\Ubisoft\Launcher\Installs\<id>` value `InstallDir`                                                                                                                                                                                                                                                          | name: Uninstall key `Uplay Install <id>` `DisplayName`, else the folder basename                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Battle.net                | Uninstall keys (below) with `Publisher` = `Blizzard Entertainment`, excluding the `Battle.net` app itself                                                                                                                                                                                                                              | `DisplayName`, `InstallLocation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Riot                      | `%ProgramData%\Riot Games\Metadata\<product>.<patchline>\<same>.product_settings.yaml`, line `product_install_full_path: "D:/Riot Games/League of Legends"` (forward slashes; verified here). Skip folders with no such line (`Riot Client`, `bacon.live`, `lion.live`, `*.game_patch` on this PC), and require the directory to exist | name from a small map keyed by product (`valorant` → `VALORANT`, `league_of_legends` → `League of Legends`, `teamfighttactics` → `Teamfight Tactics`, `bacon` → `Legends of Runeterra`, title-case fallback). Append ` (PBE)` for the `pbe` patchline. `RiotClientInstalls.json` holds only client paths plus `associated_client` keys, so it is not needed; don't parse it                                                                                                                                                                                                                                                                              |
+| Rockstar                  | `HKLM\SOFTWARE\WOW6432Node\Rockstar Games\*` value `InstallFolder` (+ Uninstall `Publisher` = `Rockstar Games`)                                                                                                                                                                                                                        | subkey leaf; exclude `Launcher`, `Social Club`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| itch                      | `%APPDATA%\itch\apps\*\.itch\receipt.json.gz` (gunzip with `node:zlib`, ≤1 MB)                                                                                                                                                                                                                                                         | `game.title`; install = app folder                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Uninstall heuristic       | `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*`, the WOW6432Node equivalent, and HKCU                                                                                                                                                                                                                                     | only when `InstallLocation` exists **and** (`Publisher` is in a small allowlist: Blizzard, Riot, Rockstar, Electronic Arts, Ubisoft, Bethesda, Activision, CD PROJEKT, Square Enix, Bandai Namco, SEGA, Capcom, Paradox **or** the key name matches `Steam App \d+`); source `registry`                                                                                                                                                                                                                                                                                                                                                                  |
+| Folder scan (user-chosen) | `scanFolder`: each immediate subfolder (≤200), searched to depth 3                                                                                                                                                                                                                                                                     | executable = the largest `.exe` excluding `/^(unins                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | setup | install | vc_?redist | dxsetup | crashreport | unitycrashhandler | crashpad | ue4prereq | dotnet | easyanticheat | be(service | _setup) | launcher_?helper)/i`; source `folder` |
 
 **Dedupe** (in `add()`): key = `realpath(install).toLowerCase()`. Source priority on collision: launcher-specific sources beat `registry`, which beats `folder`.
 
@@ -387,6 +404,7 @@ Add a one-way event channel. `main.ts` sends `window.webContents.send("frameforg
 ### Tests
 
 `tests/launchers.test.ts` has one `describe` per parser, using fixture files under `tests/fixtures/launchers/`:
+
 - `.GamingRoot` binary: create it in the test with a `Buffer`;
 - `MicrosoftGame.config` (with and without `ms-resource`);
 - Riot yaml (a live one, a PBE one, and one without the install line);
@@ -406,19 +424,20 @@ Also cover: dedupe across sources by path, path escape rejected, oversized files
 
 ### Modes and mechanisms
 
-| Mechanism | Off | Balanced | Performance | Competitive | Custom |
-|---|---|---|---|---|---|
-| Windows Game Mode on (HKCU `Software\Microsoft\GameBar` `AutoGameModeEnabled`=1, `AllowAutoGameMode`=1) | – | ✓ | ✓ | ✓ | toggle |
-| Game process priority | – | AboveNormal | High | High | Normal/AboveNormal/High |
-| Game affinity (custom logical CPU list) | – | – | – | – | toggle + CPU checkboxes |
-| Power plan → High performance (`8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c`), or Ultimate (`e9a42b02-d5df-448d-aa00-03f14749eb61`) **only if already present** | – | – | ✓ | ✓ | toggle |
-| Lower user-selected background processes to BelowNormal | – | – | ✓ | ✓ | toggle |
-| Suspend user-selected background processes | – | – | – | ✓ | toggle |
-| Close user-selected background processes (not reopened; stated in UI) | – | – | – | – | toggle, off by default |
-| High timer resolution | – | – | – | if supported | toggle if supported |
-| Standby-list purge | **unsupported**: needs admin + `SeProfileSingleProcessPrivilege`; listed as unsupported in UI and docs | | | | |
+| Mechanism                                                                                                                                                | Off                                                                                                    | Balanced    | Performance | Competitive  | Custom                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------- | ----------- | ------------ | ----------------------- |
+| Windows Game Mode on (HKCU `Software\Microsoft\GameBar` `AutoGameModeEnabled`=1, `AllowAutoGameMode`=1)                                                  | –                                                                                                      | ✓           | ✓           | ✓            | toggle                  |
+| Game process priority                                                                                                                                    | –                                                                                                      | AboveNormal | High        | High         | Normal/AboveNormal/High |
+| Game affinity (custom logical CPU list)                                                                                                                  | –                                                                                                      | –           | –           | –            | toggle + CPU checkboxes |
+| Power plan → High performance (`8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c`), or Ultimate (`e9a42b02-d5df-448d-aa00-03f14749eb61`) **only if already present** | –                                                                                                      | –           | ✓           | ✓            | toggle                  |
+| Lower user-selected background processes to BelowNormal                                                                                                  | –                                                                                                      | –           | ✓           | ✓            | toggle                  |
+| Suspend user-selected background processes                                                                                                               | –                                                                                                      | –           | –           | ✓            | toggle                  |
+| Close user-selected background processes (not reopened; stated in UI)                                                                                    | –                                                                                                      | –           | –           | –            | toggle, off by default  |
+| High timer resolution                                                                                                                                    | –                                                                                                      | –           | –           | if supported | toggle if supported     |
+| Standby-list purge                                                                                                                                       | **unsupported**: needs admin + `SeProfileSingleProcessPrivilege`; listed as unsupported in UI and docs |             |             |              |                         |
 
 Rules:
+
 - RealTime priority is never used.
 - The power plan allowlist is High performance, Ultimate (if present), and the user's previous plan for restore only. Use `powrprof.dll` `PowerGetActiveScheme`, `PowerSetActiveScheme` and `PowerEnumerate`. These are the same APIs `powercfg /setactive` uses, need no admin and need no process spawn.
 - If the target GUID is absent (common on Modern Standby machines with Balanced only), the mechanism reports `unavailable: "High performance plan not present"`. Never `duplicatescheme` without explicit consent; that is out of scope.
@@ -490,15 +509,15 @@ The per-call helper exits after each reply. A boost needs a process that lives a
 
 ### IPC (replacing `boostTargets`, `boostStart`, `boostStop`, `gameMode`)
 
-| Method | Request | Response |
-|---|---|---|
-| `boostStatus` | `Empty` | `{session: BoostSession\|null, capabilities: BoostCapabilitiesSchema, watching: boolean}` |
-| `boostConfig` | `StateSchema.shape.booster` | `StateSchema` |
-| `boostStart` | `{gameId, confirmed: true}` (the engine finds the running process; error "Start the game first" if none) | `BoostSessionSchema` |
-| `boostStop` | `{confirmed: true}` | `BoostSessionSchema.nullable()` |
-| `boostRecover` | `{confirmed: true}` | `BoostSessionSchema.nullable()` |
-| `runningProcesses` | `Empty` | `z.array({image, pid, protected: boolean})`, for the background-list picker; denylisted entries are flagged and not selectable |
-| `profile` | gains `boostMode` | |
+| Method             | Request                                                                                                  | Response                                                                                                                       |
+| ------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `boostStatus`      | `Empty`                                                                                                  | `{session: BoostSession\|null, capabilities: BoostCapabilitiesSchema, watching: boolean}`                                      |
+| `boostConfig`      | `StateSchema.shape.booster`                                                                              | `StateSchema`                                                                                                                  |
+| `boostStart`       | `{gameId, confirmed: true}` (the engine finds the running process; error "Start the game first" if none) | `BoostSessionSchema`                                                                                                           |
+| `boostStop`        | `{confirmed: true}`                                                                                      | `BoostSessionSchema.nullable()`                                                                                                |
+| `boostRecover`     | `{confirmed: true}`                                                                                      | `BoostSessionSchema.nullable()`                                                                                                |
+| `runningProcesses` | `Empty`                                                                                                  | `z.array({image, pid, protected: boolean})`, for the background-list picker; denylisted entries are flagged and not selectable |
+| `profile`          | gains `boostMode`                                                                                        |                                                                                                                                |
 
 `bootstrap.boost` becomes `{session, available, watching}`.
 
@@ -534,6 +553,7 @@ The per-call helper exits after each reply. A boost needs a process that lives a
 - **UI test:** in demo mode, the mode selector renders and Start is disabled with a "desktop app required" reason.
 
 **Acceptance:** GC-12. Manual checks with a real game (for example the Steam app 1304930) in `npm run dev:desktop`:
+
 1. In Performance mode, Task Manager shows the game at High priority and `powercfg /getactivescheme` shows High performance (or the UI shows "unavailable" with a reason).
 2. The selected background exe is at Below normal.
 3. Closing the game restores everything, and the activity log shows the reverts.

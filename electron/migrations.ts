@@ -29,7 +29,9 @@ CREATE INDEX operations_at ON operations(at DESC);
       "CREATE TABLE boost_sessions (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL, message TEXT NOT NULL, payload TEXT NOT NULL);",
     );
     for (const table of ["configuration", "backups"])
-      for (const row of db.prepare(`SELECT rowid AS rid, payload FROM ${table}`).all())
+      for (const row of db
+        .prepare(`SELECT rowid AS rid, payload FROM ${table}`)
+        .all())
         db.prepare(`UPDATE ${table} SET payload=? WHERE rowid=?`).run(
           moveExecutablePaths(String(row.payload)),
           row.rid as number,
