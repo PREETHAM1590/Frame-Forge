@@ -1029,6 +1029,14 @@ dd {
   line-height: 1.7;
   margin: 17px 0;
 }
+.restore-status,
+.restore-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

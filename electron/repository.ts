@@ -167,6 +167,43 @@ export class Repository {
         JSON.stringify([]),
       );
   }
+  /** Journal row for a non-registry Windows change; never offered as a registry rollback. */
+  journal(label: string, snapshot: unknown, message: string): string {
+    const id = randomUUID();
+    this.db
+      .prepare(
+        "INSERT INTO operations(id,label,at,status,message,ids,snapshot,rollback) VALUES(?,?,?,'running',?,'[]',?,0)",
+      )
+      .run(
+        id,
+        label,
+        new Date().toISOString(),
+        message,
+        JSON.stringify(snapshot),
+      );
+    return id;
+  }
+  pendingJournal(label: string): { id: string; snapshot: unknown } | null {
+    const row = this.db
+      .prepare(
+        "SELECT id, snapshot FROM operations WHERE label=? AND status IN ('running','recovery-needed') ORDER BY at DESC, rowid DESC LIMIT 1",
+      )
+      .get(label);
+    return row
+      ? { id: String(row.id), snapshot: JSON.parse(String(row.snapshot)) }
+      : null;
+  }
+  meta(key: string): unknown {
+    const row = this.db.prepare("SELECT value FROM meta WHERE key=?").get(key);
+    return row ? JSON.parse(String(row.value)) : null;
+  }
+  setMeta(key: string, value: unknown): void {
+    this.db
+      .prepare(
+        "INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      )
+      .run(key, JSON.stringify(value));
+  }
   activity(): Activity[] {
     return this.db
       .prepare(

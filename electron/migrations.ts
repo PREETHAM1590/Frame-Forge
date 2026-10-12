@@ -37,4 +37,5 @@ CREATE INDEX operations_at ON operations(at DESC);
           row.rid as number,
         );
   },
+  "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
 ];

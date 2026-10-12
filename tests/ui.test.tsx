@@ -39,4 +39,22 @@ describe("configuration and safety UI", () => {
     );
     expect(await screen.findByText("My configuration")).toBeVisible();
   });
+  it("separates Windows System Restore from app backups and disables demo creation", async () => {
+    render(<App />);
+    await screen.findByText("Your setup, in focus.");
+    fireEvent.click(screen.getByRole("button", { name: "Restore & backups" }));
+    expect(
+      screen.getByRole("heading", {
+        name: "Windows System Restore (whole-PC recovery)",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "App configuration backups" }),
+    ).toBeVisible();
+    const create = screen.getByRole("button", { name: "Create restore point" });
+    expect(create).toBeDisabled();
+    expect(create).toHaveAccessibleDescription(
+      "Windows System Restore requires the desktop app.",
+    );
+  });
 });

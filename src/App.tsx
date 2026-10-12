@@ -36,6 +36,11 @@ import { Optimizations, Presets } from "./views/Optimizations";
 import { Games, GameMode } from "./views/Games";
 import { Backups, ActivityLog } from "./views/Recovery";
 import { System, Settings } from "./views/System";
+const dayMs = 24 * 60 * 60 * 1000;
+const changeKey = (changes: Preview["changes"]) =>
+  JSON.stringify(changes.map((c) => [c.setting, c.before, c.after]));
+const sameChanges = (a: Preview["changes"], b: Preview["changes"]) =>
+  changeKey(a) === changeKey(b);
 const navigation = [
   { name: "Dashboard", icon: LayoutDashboard },
   { name: "Optimizations", icon: SlidersHorizontal },
@@ -62,6 +67,9 @@ export default function App() {
   const [confirmed, setConfirmed] = useState(false);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState<Activity | null>(null);
+  const [restoreOffer, setRestoreOffer] = useState(false);
+  const [createPoint, setCreatePoint] = useState(false);
+  const [noPoint, setNoPoint] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
       setData(await request("bootstrap", {}));
@@ -141,9 +149,18 @@ export default function App() {
     setPreview(null);
     setResult(null);
     setConfirmed(false);
+    setNoPoint(null);
+    setRestoreOffer(false);
     if (!data || ids.some((id) => !data.capabilities.includes(id))) return;
     setPreviewLoading(true);
     try {
+      const restore = await request("restoreStatus", {}).catch(() => null);
+      const offer =
+        !!restore &&
+        restore.protection !== "disabled" &&
+        !restore.policyDisabled;
+      setRestoreOffer(offer);
+      setCreatePoint(offer);
       setPreview(await request("preview", { ids }));
     } catch (e) {
       setNotice({
@@ -152,6 +169,57 @@ export default function App() {
       });
     } finally {
       setPreviewLoading(false);
+    }
+  }
+  // A restore point can outlast the preview token, so re-preview and only apply unchanged values.
+  async function applyChanges(withPoint: boolean, refresh: boolean) {
+    if (!preview || !selection) return;
+    setApplying(true);
+    setNoPoint(null);
+    try {
+      let token = preview.token;
+      if (withPoint) {
+        const point = await run("createRestorePoint", {
+          name: `Frameforge ${new Date().toLocaleDateString("en-CA")}`,
+          confirmed: true,
+          bypassThrottle: false,
+        });
+        const covered =
+          point?.outcome === "created" ||
+          (point?.outcome === "throttled" &&
+            !!point.lastPoint &&
+            Date.now() - Date.parse(point.lastPoint.createdAt) < dayMs);
+        if (!covered) {
+          setNoPoint(point?.message ?? "The restore point was not created.");
+          return;
+        }
+      }
+      if (withPoint || refresh) {
+        const fresh = await request("preview", { ids: selection });
+        if (!sameChanges(fresh.changes, preview.changes)) {
+          setPreview(fresh);
+          setConfirmed(false);
+          setNotice({
+            text: "Windows values changed meanwhile. Review the new preview before applying.",
+            error: true,
+          });
+          return;
+        }
+        token = fresh.token;
+      }
+      const output = await run("confirm", { token, confirmed: true });
+      if (output) setResult(output);
+      else {
+        setPreview(null);
+        setConfirmed(false);
+      }
+    } catch (e) {
+      setNotice({
+        text: e instanceof Error ? e.message : "Preview failed.",
+        error: true,
+      });
+    } finally {
+      setApplying(false);
     }
   }
   if (!data)
@@ -405,9 +473,22 @@ export default function App() {
                     </p>
                   ))}
                   <p className="muted">
-                    Preview expires {formatTime(preview.expiresAt)}. No
-                    elevation or restart required.
+                    Preview expires {formatTime(preview.expiresAt)}.{" "}
+                    {restoreOffer && createPoint
+                      ? "Creating the restore point shows a Windows administrator prompt."
+                      : "No elevation or restart required."}
                   </p>
+                  {restoreOffer && (
+                    <label className="confirm-check">
+                      <input
+                        type="checkbox"
+                        checked={createPoint}
+                        disabled={applying}
+                        onChange={(e) => setCreatePoint(e.target.checked)}
+                      />
+                      Create a Windows restore point first
+                    </label>
+                  )}
                   <label className="confirm-check">
                     <input
                       type="checkbox"
@@ -426,6 +507,27 @@ export default function App() {
                   published Windows helper to check prerequisites.
                 </div>
               )}
+              {noPoint && (
+                <div className="notice" role="alert">
+                  <AlertTriangle size={18} />
+                  <div>
+                    <strong>Apply without a restore point?</strong>
+                    <p>{noPoint}</p>
+                    <div className="dialog-actions">
+                      <Button onClick={() => setSelection(null)}>
+                        Don&apos;t apply
+                      </Button>
+                      <Button
+                        variant="danger"
+                        disabled={applying}
+                        onClick={() => void applyChanges(false, true)}
+                      >
+                        Apply without a restore point
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="dialog-actions">
                 {applying ? (
                   <Button onClick={() => void run("cancel", {})}>
@@ -439,20 +541,9 @@ export default function App() {
                   disabled={
                     !preview || !confirmed || applying || previewLoading
                   }
-                  onClick={async () => {
-                    if (!preview) return;
-                    setApplying(true);
-                    const output = await run("confirm", {
-                      token: preview.token,
-                      confirmed: true,
-                    });
-                    setApplying(false);
-                    if (output) setResult(output);
-                    else {
-                      setPreview(null);
-                      setConfirmed(false);
-                    }
-                  }}
+                  onClick={() =>
+                    void applyChanges(restoreOffer && createPoint, false)
+                  }
                 >
                   {applying ? (
                     <Busy label="Applying and verifying" />

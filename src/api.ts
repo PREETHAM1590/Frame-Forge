@@ -181,14 +181,23 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
       throw new Error("The native file picker requires the desktop app.");
     case "detectGames":
       throw new Error("Installed game detection requires the desktop app.");
+    case "restoreStatus":
+      return {
+        protection: "unknown",
+        policyDisabled: false,
+        frequency: { existed: false, minutes: null },
+        elevated: false,
+        systemDrive: "C:",
+        lastAppCreatedAt: null,
+        pendingFrequencyRecovery: false,
+        message: "Windows System Restore requires the desktop app.",
+      };
     case "restorePoints":
     case "createRestorePoint":
-      return {
-        points: [],
-        available: false,
-        createdSequence: null,
-        message: "Windows restore points are unavailable in browser demo mode.",
-      };
+    case "enableSystemProtection":
+    case "recoverRestoreFrequency":
+    case "openSystemRestore":
+      throw new Error("Windows System Restore requires the desktop app.");
     case "boostTargets":
     case "boostStart":
     case "boostStop":

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { existsSync, mkdirSync } from "node:fs";
@@ -60,6 +60,16 @@ if (!app.requestSingleInstanceLock()) {
           app.setLoginItemSettings({ openAtLogin: enabled });
         },
         detectGames: () => detectInstalledGames(),
+        // Fixed path, no renderer input; ShellExecute handles rstrui's own elevation.
+        openSystemRestore: async () =>
+          process.platform === "win32" &&
+          (await shell.openPath(
+            path.join(
+              process.env.SystemRoot ?? "C:\\Windows",
+              "System32",
+              "rstrui.exe",
+            ),
+          )) === "",
         pickGame: async () => {
           if (!window) return null;
           const result = await dialog.showOpenDialog(window, {

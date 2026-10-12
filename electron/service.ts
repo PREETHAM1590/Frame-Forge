@@ -14,14 +14,9 @@ import {
 import { Repository } from "./repository.js";
 import { OperationEngine } from "./operations.js";
 import { BoostEngine } from "./booster.js";
+import { RestorePointService } from "./restore.js";
 import type { DetectionResult } from "./games.js";
 import { fallbackHardware, type Platform } from "./platform.js";
-const restorePointsUnavailable = {
-  points: [],
-  available: false,
-  createdSequence: null,
-  message: "Windows restore points are not available in this build yet.",
-};
 type Handlers = { [M in Method]: (input: Request<M>) => Promise<Response<M>> };
 export interface DesktopServices {
   pickGame: () => Promise<Game | null>;
@@ -29,15 +24,19 @@ export interface DesktopServices {
   setStartup: (enabled: boolean) => void;
   version: string;
   startupSupported?: boolean;
+  openSystemRestore?: () => Promise<boolean>;
 }
 export class AppService {
   private engine: OperationEngine;
   private booster: BoostEngine;
+  private restorePoints: RestorePointService;
   private hardware: Hardware = fallbackHardware();
   private loggingFailed = false;
   private handlers: Handlers;
   get isBusy() {
-    return this.engine.isBusy || this.booster.isBusy;
+    return (
+      this.engine.isBusy || this.booster.isBusy || this.restorePoints.isBusy
+    );
   }
   constructor(
     private repo: Repository,
@@ -46,6 +45,7 @@ export class AppService {
   ) {
     this.engine = new OperationEngine(repo, platform);
     this.booster = new BoostEngine(repo, platform);
+    this.restorePoints = new RestorePointService(repo, platform);
     const guard = () => {
       if (this.engine.isBusy)
         throw new Error("Wait for the Windows operation to finish.");
@@ -142,8 +142,22 @@ export class AppService {
           launchers: result.launchers,
         };
       },
-      restorePoints: async () => restorePointsUnavailable,
-      createRestorePoint: async () => restorePointsUnavailable,
+      restoreStatus: async () => this.restorePoints.status(),
+      restorePoints: async () => this.restorePoints.list(),
+      createRestorePoint: async ({ name, bypassThrottle }) => {
+        guard();
+        return this.restorePoints.create(name, bypassThrottle);
+      },
+      enableSystemProtection: async () => {
+        guard();
+        return this.restorePoints.enable();
+      },
+      recoverRestoreFrequency: async () => {
+        guard();
+        return this.restorePoints.recoverFrequency();
+      },
+      openSystemRestore: async () =>
+        (await this.desktop.openSystemRestore?.()) ?? false,
       boostTargets: async ({ gameId }) => {
         guard();
         const game = this.repo.state().games.find((g) => g.id === gameId);
