@@ -2,6 +2,10 @@ import { spawn } from "node:child_process";
 import os from "node:os";
 import {
   HelperResult,
+  type CreateRestorePointResult,
+  type Frequency,
+  type HelperRestoreStatus,
+  type RestorePoints,
   type Game,
   type Hardware,
   type OperationId,
@@ -23,7 +27,60 @@ export interface Platform {
   gameProcesses(game: Game): Promise<ProcessTarget[]>;
   boostStart(expected: ProcessTarget): Promise<ProcessTarget>;
   boostStop(snapshot: ProcessTarget): Promise<string>;
+  restoreStatus(): Promise<PlatformRestoreStatus>;
+  restoreList(): Promise<RestorePoints>;
+  restoreCreate(
+    name: string,
+    bypass: boolean,
+    original: Frequency,
+  ): Promise<PlatformCreateResult>;
+  /** Null when the administrator prompt was declined. */
+  restoreEnable(drive: string): Promise<PlatformRestoreStatus | null>;
+  restoreFrequencySet(
+    original: Frequency,
+  ): Promise<PlatformRestoreStatus | null>;
+  /** Result of an elevated creation that outlived the helper's wait; null while still running. */
+  restoreResult(resultPath: string): Promise<PlatformCreateResult | null>;
 }
+export type PlatformRestoreStatus = HelperRestoreStatus & { message: string };
+export type PlatformCreateResult = CreateRestorePointResult & {
+  frequencyRestored: boolean | null;
+  resultPath: string | null;
+};
+type HelperOutput = ReturnType<typeof HelperResult.parse>;
+// Covers the UAC prompt plus the helper's 150 s wait (which itself covers the child's 120 s create).
+const elevatedTimeout = 330000;
+const stillRunning =
+  "Windows is still creating the restore point. Frameforge checks the result when Restore & backups refreshes.";
+function createResultOf(result: HelperOutput): PlatformCreateResult {
+  const pending = result.code === "elevated-pending";
+  const outcome = cancelled(result)
+    ? "elevation-cancelled"
+    : pending
+      ? "pending"
+      : result.code === "elevated-missing"
+        ? "failed"
+        : result.outcome;
+  if (!outcome) throw new Error("Missing restore point result");
+  return {
+    outcome,
+    point: result.point ?? null,
+    lastPoint: result.lastPoint ?? null,
+    message: pending ? stillRunning : result.message,
+    frequencyRestored: result.frequencyRestored ?? null,
+    resultPath: result.resultPath ?? null,
+  };
+}
+function restoreStatusOf(result: HelperOutput): PlatformRestoreStatus {
+  if (!result.restoreStatus) throw new Error("Missing restore status");
+  return { ...result.restoreStatus, message: result.message };
+}
+const cancelled = (result: HelperOutput) =>
+  result.code === "elevation-cancelled";
+const frequencyArgs = (f: Frequency) => [
+  f.existed ? "1" : "0",
+  String(f.minutes ?? -1),
+];
 export class WindowsPlatform implements Platform {
   capabilities: OperationId[] = ["mouse-precision", "capture-off"];
   boostAvailable = true;
@@ -150,6 +207,74 @@ export class WindowsPlatform implements Platform {
     return (await this.call({ command: "boost-stop", target: snapshot }))
       .message;
   }
+  // GC-7: the helper elevates itself; the Node side never builds a command line.
+  private elevated(action: string, args: string[]) {
+    return this.call(
+      { command: "elevated", elevated: { action, args } },
+      undefined,
+      elevatedTimeout,
+    );
+  }
+  async restoreStatus() {
+    return restoreStatusOf(await this.call({ command: "restore-status" }));
+  }
+  async restoreList(): Promise<RestorePoints> {
+    const result = await this.elevated("restore-list", []);
+    return {
+      points: result.restorePoints ?? [],
+      available: !cancelled(result) && result.available === true,
+      message: result.message,
+      createdSequence: null,
+    };
+  }
+  async restoreCreate(
+    name: string,
+    bypass: boolean,
+    original: Frequency,
+  ): Promise<PlatformCreateResult> {
+    try {
+      return createResultOf(
+        await this.elevated("restore-create", [
+          name,
+          bypass ? "1" : "0",
+          ...frequencyArgs(original),
+        ]),
+      );
+    } catch (error) {
+      // The elevated child may still finish; verify later instead of reporting failure.
+      if (
+        error instanceof Error &&
+        error.message === "Windows helper timed out."
+      )
+        return {
+          outcome: "pending",
+          point: null,
+          lastPoint: null,
+          message:
+            "Windows is still creating the restore point. Use Load restore points to verify it.",
+          frequencyRestored: null,
+          resultPath: null,
+        };
+      throw error;
+    }
+  }
+  async restoreResult(resultPath: string) {
+    const result = createResultOf(
+      await this.call({ command: "elevated-result", resultPath }),
+    );
+    return result.outcome === "pending" ? null : result;
+  }
+  async restoreEnable(drive: string) {
+    const result = await this.elevated("restore-enable", [drive]);
+    return cancelled(result) ? null : restoreStatusOf(result);
+  }
+  async restoreFrequencySet(original: Frequency) {
+    const result = await this.elevated(
+      "restore-frequency-set",
+      frequencyArgs(original),
+    );
+    return cancelled(result) ? null : restoreStatusOf(result);
+  }
 }
 export function fallbackHardware(
   warning = "Windows helper unavailable. Only runtime readings are shown.",
@@ -211,4 +336,47 @@ export class MockPlatform implements Platform {
   async boostStop(): Promise<string> {
     throw new Error("Game booster is unavailable.");
   }
+  async restoreStatus(): Promise<PlatformRestoreStatus> {
+    return {
+      protection: "unknown",
+      policyDisabled: false,
+      frequency: { existed: false, minutes: null },
+      elevated: false,
+      systemDrive: "C:",
+      message: restoreUnavailable,
+    };
+  }
+  async restoreList(): Promise<RestorePoints> {
+    return {
+      points: [],
+      available: false,
+      createdSequence: null,
+      message: restoreUnavailable,
+    };
+  }
+  // Overload signatures keep the full shape for test subclasses.
+  restoreCreate(
+    name: string,
+    bypass: boolean,
+    original: Frequency,
+  ): Promise<PlatformCreateResult>;
+  async restoreCreate(): Promise<PlatformCreateResult> {
+    throw new Error(restoreUnavailable);
+  }
+  restoreEnable(drive: string): Promise<PlatformRestoreStatus | null>;
+  async restoreEnable(): Promise<PlatformRestoreStatus | null> {
+    throw new Error(restoreUnavailable);
+  }
+  restoreFrequencySet(
+    original: Frequency,
+  ): Promise<PlatformRestoreStatus | null>;
+  async restoreFrequencySet(): Promise<PlatformRestoreStatus | null> {
+    throw new Error(restoreUnavailable);
+  }
+  restoreResult(resultPath: string): Promise<PlatformCreateResult | null>;
+  async restoreResult(): Promise<PlatformCreateResult | null> {
+    return null;
+  }
 }
+const restoreUnavailable =
+  "Windows System Restore needs the Windows helper, which is not available in this build.";

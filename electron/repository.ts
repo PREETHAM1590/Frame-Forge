@@ -14,6 +14,16 @@ import {
 } from "../shared/contracts.js";
 import { migrations } from "./migrations.js";
 type Row = Record<string, unknown>;
+export const restoreLabels = {
+  override: "Restore point throttle override",
+  pending: "Restore point pending verification",
+} as const;
+const restoreRecovery: Record<string, string> = {
+  [restoreLabels.override]:
+    "The app stopped while the Windows restore point limit was lifted. Open Restore & backups and choose Restore the original limit.",
+  [restoreLabels.pending]:
+    "The app stopped while Windows was creating a restore point. Open Restore & backups to check it.",
+};
 export class Repository {
   private db: DatabaseSync;
   constructor(file: string) {
@@ -167,6 +177,43 @@ export class Repository {
         JSON.stringify([]),
       );
   }
+  /** Journal row for a non-registry Windows change; never offered as a registry rollback. */
+  journal(label: string, snapshot: unknown, message: string): string {
+    const id = randomUUID();
+    this.db
+      .prepare(
+        "INSERT INTO operations(id,label,at,status,message,ids,snapshot,rollback) VALUES(?,?,?,'running',?,'[]',?,0)",
+      )
+      .run(
+        id,
+        label,
+        new Date().toISOString(),
+        message,
+        JSON.stringify(snapshot),
+      );
+    return id;
+  }
+  pendingJournal(label: string): { id: string; snapshot: unknown } | null {
+    const row = this.db
+      .prepare(
+        "SELECT id, snapshot FROM operations WHERE label=? AND status IN ('running','recovery-needed') ORDER BY at DESC, rowid DESC LIMIT 1",
+      )
+      .get(label);
+    return row
+      ? { id: String(row.id), snapshot: JSON.parse(String(row.snapshot)) }
+      : null;
+  }
+  meta(key: string): unknown {
+    const row = this.db.prepare("SELECT value FROM meta WHERE key=?").get(key);
+    return row ? JSON.parse(String(row.value)) : null;
+  }
+  setMeta(key: string, value: unknown): void {
+    this.db
+      .prepare(
+        "INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      )
+      .run(key, JSON.stringify(value));
+  }
   activity(): Activity[] {
     return this.db
       .prepare(
@@ -196,6 +243,13 @@ export class Repository {
       : null;
   }
   recoverInterrupted(): void {
+    // Restore point rows are resolved on Restore & backups, not by a registry snapshot.
+    for (const [label, message] of Object.entries(restoreRecovery))
+      this.db
+        .prepare(
+          "UPDATE operations SET status='recovery-needed',message=? WHERE status='running' AND label=?",
+        )
+        .run(message, label);
     this.db
       .prepare(
         "UPDATE operations SET status='recovery-needed',message='The app stopped during this operation. Inspect and restore the saved Windows snapshot.' WHERE status='running'",

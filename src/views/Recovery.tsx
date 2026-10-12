@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Archive,
   Plus,
@@ -7,6 +7,8 @@ import {
   AlertTriangle,
   Trash2,
   History,
+  ShieldCheck,
+  Info,
 } from "lucide-react";
 import {
   PageTitle,
@@ -16,9 +18,328 @@ import {
   Modal,
   formatTime,
 } from "../components/ui";
-import type { Backup, Activity } from "../../shared/contracts";
+import {
+  RestoreDescription,
+  type Backup,
+  type Activity,
+  type CreateRestorePointResult,
+  type RestorePoints,
+  type RestoreStatus,
+} from "../../shared/contracts";
+import { request } from "../api";
 import type { ViewProps } from "../types";
-export function Backups({ data, run, pending }: ViewProps) {
+const dayMs = 24 * 60 * 60 * 1000;
+function WindowsRestore({ data, run, pending }: ViewProps) {
+  const [status, setStatus] = useState<RestoreStatus | null>(null);
+  const [statusError, setStatusError] = useState("");
+  const [name, setName] = useState<string | null>(null);
+  const [lastName, setLastName] = useState("");
+  const [result, setResult] = useState<CreateRestorePointResult | null>(null);
+  const [points, setPoints] = useState<RestorePoints | null>(null);
+  const [enabling, setEnabling] = useState(false);
+  const [openFailed, setOpenFailed] = useState(false);
+  const [recent, setRecent] = useState<string | null>(null);
+  async function refresh() {
+    try {
+      setStatus(await request("restoreStatus", {}));
+      setStatusError("");
+    } catch (e) {
+      setStatusError(
+        e instanceof Error ? e.message : "System Restore status unavailable.",
+      );
+    }
+  }
+  useEffect(() => {
+    let active = true;
+    void request("restoreStatus", {})
+      .then((value) => active && setStatus(value))
+      .catch(
+        (e) =>
+          active &&
+          setStatusError(
+            e instanceof Error
+              ? e.message
+              : "System Restore status unavailable.",
+          ),
+      );
+    return () => {
+      active = false;
+    };
+  }, []);
+  const blocked =
+    data.mode === "demo"
+      ? "Windows System Restore requires the desktop app."
+      : status?.policyDisabled
+        ? status.message
+        : null;
+  const drive = status?.systemDrive ?? "C:";
+  function openNameDialog() {
+    const last = status?.lastAppCreatedAt;
+    setRecent(last && Date.now() - Date.parse(last) < dayMs ? last : null);
+    setName(`Frameforge ${new Date().toLocaleDateString("en-CA")}`);
+  }
+  async function create(description: string, bypassThrottle: boolean) {
+    setLastName(description);
+    const output = await run("createRestorePoint", {
+      name: description,
+      confirmed: true,
+      bypassThrottle,
+    });
+    if (output) setResult(output);
+    await refresh();
+  }
+  const validName = name !== null && RestoreDescription.safeParse(name).success;
+  return (
+    <section className="settings-section">
+      <h2>
+        <ShieldCheck size={19} />
+        Windows System Restore (whole-PC recovery)
+      </h2>
+      <div className="restore-status">
+        {status ? (
+          <>
+            <Badge
+              tone={
+                status.protection === "enabled"
+                  ? "lime"
+                  : status.protection === "disabled"
+                    ? "red"
+                    : "neutral"
+              }
+            >
+              Protection {status.protection}
+            </Badge>
+            {status.policyDisabled && (
+              <Badge tone="red">Blocked by policy</Badge>
+            )}
+            <span className="muted">{status.message}</span>
+          </>
+        ) : (
+          <span className="muted">
+            {statusError || "Reading System Restore status"}
+          </span>
+        )}
+      </div>
+      {status?.pendingFrequencyRecovery && (
+        <div className="notice" role="alert">
+          <AlertTriangle size={18} />
+          <div>
+            A temporary change to the Windows restore point limit was not
+            confirmed as undone.
+            <div className="restore-actions">
+              <Button
+                disabled={pending}
+                onClick={async () => {
+                  const output = await run(
+                    "recoverRestoreFrequency",
+                    { confirmed: true },
+                    "Restore point frequency checked.",
+                  );
+                  if (output) setStatus(output);
+                }}
+              >
+                <RotateCcw size={16} />
+                Restore the original limit
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {status?.pendingCreation && (
+        <div className="notice" role="status">
+          <Info size={18} />
+          <div>
+            Windows may still be creating a restore point requested earlier.
+            Check again, or use Load restore points to verify it.
+            <div className="restore-actions">
+              <Button disabled={pending} onClick={() => void refresh()}>
+                <RotateCcw size={16} />
+                Check again
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="restore-actions">
+        <Button
+          variant="primary"
+          aria-describedby={blocked ? "restore-blocked" : undefined}
+          disabled={pending || !!blocked || !status}
+          onClick={openNameDialog}
+        >
+          <Plus size={17} />
+          Create restore point
+        </Button>
+        <Button
+          disabled={pending || !!blocked}
+          onClick={async () => {
+            const output = await run("restorePoints", {});
+            if (output) setPoints(output);
+            await refresh();
+          }}
+        >
+          Load restore points
+        </Button>
+        <Button
+          disabled={pending || data.mode === "demo"}
+          onClick={async () =>
+            setOpenFailed((await run("openSystemRestore", {})) === false)
+          }
+        >
+          <ArrowUpRight size={16} />
+          Open Windows System Restore
+        </Button>
+      </div>
+      {blocked && (
+        <p className="muted" id="restore-blocked">
+          {blocked}
+        </p>
+      )}
+      {openFailed && (
+        <p className="muted">Windows System Restore could not be opened.</p>
+      )}
+      {result && (
+        <div className="notice" role="status">
+          {result.outcome === "created" ||
+          result.outcome === "pending" ||
+          result.outcome === "elevation-cancelled" ? (
+            <Info size={18} />
+          ) : (
+            <AlertTriangle size={18} />
+          )}
+          <div>
+            {result.message}
+            {result.outcome === "throttled" && (
+              <div className="restore-actions">
+                <Button
+                  variant="danger"
+                  disabled={pending}
+                  onClick={() => void create(lastName, true)}
+                >
+                  Create anyway (temporarily lifts the limit, then restores it)
+                </Button>
+              </div>
+            )}
+            {(result.outcome === "protection-disabled" ||
+              result.outcome === "failed") && (
+              <div className="restore-actions">
+                <Button disabled={pending} onClick={() => setEnabling(true)}>
+                  Turn on System Protection for {drive}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {points &&
+        (points.available && points.points.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Sequence</th>
+                  <th>Description</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {points.points.map((p) => (
+                  <tr key={p.sequence}>
+                    <td>{p.sequence}</td>
+                    <td>{p.description}</td>
+                    <td>{formatTime(p.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted">{points.message}</p>
+        ))}
+      {name !== null && (
+        <Modal
+          title="Create Windows restore point"
+          description="Windows will show an administrator prompt. Creating a restore point can take a few minutes."
+          onClose={() => setName(null)}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const description = name.trim();
+              setName(null);
+              void create(description, false);
+            }}
+          >
+            <label className="field">
+              Restore point name
+              <input
+                autoFocus
+                required
+                maxLength={64}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </label>
+            {!validName && (
+              <p className="muted">
+                Use up to 64 letters, numbers, spaces, dots, underscores,
+                brackets or hyphens.
+              </p>
+            )}
+            {recent && (
+              <div className="notice">
+                <AlertTriangle size={18} />
+                Frameforge created a restore point at {formatTime(recent)}.
+                Windows usually skips another one within 24 hours.
+              </div>
+            )}
+            <div className="dialog-actions">
+              <Button type="button" onClick={() => setName(null)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={pending || !validName}
+              >
+                Create restore point
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+      {enabling && (
+        <Modal
+          title={`Turn on System Protection for ${drive}?`}
+          description={`Windows reserves part of ${drive} for restore points (usually a few percent of the drive) and deletes the oldest points when that space fills. Windows will show an administrator prompt.`}
+          onClose={() => setEnabling(false)}
+        >
+          <div className="dialog-actions">
+            <Button onClick={() => setEnabling(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={pending}
+              onClick={async () => {
+                setEnabling(false);
+                const output = await run("enableSystemProtection", {
+                  confirmed: true,
+                });
+                if (output) {
+                  setStatus(output);
+                  setResult(null);
+                }
+              }}
+            >
+              Turn on System Protection
+            </Button>
+          </div>
+        </Modal>
+      )}
+    </section>
+  );
+}
+export function Backups(props: ViewProps) {
+  const { data, run, pending } = props;
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<Backup | null>(null);
@@ -26,19 +347,26 @@ export function Backups({ data, run, pending }: ViewProps) {
     <>
       <PageTitle
         title="Restore & backups"
-        subtitle="Save your app configuration. Keep Windows recovery separate."
-        action={
+        subtitle="Windows whole-PC recovery and Frameforge configuration backups, kept separate."
+      />
+      <WindowsRestore {...props} />
+      <section className="settings-section">
+        <h2>
+          <Archive size={19} />
+          App configuration backups
+        </h2>
+        <div className="restore-actions">
           <Button variant="primary" onClick={() => setCreating(true)}>
             <Plus size={17} />
             Create backup
           </Button>
-        }
-      />
+        </div>
+      </section>
       <div className="notice">
         <Archive size={19} />
         These are app configuration backups, not Windows System Restore points.
-        Windows preferences are restored from their operation snapshots in
-        Activity.
+        They only cover Frameforge settings. Windows preferences are restored
+        from their operation snapshots in Activity.
       </div>
       {data.backups.length ? (
         <div className="table-wrap">
@@ -188,7 +516,12 @@ export function Backups({ data, run, pending }: ViewProps) {
     </>
   );
 }
-export function ActivityLog({ data, run, pending }: ViewProps) {
+/** Restore point journal rows are resolved on Restore & backups, not by a registry rollback. */
+export const restoreRecoveryRow = (a: Activity) =>
+  !a.rollback &&
+  a.label.startsWith("Restore point") &&
+  (a.status === "running" || a.status === "recovery-needed");
+export function ActivityLog({ data, run, pending, navigate }: ViewProps) {
   const [selected, setSelected] = useState<Activity | null>(null);
   const [filter, setFilter] = useState("All");
   const [clear, setClear] = useState(false);
@@ -254,6 +587,12 @@ export function ActivityLog({ data, run, pending }: ViewProps) {
                 <p className="muted">{a.message}</p>
                 <span className="muted">{formatTime(a.at)}</span>
               </div>
+              {restoreRecoveryRow(a) && (
+                <Button onClick={() => navigate("Restore & backups")}>
+                  <ArrowUpRight size={16} />
+                  Open Restore & backups
+                </Button>
+              )}
               {a.rollback && (
                 <Button disabled={pending} onClick={() => setSelected(a)}>
                   <RotateCcw size={16} />

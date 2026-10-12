@@ -184,6 +184,52 @@ export const RestorePointsSchema = z
   })
   .strict();
 export type RestorePoints = z.infer<typeof RestorePointsSchema>;
+export const RestoreDescription = z
+  .string()
+  .trim()
+  .regex(/^[\p{L}\p{N} ._()-]{1,64}$/u);
+export const FrequencySchema = z
+  .object({ existed: z.boolean(), minutes: z.number().int().nullable() })
+  .strict();
+export type Frequency = z.infer<typeof FrequencySchema>;
+// Subset the helper reads; the app adds its own journal state.
+export const HelperRestoreStatusSchema = z
+  .object({
+    protection: z.enum(["enabled", "disabled", "unknown"]),
+    policyDisabled: z.boolean(),
+    frequency: FrequencySchema,
+    elevated: z.boolean(),
+    systemDrive: z.string().regex(/^[A-Z]:$/),
+  })
+  .strict();
+export type HelperRestoreStatus = z.infer<typeof HelperRestoreStatusSchema>;
+export const RestoreStatusSchema = HelperRestoreStatusSchema.extend({
+  lastAppCreatedAt: z.string().nullable(),
+  pendingFrequencyRecovery: z.boolean(),
+  pendingCreation: z.boolean(),
+  message: z.string().max(1000),
+}).strict();
+export type RestoreStatus = z.infer<typeof RestoreStatusSchema>;
+export const RestoreOutcome = z.enum([
+  "created",
+  "throttled",
+  "protection-disabled",
+  "policy-disabled",
+  "elevation-cancelled",
+  "failed",
+  "pending",
+]);
+export const CreateRestorePointResultSchema = z
+  .object({
+    outcome: RestoreOutcome,
+    point: RestorePointSchema.nullable(),
+    lastPoint: RestorePointSchema.nullable(),
+    message: z.string().max(1000),
+  })
+  .strict();
+export type CreateRestorePointResult = z.infer<
+  typeof CreateRestorePointResultSchema
+>;
 export const DetectionSchema = z
   .object({
     games: z.array(GameSchema).max(500),
@@ -235,10 +281,18 @@ export const requests = {
   restore: z.object({ id: Id, confirmed: z.literal(true) }).strict(),
   addGame: Empty,
   detectGames: Empty,
+  restoreStatus: Empty,
   restorePoints: Empty,
   createRestorePoint: z
-    .object({ name: Name, confirmed: z.literal(true) })
+    .object({
+      name: RestoreDescription,
+      confirmed: z.literal(true),
+      bypassThrottle: z.boolean().default(false),
+    })
     .strict(),
+  enableSystemProtection: z.object({ confirmed: z.literal(true) }).strict(),
+  recoverRestoreFrequency: z.object({ confirmed: z.literal(true) }).strict(),
+  openSystemRestore: Empty,
   boostTargets: z.object({ gameId: Id }).strict(),
   boostStart: z
     .object({
@@ -273,8 +327,12 @@ export const responses = {
   restore: StateSchema,
   addGame: GameSchema.nullable(),
   detectGames: DetectionSchema,
+  restoreStatus: RestoreStatusSchema,
   restorePoints: RestorePointsSchema,
-  createRestorePoint: RestorePointsSchema,
+  createRestorePoint: CreateRestorePointResultSchema,
+  enableSystemProtection: RestoreStatusSchema,
+  recoverRestoreFrequency: RestoreStatusSchema,
+  openSystemRestore: z.boolean(),
   boostTargets: z.array(ProcessTargetSchema),
   boostStart: BoostSessionSchema,
   boostStop: BoostSessionSchema.nullable(),
@@ -332,6 +390,12 @@ export const HelperResult = z
     restorePoints: z.array(RestorePointSchema).optional(),
     createdSequence: z.number().int().nonnegative().nullable().optional(),
     available: z.boolean().optional(),
+    restoreStatus: HelperRestoreStatusSchema.optional(),
+    outcome: RestoreOutcome.optional(),
+    point: RestorePointSchema.optional(),
+    lastPoint: RestorePointSchema.optional(),
+    frequencyRestored: z.boolean().optional(),
+    resultPath: z.string().max(2048).optional(),
     processes: z.array(ProcessTargetSchema).optional(),
     boostSnapshot: ProcessTargetSchema.optional(),
   })
