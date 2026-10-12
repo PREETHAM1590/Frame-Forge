@@ -1,31 +1,89 @@
 import { randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
-import type { BoostSession, ProcessTarget } from "../shared/contracts.js";
+import {
+  SessionEventSchema,
+  modeMechanisms,
+  type BoostCapabilities,
+  type BoostMode,
+  type BoostSession,
+  type BoosterConfig,
+  type Captured,
+  type CustomMechanisms,
+  type Game,
+  type MechanismResult,
+  type ProcessTarget,
+} from "../shared/contracts.js";
 import type { Repository } from "./repository.js";
-import type { Platform } from "./platform.js";
+import {
+  capabilitiesUnavailable,
+  type Platform,
+  type SessionChannel,
+} from "./platform.js";
 const text = (error: unknown) =>
   (error instanceof Error ? error.message : "Unknown error").slice(0, 500);
+const key = (t: ProcessTarget) => `${t.pid}|${t.startTime}`;
+const delay = (ms: number) =>
+  new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
+export const modeLabels: Record<BoostMode, string> = {
+  off: "Off",
+  balanced: "Balanced",
+  performance: "Performance",
+  competitive: "Competitive",
+  custom: "Custom",
+};
+const endReasons = {
+  "game-exited": "the game exited",
+  stop: "it was stopped",
+  "parent-exited": "Frameforge closed",
+  "stdin-closed": "Frameforge closed",
+  "start-failed": "the boost could not start",
+} as const;
+type Live = {
+  channel: SessionChannel;
+  session: BoostSession;
+  captured: Captured[];
+  game: string;
+  ended: Promise<BoostSession>;
+};
 export class BoostEngine {
   private busy = false;
+  private live: Live | null = null;
+  private watcher: ReturnType<typeof setInterval> | undefined;
+  private polling = false;
+  private lastPollError = "";
+  private capabilities: { at: number; value: BoostCapabilities } | undefined;
+  // Process instances already auto-boosted (or stopped), so the watcher never restarts them.
+  private seen = new Set<string>();
   constructor(
     private repo: Repository,
     private platform: Platform,
+    private notify: (session: BoostSession) => void = () => {},
+    private timeouts = { start: 60000, stop: 15000 },
   ) {}
   get isBusy() {
     return this.busy;
   }
-  private save(
-    session: BoostSession,
-    status: BoostSession["status"],
-    message: string,
-  ) {
-    const next = { ...session, status, message: message.slice(0, 1000) };
-    this.repo.saveBoostSession(next);
+  get active() {
+    return this.live !== null;
+  }
+  get watching() {
+    return this.watcher !== undefined;
+  }
+  private save(session: BoostSession, captured: Captured[]) {
+    const next = { ...session, message: session.message.slice(0, 1000) };
+    this.repo.saveBoostSession(next, captured);
+    try {
+      this.notify(next);
+    } catch {
+      /* A closed window must not interrupt the session. */
+    }
     return next;
+  }
+  private update(live: Live, patch: Partial<BoostSession>) {
+    live.session = this.save({ ...live.session, ...patch }, live.captured);
   }
   private log(message: string, status: "success" | "failed" = "success") {
     try {
-      this.repo.log("Game booster", message, status);
+      this.repo.log("Game booster", message.slice(0, 1000), status);
     } catch {
       /* A logging failure must not hide the outcome of the Windows change. */
     }
@@ -39,88 +97,354 @@ export class BoostEngine {
       this.busy = false;
     }
   }
-  start(gameId: string, target: ProcessTarget): Promise<BoostSession> {
-    return this.exclusive(async () => {
-      const game = this.repo.state().games.find((g) => g.id === gameId);
-      if (!game) throw new Error("Game not found");
-      if (this.repo.boostSession())
-        throw new Error(
-          "Restore the current boosted game before starting another.",
-        );
-      const running = await this.platform.gameProcesses(game);
-      if (!running.some((p) => isDeepStrictEqual(p, target)))
-        throw new Error(
-          "The selected process is no longer a running target for this game. Find running processes again.",
-        );
-      if (target.priority !== "Normal")
-        throw new Error(
-          "Only a process running at Normal priority can be boosted.",
-        );
-      let session: BoostSession = {
-        id: randomUUID(),
-        gameId,
-        target,
-        startedAt: new Date().toISOString(),
-        status: "preparing",
-        message: "Original process priority saved; raising priority.",
-      };
-      this.repo.saveBoostSession(session);
+  async status(): Promise<{
+    session: BoostSession | null;
+    capabilities: BoostCapabilities;
+    watching: boolean;
+  }> {
+    // Plans and timer support rarely change; avoid a helper spawn on every page refresh.
+    if (!this.capabilities || Date.now() - this.capabilities.at > 30000) {
       try {
-        const snapshot = await this.platform.boostStart(target);
-        session = this.save(
-          { ...session, target: snapshot },
-          "active",
-          "Game priority raised to Above normal and verified.",
-        );
-        this.log(`${game.name}: priority raised to Above normal.`);
-        return session;
+        this.capabilities = {
+          at: Date.now(),
+          value: await this.platform.boostCapabilities(),
+        };
       } catch (error) {
-        try {
-          await this.platform.boostStop(target);
-        } catch (stopError) {
-          const failed = this.save(
-            session,
-            "recovery-needed",
-            `Boost failed (${text(error)}) and the original priority could not be confirmed: ${text(stopError)}`,
-          );
-          this.log(failed.message, "failed");
-          return failed;
-        }
-        this.save(session, "ended", `Boost failed: ${text(error)}`);
-        this.log(
-          `${game.name}: boost failed and nothing was changed. ${text(error)}`,
-          "failed",
-        );
-        throw error;
+        return {
+          session: this.live?.session ?? this.repo.boostSession(),
+          capabilities: capabilitiesUnavailable(
+            `The Windows helper failed: ${text(error)}`,
+          ),
+          watching: this.watching,
+        };
       }
+    }
+    return {
+      session: this.live?.session ?? this.repo.boostSession(),
+      capabilities: this.capabilities.value,
+      watching: this.watching,
+    };
+  }
+  start(
+    gameId: string,
+    reason: "manual" | "auto",
+    target?: ProcessTarget,
+  ): Promise<BoostSession | null> {
+    return this.exclusive(async () => {
+      if (!this.platform.boostAvailable)
+        throw new Error(
+          "The Windows helper is missing, so the game booster is unavailable.",
+        );
+      const state = this.repo.state();
+      const game = state.games.find((g) => g.id === gameId);
+      if (!game) throw new Error("Game not found");
+      if (this.live || this.repo.boostSession())
+        throw new Error(
+          "Stop or recover the current boost session before starting another.",
+        );
+      const mode =
+        game.boostMode === "global" ? state.booster.mode : game.boostMode;
+      if (mode === "off") {
+        if (reason === "auto") return null;
+        throw new Error(
+          `Booster mode is Off for ${game.name}. Choose a mode first.`,
+        );
+      }
+      target ??= (await this.platform.runningGames([game]))[0]?.target;
+      if (!target)
+        throw new Error(
+          "Start the game first. Frameforge boosts a game that is already running.",
+        );
+      const mechanisms =
+        mode === "custom" ? state.booster.custom : modeMechanisms[mode];
+      return this.run(game, mode, target, mechanisms, state.booster, reason);
     });
   }
-  stop(): Promise<BoostSession | null> {
-    return this.exclusive(async () => {
-      const session = this.repo.boostSession();
-      if (!session) return null;
+  private run(
+    game: Game,
+    mode: BoostMode,
+    target: ProcessTarget,
+    mechanisms: CustomMechanisms,
+    config: BoosterConfig,
+    reason: "manual" | "auto",
+  ): Promise<BoostSession> {
+    const captured: Captured[] = [];
+    const session = this.save(
+      {
+        id: randomUUID(),
+        gameId: game.id,
+        mode,
+        target,
+        startedAt: new Date().toISOString(),
+        endedAt: null,
+        status: "preparing",
+        message: `${modeLabels[mode]} mode starting for ${game.name}.`,
+        mechanisms: [],
+        samples: [],
+      },
+      captured,
+    );
+    this.log(
+      `${game.name}: ${modeLabels[mode]} session started (${reason === "auto" ? "auto-boost" : "manual"}).`,
+    );
+    let channel: SessionChannel;
+    try {
+      channel = this.platform.spawnSession();
+    } catch (error) {
       this.save(
-        session,
-        "restoring",
-        "Restoring the original process priority.",
+        {
+          ...session,
+          status: "ended",
+          endedAt: new Date().toISOString(),
+          message: `Boost could not start: ${text(error)}`,
+        },
+        captured,
       );
-      try {
-        const ended = this.save(
-          session,
-          "ended",
-          await this.platform.boostStop(session.target),
-        );
-        this.log(ended.message);
-        return ended;
-      } catch (error) {
-        const failed = this.save(
-          session,
-          "recovery-needed",
-          `Restore failed: ${text(error)}`,
-        );
-        this.log(failed.message, "failed");
-        return failed;
-      }
+      throw error;
+    }
+    let resolveEnded!: (session: BoostSession) => void;
+    const live: Live = {
+      channel,
+      session,
+      captured,
+      game: game.name,
+      ended: new Promise((resolve) => (resolveEnded = resolve)),
+    };
+    this.live = live;
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (result: BoostSession) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      };
+      const timer = setTimeout(() => channel.kill(), this.timeouts.start);
+      channel.on("event", (raw) => {
+        const parsed = SessionEventSchema.safeParse(raw);
+        if (!parsed.success || this.live !== live) return;
+        const event = parsed.data;
+        try {
+          switch (event.event) {
+            case "captured":
+              // GC-10: persisted as soon as the helper reports it, before its change is verified.
+              captured.push(event.prior);
+              this.update(live, {});
+              break;
+            case "ready":
+              this.update(live, {
+                status: "active",
+                message: `${modeLabels[mode]} mode active for ${game.name}.`,
+              });
+              settle(live.session);
+              break;
+            case "sample": {
+              const sample = {
+                at: event.at,
+                systemCpuPercent: event.systemCpuPercent,
+                availableMemoryBytes: event.availableMemoryBytes,
+                gameWorkingSetBytes: event.gameWorkingSetBytes,
+              };
+              this.update(live, {
+                samples: [...live.session.samples, sample].slice(-200),
+              });
+              break;
+            }
+            case "ended":
+              this.end(live, event.reason, event.reverts, event.detail);
+              resolveEnded(live.session);
+              settle(live.session);
+              break;
+            default:
+              this.update(live, {
+                mechanisms: [
+                  ...live.session.mechanisms,
+                  {
+                    id: event.mechanism,
+                    state: event.event,
+                    detail: event.detail,
+                  },
+                ].slice(-400),
+                message: event.detail,
+              });
+              this.log(
+                `${game.name}: ${event.mechanism} ${event.event}. ${event.detail}`,
+                event.event === "failed" ? "failed" : "success",
+              );
+          }
+        } catch (error) {
+          this.log(
+            `${game.name}: session state could not be saved: ${text(error)}`,
+            "failed",
+          );
+        }
+      });
+      channel.on("exit", () => {
+        if (this.live !== live) return;
+        // The helper stopped without reporting its reverts: restore from the saved captures.
+        this.live = null;
+        this.update(live, {
+          status: "recovery-needed",
+          message:
+            "The session helper stopped unexpectedly. Restoring the saved state.",
+        });
+        void this.recoverNow()
+          .catch(() => null)
+          .then((result) => {
+            const final = result ?? live.session;
+            resolveEnded(final);
+            settle(final);
+          });
+      });
+      channel.send({
+        command: "start",
+        gamePid: target.pid,
+        gameStartTime: target.startTime,
+        gamePath: target.executablePath,
+        mechanisms,
+        background: config.background,
+        parentPid: process.pid,
+      });
     });
+  }
+  private end(
+    live: Live,
+    reason: keyof typeof endReasons,
+    reverts: MechanismResult[],
+    detail?: string,
+  ) {
+    this.live = null;
+    const count = (state: MechanismResult["state"]) =>
+      reverts.filter((r) => r.state === state).length;
+    const failed = count("failed");
+    const why =
+      reason === "start-failed" && detail
+        ? `the boost could not start: ${detail}`
+        : endReasons[reason];
+    const now = new Date();
+    const minutes = Math.round(
+      (now.getTime() - Date.parse(live.session.startedAt)) / 60000,
+    );
+    const samples = live.session.samples;
+    const average = (pick: (s: (typeof samples)[number]) => number) =>
+      samples.reduce((sum, s) => sum + pick(s), 0) / samples.length;
+    const snapshot = samples.length
+      ? ` System snapshot, not FPS: average CPU ${average((s) => s.systemCpuPercent).toFixed(0)}%, average available RAM ${(average((s) => s.availableMemoryBytes) / 1024 ** 3).toFixed(1)} GB.`
+      : "";
+    const summary = `Restored ${count("reverted")}, kept ${count("conflict")} external change(s), failed ${failed}.`;
+    this.update(live, {
+      status: failed ? "recovery-needed" : "ended",
+      endedAt: failed ? null : now.toISOString(),
+      mechanisms: [...live.session.mechanisms, ...reverts].slice(-400),
+      message: failed
+        ? `Session ended because ${why}, but ${failed} change(s) could not be restored. Retry recovery.`
+        : `Session ended because ${why}. ${summary}`,
+    });
+    this.log(
+      `${live.game}: session ended after ${minutes} min because ${why}. ${summary}${snapshot}`,
+      failed || reason === "start-failed" ? "failed" : "success",
+    );
+  }
+  async stop(): Promise<BoostSession | null> {
+    const live = this.live;
+    if (!live) return this.recover();
+    this.seen.add(key(live.session.target));
+    this.update(live, {
+      status: "restoring",
+      message: "Restoring the saved state.",
+    });
+    live.channel.send({ command: "stop" });
+    const result = await Promise.race([live.ended, delay(this.timeouts.stop)]);
+    if (result) return result;
+    // The exit handler restores from the saved captures.
+    live.channel.kill();
+    return (
+      (await Promise.race([live.ended, delay(this.timeouts.stop)])) ??
+      this.repo.boostSession()
+    );
+  }
+  recover(dismiss = false): Promise<BoostSession | null> {
+    return this.exclusive(() => this.recoverNow(dismiss));
+  }
+  private async recoverNow(dismiss = false): Promise<BoostSession | null> {
+    if (this.live) return this.live.session;
+    const record = this.repo.boostRecord();
+    if (!record) return null;
+    const { session, captured } = record;
+    const finish = (patch: Partial<BoostSession>) =>
+      this.save({ ...session, ...patch }, captured);
+    if (dismiss) {
+      const result = finish({
+        status: "ended",
+        endedAt: new Date().toISOString(),
+        message:
+          "Recovery dismissed. Any remaining changes were left as they are.",
+      });
+      this.log(result.message, "failed");
+      return result;
+    }
+    try {
+      const reverts = captured.length
+        ? await this.platform.boostRecover(captured)
+        : [];
+      const failed = reverts.filter((r) => r.state === "failed");
+      const conflicts = reverts.filter((r) => r.state === "conflict").length;
+      const result = finish({
+        status: failed.length ? "recovery-needed" : "ended",
+        endedAt: failed.length ? null : new Date().toISOString(),
+        mechanisms: [...session.mechanisms, ...reverts].slice(-400),
+        message: failed.length
+          ? `Recovery could not restore ${failed.length} change(s): ${failed[0]!.detail}`
+          : `Recovered: ${reverts.length} saved change(s) checked, ${conflicts} external change(s) kept.`,
+      });
+      this.log(result.message, failed.length ? "failed" : "success");
+      return result;
+    } catch (error) {
+      const result = finish({
+        status: "recovery-needed",
+        message: `Recovery failed: ${text(error)}. Retry, or dismiss to keep the current state.`,
+      });
+      this.log(result.message, "failed");
+      return result;
+    }
+  }
+  configure() {
+    const on =
+      this.platform.boostAvailable && this.repo.state().booster.autoBoost;
+    if (on && !this.watcher) {
+      // ponytail: 5 s polling; WMI process-start events (Win32_ProcessStartTrace) if start latency matters.
+      this.watcher = setInterval(() => void this.poll(), 5000);
+      this.watcher.unref?.();
+    } else if (!on && this.watcher) {
+      clearInterval(this.watcher);
+      this.watcher = undefined;
+    }
+  }
+  async poll() {
+    if (this.polling || this.busy || this.live || this.repo.boostSession())
+      return;
+    const games = this.repo.state().games;
+    if (!games.length) return;
+    this.polling = true;
+    try {
+      const found = (await this.platform.runningGames(games)).find(
+        (f) => !this.seen.has(key(f.target)),
+      );
+      if (!found) return;
+      if (this.seen.size > 1000) this.seen.clear();
+      this.seen.add(key(found.target));
+      await this.start(found.gameId, "auto", found.target);
+      this.lastPollError = "";
+    } catch (error) {
+      if (text(error) !== this.lastPollError)
+        this.log(`Auto-boost: ${text(error)}`, "failed");
+      this.lastPollError = text(error);
+    } finally {
+      this.polling = false;
+    }
+  }
+  dispose() {
+    if (this.watcher) clearInterval(this.watcher);
+    this.watcher = undefined;
   }
 }

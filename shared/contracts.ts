@@ -29,11 +29,122 @@ export const GameSchema = z
     path: z.string().max(2048),
     source: z.enum(["custom", "steam", "epic", "gog", "xbox"]),
     executablePath: z.string().max(2048).nullable().default(null),
+    /** @deprecated Legacy app-only profile; hidden in the UI, kept so old backups parse. */
     profile: z.enum(["balanced", "gaming", "quiet"]),
     notes: z.string().max(500),
+    boostMode: z
+      .enum([
+        "global",
+        "off",
+        "balanced",
+        "performance",
+        "competitive",
+        "custom",
+      ])
+      .default("global"),
   })
   .strict();
 export type Game = z.infer<typeof GameSchema>;
+// GC-11 denylist, mirrored from the C# helper (the enforcement point) for UX.
+export const protectedImages = new Set(
+  "system registry smss csrss wininit winlogon services lsass lsaiso svchost fontdrvhost dwm explorer sihost ctfmon audiodg spoolsv searchhost startmenuexperiencehost shellexperiencehost textinputhost runtimebroker msmpeng nissrv securityhealthservice securityhealthsystray smartscreen easyanticheat easyanticheat_eos beservice vgc vgtray faceit faceitclient esportal gameguard xigncode nvcontainer nvdisplay.container amdrsserv atiesrxx atieclxx".split(
+    " ",
+  ),
+);
+export const isProtectedImage = (image: string) =>
+  protectedImages.has(image.toLowerCase().replace(/\.exe$/, ""));
+export const MechanismId = z.enum([
+  "gameMode",
+  "priority",
+  "affinity",
+  "powerPlan",
+  "lowerBackground",
+  "suspendBackground",
+  "closeBackground",
+  "timerResolution",
+  "standbyPurge",
+]);
+export type MechanismId = z.infer<typeof MechanismId>;
+export const CustomMechanismsSchema = z
+  .object({
+    gameMode: z.boolean(),
+    priority: z.enum(["Normal", "AboveNormal", "High"]),
+    affinity: z.array(z.number().int().min(0).max(255)).max(256).nullable(),
+    powerPlan: z.boolean(),
+    lowerBackground: z.boolean(),
+    suspendBackground: z.boolean(),
+    closeBackground: z.boolean(),
+    timerResolution: z.boolean(),
+  })
+  .strict();
+export type CustomMechanisms = z.infer<typeof CustomMechanismsSchema>;
+const BoostModeSchema = z.enum([
+  "off",
+  "balanced",
+  "performance",
+  "competitive",
+  "custom",
+]);
+export type BoostMode = z.infer<typeof BoostModeSchema>;
+const noMechanisms: CustomMechanisms = {
+  gameMode: false,
+  priority: "Normal",
+  affinity: null,
+  powerPlan: false,
+  lowerBackground: false,
+  suspendBackground: false,
+  closeBackground: false,
+  timerResolution: false,
+};
+// What each preset mode applies. Custom uses the saved toggles.
+export const modeMechanisms: Record<
+  Exclude<BoostMode, "custom">,
+  CustomMechanisms
+> = {
+  off: noMechanisms,
+  balanced: { ...noMechanisms, gameMode: true, priority: "AboveNormal" },
+  performance: {
+    ...noMechanisms,
+    gameMode: true,
+    priority: "High",
+    powerPlan: true,
+    lowerBackground: true,
+  },
+  competitive: {
+    ...noMechanisms,
+    gameMode: true,
+    priority: "High",
+    powerPlan: true,
+    lowerBackground: true,
+    suspendBackground: true,
+    timerResolution: true,
+  },
+};
+export const BoosterConfigSchema = z
+  .object({
+    mode: BoostModeSchema.default("off"),
+    autoBoost: z.boolean().default(false),
+    custom: CustomMechanismsSchema.default(noMechanisms),
+    background: z
+      .array(
+        z
+          .object({
+            image: z
+              .string()
+              .regex(/^[\w .()-]{1,64}\.exe$/i)
+              .refine(
+                (image) => !isProtectedImage(image),
+                "Protected system, security and anti-cheat processes cannot be changed.",
+              ),
+            action: z.enum(["lower", "suspend", "close"]),
+          })
+          .strict(),
+      )
+      .max(50)
+      .default([]),
+  })
+  .strict();
+export type BoosterConfig = z.infer<typeof BoosterConfigSchema>;
 export const PresetSchema = z
   .object({ id: Id, name: Name, ids: z.array(OperationId).min(1).max(8) })
   .strict();
@@ -43,7 +154,14 @@ export const StateSchema = z
     settings: SettingsSchema,
     games: z.array(GameSchema).max(500),
     presets: z.array(PresetSchema).max(50),
+    /** @deprecated Legacy app-only toggle; kept so old configuration parses. */
     gameMode: z.object({ gameId: Id.nullable(), active: z.boolean() }).strict(),
+    booster: BoosterConfigSchema.default({
+      mode: "off",
+      autoBoost: false,
+      custom: noMechanisms,
+      background: [],
+    }),
   })
   .strict()
   .superRefine((state, ctx) => {
@@ -69,6 +187,12 @@ export const defaultState: AppState = {
   games: [],
   presets: [],
   gameMode: { active: false, gameId: null },
+  booster: {
+    mode: "off",
+    autoBoost: false,
+    custom: noMechanisms,
+    background: [],
+  },
 };
 export const Status = z.enum([
   "running",
@@ -151,12 +275,39 @@ export const ProcessTargetSchema = z
   })
   .strict();
 export type ProcessTarget = z.infer<typeof ProcessTargetSchema>;
+export const MechanismResultSchema = z
+  .object({
+    id: MechanismId,
+    state: z.enum([
+      "applied",
+      "skipped",
+      "unsupported",
+      "unavailable",
+      "failed",
+      "reverted",
+      "conflict",
+    ]),
+    detail: z.string().max(500),
+  })
+  .strict();
+export type MechanismResult = z.infer<typeof MechanismResultSchema>;
+export const SampleSchema = z
+  .object({
+    at: z.string().max(80),
+    systemCpuPercent: z.number().min(0).max(100),
+    availableMemoryBytes: z.number().nonnegative(),
+    gameWorkingSetBytes: z.number().nonnegative(),
+  })
+  .strict();
+export type Sample = z.infer<typeof SampleSchema>;
 export const BoostSessionSchema = z
   .object({
     id: Id,
     gameId: Id,
+    mode: BoostModeSchema.default("custom"),
     target: ProcessTargetSchema,
     startedAt: z.string(),
+    endedAt: z.string().nullable().default(null),
     status: z.enum([
       "preparing",
       "active",
@@ -165,9 +316,34 @@ export const BoostSessionSchema = z
       "ended",
     ]),
     message: z.string().max(1000),
+    mechanisms: z.array(MechanismResultSchema).max(400).default([]),
+    samples: z.array(SampleSchema).max(200).default([]),
   })
   .strict();
 export type BoostSession = z.infer<typeof BoostSessionSchema>;
+export const BoostCapabilitiesSchema = z
+  .object({
+    logicalCpus: z.number().int().nonnegative(),
+    mechanisms: z.array(
+      z
+        .object({
+          id: MechanismId,
+          available: z.boolean(),
+          detail: z.string().max(500),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type BoostCapabilities = z.infer<typeof BoostCapabilitiesSchema>;
+export const RunningProcessSchema = z
+  .object({
+    image: z.string().max(260),
+    pid: z.number().int().nonnegative(),
+    protected: z.boolean(),
+  })
+  .strict();
+export type RunningProcess = z.infer<typeof RunningProcessSchema>;
 export const RestorePointSchema = z
   .object({
     sequence: z.number().int().nonnegative(),
@@ -205,6 +381,7 @@ export const BootstrapSchema = z
       .object({
         session: BoostSessionSchema.nullable(),
         available: z.boolean(),
+        watching: z.boolean(),
       })
       .strict(),
   })
@@ -239,24 +416,23 @@ export const requests = {
   createRestorePoint: z
     .object({ name: Name, confirmed: z.literal(true) })
     .strict(),
-  boostTargets: z.object({ gameId: Id }).strict(),
-  boostStart: z
-    .object({
-      gameId: Id,
-      target: ProcessTargetSchema,
-      confirmed: z.literal(true),
-    })
-    .strict(),
+  boostStatus: Empty,
+  boostConfig: BoosterConfigSchema,
+  boostStart: z.object({ gameId: Id, confirmed: z.literal(true) }).strict(),
   boostStop: z.object({ confirmed: z.literal(true) }).strict(),
+  boostRecover: z
+    .object({ confirmed: z.literal(true), dismiss: z.boolean().optional() })
+    .strict(),
+  runningProcesses: Empty,
   removeGame: z.object({ id: Id }).strict(),
   profile: z
     .object({
       id: Id,
-      profile: GameSchema.shape.profile,
+      profile: GameSchema.shape.profile.optional(),
+      boostMode: GameSchema.shape.boostMode,
       notes: GameSchema.shape.notes,
     })
     .strict(),
-  gameMode: z.object({ gameId: Id.nullable(), active: z.boolean() }).strict(),
   savePreset: z.object({ name: Name, ids: Selection.shape.ids }).strict(),
   removePreset: z.object({ id: Id }).strict(),
   clearActivity: z.object({ confirmed: z.literal(true) }).strict(),
@@ -275,12 +451,20 @@ export const responses = {
   detectGames: DetectionSchema,
   restorePoints: RestorePointsSchema,
   createRestorePoint: RestorePointsSchema,
-  boostTargets: z.array(ProcessTargetSchema),
+  boostStatus: z
+    .object({
+      session: BoostSessionSchema.nullable(),
+      capabilities: BoostCapabilitiesSchema,
+      watching: z.boolean(),
+    })
+    .strict(),
+  boostConfig: StateSchema,
   boostStart: BoostSessionSchema,
   boostStop: BoostSessionSchema.nullable(),
+  boostRecover: BoostSessionSchema.nullable(),
+  runningProcesses: z.array(RunningProcessSchema).max(500),
   removeGame: StateSchema,
   profile: StateSchema,
-  gameMode: StateSchema,
   savePreset: StateSchema,
   removePreset: StateSchema,
   clearActivity: z.boolean(),
@@ -332,7 +516,77 @@ export const HelperResult = z
     restorePoints: z.array(RestorePointSchema).optional(),
     createdSequence: z.number().int().nonnegative().nullable().optional(),
     available: z.boolean().optional(),
-    processes: z.array(ProcessTargetSchema).optional(),
-    boostSnapshot: ProcessTargetSchema.optional(),
+    runningGames: z
+      .array(z.object({ gameId: Id, target: ProcessTargetSchema }).strict())
+      .optional(),
+    backgroundProcesses: z.array(RunningProcessSchema).optional(),
+    capabilities: BoostCapabilitiesSchema.optional(),
+    reverts: z.array(MechanismResultSchema).optional(),
   })
   .strict();
+// A prior state saved by the session helper before each change (GC-10).
+export const CapturedSchema = z
+  .object({
+    mechanism: MechanismId,
+    process: ProcessTargetSchema.optional(),
+    prior: z.string().max(80).optional(),
+    applied: z.string().max(80).optional(),
+    registry: z
+      .object({
+        values: z
+          .array(
+            RegistryValueSchema.extend({ operation: z.literal("game-mode") }),
+          )
+          .min(1)
+          .max(2),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type Captured = z.infer<typeof CapturedSchema>;
+// One JSON line from `Frameforge.Windows.exe --session`.
+export const SessionEventSchema = z.union([
+  z
+    .object({
+      event: z.literal("captured"),
+      mechanism: MechanismId,
+      prior: CapturedSchema,
+    })
+    .strict(),
+  z
+    .object({
+      event: z.enum([
+        "applied",
+        "skipped",
+        "unsupported",
+        "unavailable",
+        "failed",
+      ]),
+      mechanism: MechanismId,
+      detail: z.string().max(500),
+    })
+    .strict(),
+  z.object({ event: z.literal("ready") }).strict(),
+  SampleSchema.extend({ event: z.literal("sample") }).strict(),
+  z
+    .object({
+      event: z.literal("ended"),
+      reason: z.enum([
+        "game-exited",
+        "stop",
+        "parent-exited",
+        "stdin-closed",
+        "start-failed",
+      ]),
+      detail: z.string().max(1000).optional(),
+      reverts: z.array(MechanismResultSchema).max(400),
+    })
+    .strict(),
+]);
+export type SessionEvent = z.infer<typeof SessionEventSchema>;
+// One-way main -> renderer events. Task 3 adds its "scan-progress" member here.
+export const EventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("boost"), session: BoostSessionSchema }).strict(),
+]);
+export type AppEvent = z.infer<typeof EventSchema>;

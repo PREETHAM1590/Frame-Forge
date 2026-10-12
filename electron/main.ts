@@ -60,6 +60,7 @@ if (!app.requestSingleInstanceLock()) {
           app.setLoginItemSettings({ openAtLogin: enabled });
         },
         detectGames: () => detectInstalledGames(),
+        notify: (event) => window?.webContents.send("frameforge:event", event),
         pickGame: async () => {
           if (!window) return null;
           const result = await dialog.showOpenDialog(window, {
@@ -76,12 +77,15 @@ if (!app.requestSingleInstanceLock()) {
             executablePath: selected,
             source: "custom",
             profile: "balanced",
+            boostMode: "global",
             notes: "",
           };
         },
       });
       activeService = service;
       await service.refresh();
+      // GC-10: revert a boost interrupted by a crash or power loss (conflict-aware).
+      await service.booster.recover().catch(() => null);
       ipcMain.handle(
         "frameforge:request",
         async (event, method: unknown, input: unknown) => {
@@ -160,8 +164,15 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   app.on("window-all-closed", () => app.quit());
+  let quitting = false;
   app.on("before-quit", (event) => {
     if (activeService?.isBusy) event.preventDefault();
+    else if (activeService?.booster.active && !quitting) {
+      // Revert the live boost session before exiting; app.quit() re-enters once it has ended.
+      event.preventDefault();
+      quitting = true;
+      void activeService.shutdown().finally(() => app.quit());
+    } else activeService?.booster.dispose();
   });
   app.on("will-quit", () => repo?.close());
 }

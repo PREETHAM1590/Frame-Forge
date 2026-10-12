@@ -158,12 +158,106 @@ describe("SQLite migrations and configuration recovery", () => {
       message: "ok",
     });
     expect(repo.boostSession()).toBeNull();
-    repo.saveBoostSession(session);
-    expect(repo.boostSession()).toEqual(session);
+    const captured = [
+      {
+        mechanism: "priority" as const,
+        process: target,
+        prior: "Normal",
+        applied: "High",
+      },
+    ];
+    repo.saveBoostSession(session, captured);
+    expect(repo.boostRecord()).toEqual({ session, captured });
     repo.recoverInterrupted();
     expect(repo.boostSession()?.status).toBe("recovery-needed");
-    repo.saveBoostSession({ ...session, status: "ended" });
+    repo.saveBoostSession({ ...session, status: "ended" }, captured);
     expect(repo.boostSession()).toBeNull();
     repo.close();
+  });
+  it("GC-4: a v1 state and a Task 1 boost_sessions row both parse", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "frameforge-repo-"));
+    const file = path.join(dir, "v2.db");
+    const target: ProcessTarget = {
+      pid: 7,
+      startTime: "2026-10-12T10:00:00.0000000Z",
+      executablePath: "C:\\g\\g.exe",
+      name: "g",
+      priority: "Normal",
+    };
+    const gameId = crypto.randomUUID();
+    const old = new DatabaseSync(file);
+    old.exec(migrations[0] as string);
+    old.exec(
+      "CREATE TABLE boost_sessions (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL, message TEXT NOT NULL, payload TEXT NOT NULL);",
+    );
+    old.exec("PRAGMA user_version=2");
+    old.prepare("INSERT INTO configuration(id,payload) VALUES(1,?)").run(
+      JSON.stringify({
+        version: 1,
+        settings: {
+          theme: "dark",
+          startup: false,
+          notifications: true,
+          diagnostics: false,
+        },
+        games: [
+          {
+            id: gameId,
+            name: "X",
+            path: "C:\\Games\\X",
+            executablePath: null,
+            source: "custom",
+            profile: "gaming",
+            notes: "",
+          },
+        ],
+        presets: [],
+        gameMode: { gameId: null, active: false },
+      }),
+    );
+    old
+      .prepare(
+        "INSERT INTO boost_sessions(id,game_id,status,started_at,message,payload) VALUES(?,?,?,?,?,?)",
+      )
+      .run(
+        crypto.randomUUID(),
+        gameId,
+        "active",
+        "2026-10-12T10:00:01.000Z",
+        "Game priority raised to Above normal and verified.",
+        JSON.stringify(target),
+      );
+    old.close();
+    const repo = new Repository(file);
+    const state = repo.state();
+    expect(state.games[0]).toMatchObject({
+      profile: "gaming",
+      boostMode: "global",
+    });
+    expect(state.booster).toEqual({
+      mode: "off",
+      autoBoost: false,
+      custom: expect.objectContaining({ priority: "Normal", affinity: null }),
+      background: [],
+    });
+    expect(repo.boostRecord()).toMatchObject({
+      session: {
+        mode: "custom",
+        target,
+        endedAt: null,
+        mechanisms: [],
+        samples: [],
+      },
+      captured: [
+        {
+          mechanism: "priority",
+          process: target,
+          prior: "Normal",
+          applied: "AboveNormal",
+        },
+      ],
+    });
+    repo.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 });

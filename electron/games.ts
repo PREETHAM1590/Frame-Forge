@@ -194,6 +194,7 @@ export async function detectInstalledGames(
       source,
       executablePath,
       profile: "balanced",
+      boostMode: "global",
       notes: "",
     });
   }

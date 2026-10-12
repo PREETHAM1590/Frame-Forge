@@ -4,12 +4,14 @@ import {
   ActivitySchema,
   BackupSchema,
   BoostSessionSchema,
+  CapturedSchema,
   StateSchema,
   defaultState,
   type Activity,
   type AppState,
   type Backup,
   type BoostSession,
+  type Captured,
   type OperationId,
 } from "../shared/contracts.js";
 import { migrations } from "./migrations.js";
@@ -203,40 +205,64 @@ export class Repository {
       .run();
     this.db
       .prepare(
-        "UPDATE boost_sessions SET status='recovery-needed',message='The app stopped during a game boost. Restore the saved process priority.' WHERE status IN ('preparing','active','restoring')",
+        "UPDATE boost_sessions SET status='recovery-needed',message='The app stopped during a game boost. Frameforge restores the saved state on start; retry if needed.' WHERE status IN ('preparing','active','restoring')",
       )
       .run();
   }
   boostSession(): BoostSession | null {
+    return this.boostRecord()?.session ?? null;
+  }
+  // The latest unfinished session plus the prior states captured before each change.
+  boostRecord(): { session: BoostSession; captured: Captured[] } | null {
     const row = this.db
       .prepare(
         "SELECT * FROM boost_sessions WHERE status!='ended' ORDER BY started_at DESC, rowid DESC LIMIT 1",
       )
       .get();
-    return row
-      ? BoostSessionSchema.parse({
-          id: row.id,
-          gameId: row.game_id,
-          target: JSON.parse(String(row.payload)),
-          startedAt: row.started_at,
-          status: row.status,
-          message: row.message,
-        })
-      : null;
+    if (!row) return null;
+    const payload = JSON.parse(String(row.payload)) as Record<string, unknown>;
+    // Task 1 rows stored only the target, whose priority was raised to Above normal.
+    const legacy = "pid" in payload;
+    const { captured = [], ...rest } = legacy ? { target: payload } : payload;
+    const session = BoostSessionSchema.parse({
+      ...rest,
+      id: row.id,
+      gameId: row.game_id,
+      startedAt: row.started_at,
+      status: row.status,
+      message: row.message,
+    });
+    return {
+      session,
+      captured: legacy
+        ? [
+            {
+              mechanism: "priority",
+              process: session.target,
+              prior: session.target.priority,
+              applied: "AboveNormal",
+            },
+          ]
+        : CapturedSchema.array().parse(captured),
+    };
   }
-  saveBoostSession(session: BoostSession): void {
+  saveBoostSession(session: BoostSession, captured: Captured[]): void {
     const s = BoostSessionSchema.parse(session);
+    const { id, gameId, startedAt, status, message, ...rest } = s;
     this.db
       .prepare(
         "INSERT INTO boost_sessions(id,game_id,status,started_at,message,payload) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,message=excluded.message,payload=excluded.payload",
       )
       .run(
-        s.id,
-        s.gameId,
-        s.status,
-        s.startedAt,
-        s.message,
-        JSON.stringify(s.target),
+        id,
+        gameId,
+        status,
+        startedAt,
+        message,
+        JSON.stringify({
+          ...rest,
+          captured: CapturedSchema.array().parse(captured),
+        }),
       );
   }
   clearActivity(): void {
