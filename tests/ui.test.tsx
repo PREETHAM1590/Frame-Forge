@@ -50,7 +50,20 @@ describe("configuration and safety UI", () => {
   });
   it("shows scan progress, then a per-source table with not-installed and failed sources", async () => {
     const bootstrap = {
-      state: defaultState,
+      state: {
+        ...defaultState,
+        games: [
+          {
+            id: crypto.randomUUID(),
+            name: "The Outlast Trials",
+            path: "C:/Steam/Outlast",
+            source: "steam" as const,
+            executablePath: null,
+            profile: "balanced" as const,
+            notes: "",
+          },
+        ],
+      },
       hardware: {
         source: "windows",
         collectedAt: "2026-01-01T00:00:00.000Z",
@@ -138,5 +151,7 @@ describe("configuration and safety UI", () => {
     expect(
       screen.getByText("Microsoft Store titles are limited."),
     ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /Game details/ }));
+    expect(await screen.findByText("Matched by folder")).toBeVisible();
   });
 });

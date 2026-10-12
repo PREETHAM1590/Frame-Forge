@@ -126,10 +126,11 @@ export function Games({ data, run, pending }: ViewProps) {
           <FolderSearch size={18} />
           <div>
             <p>
-              {scan.games.length} games found.{" "}
-              {scan.launchers.length
-                ? `Scanned: ${scan.launchers.join(", ")}.`
-                : "No supported launchers found."}
+              {scan.games.length} games found.
+              {scan.perLauncher.length > 0 &&
+                (scan.launchers.length
+                  ? ` Scanned: ${scan.launchers.join(", ")}.`
+                  : " No supported launchers found.")}
             </p>
             {scan.warnings.map((warning, index) => (
               <p key={index}>{warning}</p>
@@ -220,6 +221,11 @@ export function Games({ data, run, pending }: ViewProps) {
           onClose={() => setSelected(null)}
         >
           <p className="setting-path">{selected.path}</p>
+          <p className="muted">
+            {selected.executablePath
+              ? `Executable: ${selected.executablePath}`
+              : "Matched by folder"}
+          </p>
           <form
             onSubmit={async (e) => {
               e.preventDefault();

@@ -140,4 +140,48 @@ describe("validated IPC to SQLite integration", () => {
     expect(repo.state()).toEqual(previous);
     repo.close();
   });
+  it("does not add a folder or registry hit that is inside or above a launcher game already in the library", async () => {
+    const repo = new Repository(":memory:");
+    const game = (
+      name: string,
+      path: string,
+      source: "riot" | "folder" | "registry",
+    ) => ({
+      id: crypto.randomUUID(),
+      name,
+      path,
+      source,
+      executablePath: null,
+      profile: "balanced" as const,
+      notes: "",
+    });
+    const detection = (games: ReturnType<typeof game>[]) => ({
+      games,
+      warnings: [],
+      launchers: ["Riot Games"],
+      perLauncher: [],
+    });
+    let next = detection([
+      game("VALORANT", "D:\\Riot Games\\VALORANT\\live", "riot"),
+    ]);
+    const service = new AppService(repo, new MockPlatform(), {
+      pickGame: async () => null,
+      detectGames: async () => next,
+      scanFolder: async () => next,
+      setStartup: () => {},
+      version: "test",
+    });
+    await service.dispatch("detectGames", {});
+    next = detection([
+      game("VALORANT", "D:\\Riot Games\\VALORANT", "folder"),
+      game("Helper", "D:\\Riot Games\\VALORANT\\live\\helper", "registry"),
+      game("Riot Client", "D:\\Riot Games\\Riot Client", "folder"),
+    ]);
+    await service.dispatch("scanFolder", { confirmed: true });
+    expect(repo.state().games.map((g) => g.name)).toEqual([
+      "VALORANT",
+      "Riot Client",
+    ]);
+    repo.close();
+  });
 });

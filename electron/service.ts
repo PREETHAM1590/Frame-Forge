@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import {
   requests,
   responses,
@@ -218,8 +219,20 @@ export class AppService {
   // Adds scanned games the library does not have yet (matched by install path) and logs the scan.
   private merge(result: DetectionResult): DetectionResult {
     const state = this.repo.state();
-    const known = new Set(state.games.map((g) => g.path.toLowerCase()));
-    const added = result.games.filter((g) => !known.has(g.path.toLowerCase()));
+    const known = state.games.map((g) => g.path.toLowerCase());
+    const nested = (a: string, b: string) =>
+      a.startsWith(b + path.sep) || b.startsWith(a + path.sep);
+    // A generic (registry/folder) hit inside, or above, a library game is the same game.
+    const added = result.games.filter((g) => {
+      const key = g.path.toLowerCase();
+      return (
+        !known.includes(key) &&
+        !(
+          (g.source === "registry" || g.source === "folder") &&
+          known.some((other) => nested(key, other))
+        )
+      );
+    });
     const combined = [...state.games, ...added].slice(0, 500);
     this.repo.updateState({ ...state, games: combined });
     this.log(
