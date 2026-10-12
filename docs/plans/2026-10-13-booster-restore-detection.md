@@ -82,6 +82,8 @@ Tasks reference these as **GC-n**.
   npm run format:check
   ```
 
+  Line endings: `.gitattributes` (`* text=auto eol=lf`) was committed on this branch, because `core.autocrlf=true` here would otherwise make prettier's LF default fail `format:check`.
+
   Then commit with a conventional message whose last lines are a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Tasks that touch real Windows state also list a manual check in `npm run dev:desktop`.
 - **GC-13 Style.** Follow the existing patterns: zod-validated boundaries, `repo.transaction`, `Platform` interface plus `MockPlatform` for tests, and C# interfaces (`IRegistryStore`, `IProcessStore`) with in-memory fakes in xUnit. Use no new npm or NuGet dependencies, except a Windows TFM bump if strictly needed (it should not be). Keep the file count low.
 
@@ -121,6 +123,8 @@ Manual check: this PC has `C:\Program Files (x86)\Steam\steamapps\appmanifest_13
   Remove the hard-coded "Steam" wording.
 - `electron/main.ts`: pass `detectGames: () => detectInstalledGames()` and delete the `detectSteamGames` import. Delete `detectSteamGames` from `games.ts`, since nothing else uses it.
 - `main.ts pickGame`: set `executablePath: selected` (the picked exe) and `path: path.dirname(selected)`. The library dedupe and the booster match on the install folder, and today `path` is the exe.
+  - Existing custom games are stored with `path` set to the exe. Migration #2 (1c) rewrites the JSON in both the `configuration` and `backups` tables (GC-4): for every game whose `path` ends in `.exe` (case-insensitive), set `executablePath = path` and `path = dirname(path)`.
+  - Test it with a v1 payload.
 - `tests/service.test.ts`: change the mocks to `detectGames: async () => ({games:[],warnings:[],launchers:[]})`.
 
 ### 1c. Booster backend, minimal (exactly the API that `tests/booster.test.ts` already fixes)
@@ -132,6 +136,8 @@ Manual check: this PC has `C:\Program Files (x86)\Steam\steamapps\appmanifest_13
   ```
 
   `payload` holds the JSON of the session target (Task 4 extends it to a full snapshot).
+  - Migration #2 also does the custom-game path rewrite from 1b, which needs code. Change `migrations` to `Array<string | ((db: DatabaseSync) => void)>`.
+  - The `Repository` constructor runs a function migration inside the same transaction as its `PRAGMA user_version` bump.
 - `electron/repository.ts`:
   - `boostSession(): BoostSession | null` returns the latest row whose status is not `ended`, parsed with `BoostSessionSchema`.
   - `saveBoostSession(s: BoostSession)` upserts.
@@ -158,6 +164,8 @@ Manual check: this PC has `C:\Program Files (x86)\Steam\steamapps\appmanifest_13
   - `boost-start` and `boost-stop` → `new GameProcessOperations(new WindowsProcessStore()).Start/Stop`.
 
   Map `ProcessResult` to `{ok, message, code, boostSnapshot}`. `GameProcesses.cs` already exists and has no callers.
+- **Process identity fix** in `WindowsProcessStore.Read()`: replace `process.MainModule` with `QueryFullProcessImageNameW` on a handle opened with `PROCESS_QUERY_LIMITED_INFORMATION`. Today `MainModule` throws on protected or anti-cheat processes, which include the Riot titles on this PC, so they are never matched. It is also slow when called for every process.
+  - Priority and affinity changes refused by protected processes are reported per mechanism as `failed` with "Windows refused the change for this protected process". Never report them as success.
 - Add xUnit tests `windows/Frameforge.Windows.Tests/GameProcessesTests.cs` with an in-memory `IProcessStore` fake:
   - start → verify → stop;
   - process exited;
@@ -200,6 +208,17 @@ Run `npm run format` once, as a separate commit `style: apply prettier`, so that
 
 **Depends on:** GC-1, GC-2, GC-3, GC-5, GC-6, GC-7, GC-8, GC-9, GC-10, GC-12.
 
+### Step 0: GC-7 spike (do this first)
+
+Write a throwaway five-line console test. It confirms that `ProcessStartInfo.ArgumentList` is honoured with `UseShellExecute = true` and `Verb = "runas"`: the elevated child must receive a description containing spaces and parentheses as one argument.
+
+If it is not honoured, use the fallback that needs no quoting:
+- base64url-encode the description;
+- pass every argument as a validated `[A-Za-z0-9_-]` token joined with single spaces in `Arguments`;
+- have the elevated side decode the description and re-validate it.
+
+Record the result in the commit message.
+
 ### Helper (new file `windows/Frameforge.Windows/RestorePoints.cs`, dispatched from `Program.cs`)
 
 Put the logic behind `IRestoreStore` (WMI and registry access) so xUnit can fake it.
@@ -224,7 +243,8 @@ Put the logic behind `IRestoreStore` (WMI and registry access) so xUnit can fake
      - anything else → `code:"restore-failed"` with the number in the message.
   6. `after = max(SequenceNumber)`.
      - If `after > before`, return `outcome:"created"`, `createdSequence: after` and the new point.
-     - Otherwise return `outcome:"throttled"` and `lastPoint` (the newest point). Windows silently skips creation when a point exists within the frequency window, so a WMI return of 0 is **not** success.
+     - If the newest point's `CreationTime` is inside the effective frequency window (`minutes ?? 1440`, or 0 when bypassed), return `outcome:"throttled"` and `lastPoint`. Windows silently skips creation in that window, so a WMI return of 0 is **not** success.
+     - Otherwise return `outcome:"failed"` and `code:"restore-not-created"` with the message "Windows did not create a restore point; System Protection may be off for the system drive". Never label this throttled (GC-6).
 - `restore-enable <drive>`: validate `drive == systemDrive`, run `SystemRestore.Enable(drive + "\\")` in WMI, check the return value is 0, then re-run status. Return the new status.
 - `restore-frequency-set <existed:0|1> <minutes>`: recovery-only action that writes or deletes the value and re-reads it. Used when a bypass was interrupted.
 
@@ -284,7 +304,9 @@ Split the page into two clearly titled sections.
 `App.tsx`'s `openPreview(ids)` first calls `restoreStatus`. If protection is not `disabled` or policy-blocked, the preview modal shows a checked checkbox, "Create a Windows restore point first". When the box is checked, Confirm does the following:
 1. calls `createRestorePoint`;
 2. on `created` or `throttled` (where the last point is under 24 h old, which counts as covered), calls `preview` again to get a fresh token, because creation can outlast the 5-minute token;
-3. calls `confirm` with the new token.
+3. compares the new preview's `changes` with the ones the user reviewed (deep-equal on `setting`, `before` and `after`):
+   - if they are identical, calls `confirm` with the new token;
+   - if they differ, shows the new preview for review and does **not** apply it.
 
 On `failed`, `elevation-cancelled` or `protection-disabled`, the flow stops and asks "Apply without a restore point?" with explicit buttons.
 
@@ -335,11 +357,11 @@ Each source is its own `try` block, adds to `perLauncher`, and is capped at 500 
 | Steam | existing (Task 1 fixed) | libraryfolders.vdf + appmanifest; skip appid 228980 and other redistributables (`Steamworks Common Redistributables`, `Proton*`, `Steam Linux Runtime*`) |
 | Epic | existing `%ProgramData%\Epic\EpicGamesLauncher\Data\Manifests\*.item` | keep; also skip `AppCategories` containing `"plugins"` or `"engines"` |
 | GOG | existing registry `HKLM\SOFTWARE\WOW6432Node\GOG.com\Games` (+ non-WOW) | keep (`gameName`, `path`, `exe`) |
-| Xbox / MS Store | for each fixed drive, `X:\.GamingRoot` (binary: 4-byte `RGBX` magic, 4-byte count, then UTF-16LE NUL-terminated relative folder names, e.g. `XboxGames`); fall back to `X:\XboxGames` | each `<root>\<Game>\Content\MicrosoftGame.config` (XML). Name from `ShellVisuals DefaultDisplayName` (if it starts with `ms-resource:`, use the folder name); exe from the first `<Executable Name="...">` resolved under `Content`. Regex attribute extraction is fine; fixture-test it. UWP games under `WindowsApps` are not readable (ACL), so report "Microsoft Store titles outside XboxGames folders are not detectable without Store APIs" as an info warning only when no GamingRoot exists |
+| Xbox / MS Store | for each fixed drive, `X:\.GamingRoot`. Verified on C: and D: here: bytes `52 47 42 58` ("RGBX"), uint32 LE `1` (count), then UTF-16LE NUL-terminated folder names (`XboxGames`). Fall back to `X:\XboxGames` | each `<root>\<Game>\Content\MicrosoftGame.config` (XML). Name from `DefaultDisplayName="..."` (if it starts with `ms-resource:`, use the folder name). Exe from the first `<Executable Name="...">` inside `<ExecutableList>`, resolved under `Content`. **The attributes span lines** in the real file (`D:\XboxGames\Roblox\Content\MicrosoftGame.config`), so the regex must allow `\s+` and newlines between attributes. Fixture-test it. UWP games under `WindowsApps` are not readable (ACL), so report "Microsoft Store titles outside XboxGames folders are not detectable without Store APIs" as an info warning only when no GamingRoot exists |
 | EA app | registry `HKLM\SOFTWARE\WOW6432Node\Electronic Arts\*` and `...\EA Games\*`, value `Install Dir` | name = subkey leaf |
 | Ubisoft Connect | `HKLM\SOFTWARE\WOW6432Node\Ubisoft\Launcher\Installs\<id>` value `InstallDir` | name: Uninstall key `Uplay Install <id>` `DisplayName`, else the folder basename |
 | Battle.net | Uninstall keys (below) with `Publisher` = `Blizzard Entertainment`, excluding the `Battle.net` app itself | `DisplayName`, `InstallLocation` |
-| Riot | `%ProgramData%\Riot Games\Metadata\*\*.product_settings.yaml` (line `product_install_full_path: "..."`); exclude `riot_client` | name from the yaml folder (`valorant.live` → `VALORANT`, `league_of_legends.live` → `League of Legends`; small map with a title-case fallback) |
+| Riot | `%ProgramData%\Riot Games\Metadata\<product>.<patchline>\<same>.product_settings.yaml`, line `product_install_full_path: "D:/Riot Games/League of Legends"` (forward slashes; verified here). Skip folders with no such line (`Riot Client`, `bacon.live`, `lion.live`, `*.game_patch` on this PC), and require the directory to exist | name from a small map keyed by product (`valorant` → `VALORANT`, `league_of_legends` → `League of Legends`, `teamfighttactics` → `Teamfight Tactics`, `bacon` → `Legends of Runeterra`, title-case fallback). Append ` (PBE)` for the `pbe` patchline. `RiotClientInstalls.json` holds only client paths plus `associated_client` keys, so it is not needed; don't parse it |
 | Rockstar | `HKLM\SOFTWARE\WOW6432Node\Rockstar Games\*` value `InstallFolder` (+ Uninstall `Publisher` = `Rockstar Games`) | subkey leaf; exclude `Launcher`, `Social Club` |
 | itch | `%APPDATA%\itch\apps\*\.itch\receipt.json.gz` (gunzip with `node:zlib`, ≤1 MB) | `game.title`; install = app folder |
 | Uninstall heuristic | `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*`, the WOW6432Node equivalent, and HKCU | only when `InstallLocation` exists **and** (`Publisher` is in a small allowlist: Blizzard, Riot, Rockstar, Electronic Arts, Ubisoft, Bethesda, Activision, CD PROJEKT, Square Enix, Bandai Namco, SEGA, Capcom, Paradox **or** the key name matches `Steam App \d+`); source `registry` |
@@ -367,15 +389,14 @@ Add a one-way event channel. `main.ts` sends `window.webContents.send("frameforg
 `tests/launchers.test.ts` has one `describe` per parser, using fixture files under `tests/fixtures/launchers/`:
 - `.GamingRoot` binary: create it in the test with a `Buffer`;
 - `MicrosoftGame.config` (with and without `ms-resource`);
-- Riot yaml;
-- `RiotClientInstalls.json`, optional and ignored if unused;
+- Riot yaml (a live one, a PBE one, and one without the install line);
 - itch receipt (gzip in the test);
 - registry text output from `reg query` for EA, Ubisoft, Rockstar and Uninstall;
 - folder scan with a blacklisted exe.
 
 Also cover: dedupe across sources by path, path escape rejected, oversized files rejected.
 
-**Acceptance:** GC-12. Manual check on this PC: Rescan finds the Steam app 1304930, the Riot games under `C:\ProgramData\Riot Games\Metadata`, and the Xbox titles under the `.GamingRoot` roots on C: and D:. Record the per-launcher counts in the commit message.
+**Acceptance:** GC-12. Manual check on this PC: Rescan finds the Steam app 1304930, League of Legends, Teamfight Tactics and VALORANT (plus the PBE installs, if their folders exist) under `D:\Riot Games`, and Roblox under `D:\XboxGames`. `C:\XboxGames` exists but has no `MicrosoftGame.config`. Record the per-launcher counts in the commit message.
 
 ---
 
