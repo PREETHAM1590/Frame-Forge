@@ -7,7 +7,13 @@ describe("validated IPC to SQLite integration", () => {
     const repo = new Repository(":memory:");
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
+      detectGames: async () => ({
+        games: [],
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
       setStartup: () => {},
       version: "test",
     });
@@ -42,7 +48,13 @@ describe("validated IPC to SQLite integration", () => {
     const setStartup = vi.fn();
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
+      detectGames: async () => ({
+        games: [],
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
       setStartup,
       version: "test",
     });
@@ -73,7 +85,13 @@ describe("validated IPC to SQLite integration", () => {
     const setStartup = vi.fn();
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
+      detectGames: async () => ({
+        games: [],
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
       setStartup,
       version: "test",
     });
@@ -98,7 +116,13 @@ describe("validated IPC to SQLite integration", () => {
     const setStartup = vi.fn();
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
+      detectGames: async () => ({
+        games: [],
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
       setStartup,
       version: "test",
     });

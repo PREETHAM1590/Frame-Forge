@@ -31,6 +31,9 @@ const options = {
   steamRoots: [],
   epicManifestRoots: [],
   gogGames: [],
+  driveRoots: [],
+  riotMetadataRoots: [],
+  itchRoots: [],
 };
 describe("installed game discovery", () => {
   it("reads custom Steam libraries, deduplicates roots and skips stale or incomplete installs", async () => {

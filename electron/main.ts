@@ -6,7 +6,12 @@ import { randomUUID } from "node:crypto";
 import { Repository } from "./repository.js";
 import { WindowsPlatform, MockPlatform } from "./platform.js";
 import { AppService } from "./service.js";
-import { safeExecutable, detectInstalledGames } from "./games.js";
+import {
+  safeExecutable,
+  detectInstalledGames,
+  scanGameFolder,
+} from "./games.js";
+import { EventSchema } from "../shared/contracts.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = !app.isPackaged && process.argv.includes("--dev");
 const rendererFile = path.join(here, "../../dist/index.html");
@@ -59,7 +64,22 @@ if (!app.requestSingleInstanceLock()) {
           }
           app.setLoginItemSettings({ openAtLogin: enabled });
         },
-        detectGames: () => detectInstalledGames(),
+        detectGames: () =>
+          detectInstalledGames({}, (progress) =>
+            window?.webContents.send(
+              "frameforge:event",
+              EventSchema.parse({ type: "scan-progress", ...progress }),
+            ),
+          ),
+        scanFolder: async () => {
+          if (!window) return null;
+          const result = await dialog.showOpenDialog(window, {
+            title: "Choose a folder that contains games",
+            properties: ["openDirectory"],
+          });
+          if (result.canceled || !result.filePaths[0]) return null;
+          return scanGameFolder(result.filePaths[0]);
+        },
         pickGame: async () => {
           if (!window) return null;
           const result = await dialog.showOpenDialog(window, {

@@ -1,0 +1,13 @@
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Rockstar Games
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Rockstar Games\Grand Theft Auto V
+    InstallFolder    REG_SZ    C:\Program Files\Rockstar Games\Grand Theft Auto V
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Rockstar Games\Launcher
+    InstallFolder    REG_SZ    C:\Program Files\Rockstar Games\Launcher
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Rockstar Games\Social Club
+    InstallFolder    REG_SZ    C:\Program Files\Rockstar Games\Social Club
+
+End of search: 4 match(es) found.

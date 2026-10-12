@@ -1,0 +1,35 @@
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Battle.net
+    DisplayName    REG_SZ    Battle.net
+    Publisher    REG_SZ    Blizzard Entertainment
+    InstallLocation    REG_SZ    C:\Program Files (x86)\Battle.net
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Overwatch
+    DisplayName    REG_SZ    Overwatch 2
+    Publisher    REG_SZ    Blizzard Entertainment
+    InstallLocation    REG_SZ    C:\Program Files (x86)\Overwatch
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Uplay Install 720
+    DisplayName    REG_SZ    Far Cry 5
+    Publisher    REG_SZ    Ubisoft
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Riot Vanguard
+    DisplayName    REG_SZ    Riot Vanguard
+    Publisher    REG_SZ    Riot Games, Inc.
+    InstallLocation    REG_SZ    C:\Program Files\Riot Vanguard
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 1304930
+    DisplayName    REG_SZ    The Outlast Trials
+    Publisher    REG_SZ    Red Barrels
+    InstallLocation    REG_SZ    C:\Program Files (x86)\Steam\steamapps\common\The Outlast Trials
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Samsung
+    DisplayName    REG_SZ    Smart Switch
+    Publisher    REG_SZ    Samsung Electronics Co., Ltd.
+    InstallLocation    REG_SZ    C:\Program Files (x86)\Samsung\Smart Switch PC\
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Cyberpunk
+    DisplayName    REG_SZ    Cyberpunk 2077
+    Publisher    REG_SZ    CD PROJEKT RED
+    InstallLocation    REG_SZ    C:\Games\Cyberpunk 2077
+    NoModify    REG_DWORD    0x1

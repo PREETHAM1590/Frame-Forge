@@ -1,0 +1,6 @@
+---
+patchline_patching_ask_policy: "ask"
+product_install_full_path: "D:/Riot Games/VALORANT/live"
+product_install_root: "D:/Riot Games"
+settings:
+    create_uninstall_key: true

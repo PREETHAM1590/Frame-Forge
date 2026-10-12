@@ -1,0 +1,16 @@
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Electronic Arts
+    (Default)    REG_SZ    (value not set)
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Electronic Arts\EA Games
+    (Default)    REG_SZ    (value not set)
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Electronic Arts\EA Games\Battlefield 4
+    Install Dir    REG_SZ    C:\Program Files (x86)\Origin Games\Battlefield 4\
+    Locale    REG_SZ    en_US
+    Version    REG_DWORD    0x2a
+
+HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Electronic Arts\EA Desktop
+    Install Dir    REG_SZ    C:\Program Files\Electronic Arts\EA Desktop
+
+End of search: 4 match(es) found.

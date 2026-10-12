@@ -3,10 +3,12 @@ import {
   requests,
   responses,
   Envelope,
-  type Api,
+  EventSchema,
+  type AppEvent,
+  type FrameforgeApi,
   type Method,
 } from "../shared/contracts.js";
-const api = {} as Api;
+const api = {} as FrameforgeApi;
 for (const method of Object.keys(requests) as Method[]) {
   const invoke = async (input: unknown) => {
     const request = requests[method].parse(input);
@@ -18,4 +20,17 @@ for (const method of Object.keys(requests) as Method[]) {
   };
   Object.defineProperty(api, method, { value: invoke, enumerable: true });
 }
+Object.defineProperty(api, "onEvent", {
+  enumerable: true,
+  value: (callback: (event: AppEvent) => void) => {
+    const listener = (_event: unknown, payload: unknown) => {
+      const parsed = EventSchema.safeParse(payload);
+      if (parsed.success) callback(parsed.data);
+    };
+    ipcRenderer.on("frameforge:event", listener);
+    return () => {
+      ipcRenderer.removeListener("frameforge:event", listener);
+    };
+  },
+});
 contextBridge.exposeInMainWorld("frameforge", Object.freeze(api));
