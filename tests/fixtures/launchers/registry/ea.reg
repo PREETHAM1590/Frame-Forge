@@ -1,0 +1,14 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Electronic Arts]
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Electronic Arts\EA Games]
+@="(unused)"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Electronic Arts\EA Games\Battlefield 4]
+"Install Dir"="C:\\Program Files (x86)\\Origin Games\\Battlefield 4\\"
+"Locale"="en_US"
+"Version"=dword:0000002a
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Electronic Arts\EA Desktop]
+"Install Dir"="C:\\Program Files\\Electronic Arts\\EA Desktop"

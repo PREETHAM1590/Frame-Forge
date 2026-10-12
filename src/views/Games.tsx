@@ -1,15 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Gamepad2,
   Plus,
   Search,
   FolderSearch,
+  FolderOpen,
+  RefreshCw,
   ArrowUpRight,
   Trash2,
   Info,
 } from "lucide-react";
 import { PageTitle, Button, Badge, Empty, Modal } from "../components/ui";
-import type { Game } from "../../shared/contracts";
+import {
+  sourceLabels,
+  type Detection,
+  type Game,
+} from "../../shared/contracts";
+import { onEvent } from "../api";
 import type { ViewProps } from "../types";
 export { GameMode } from "./GameBooster";
 export function Games({ data, run, pending }: ViewProps) {
@@ -18,11 +25,35 @@ export function Games({ data, run, pending }: ViewProps) {
   const [profile, setProfile] = useState<Game["profile"]>("balanced");
   const [notes, setNotes] = useState("");
   const [remove, setRemove] = useState<Game | null>(null);
-  const [scan, setScan] = useState<{
-    count: number;
-    warnings: string[];
-    launchers: string[];
+  const [scan, setScan] = useState<Detection | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [progress, setProgress] = useState<{
+    launcher: string;
+    done: number;
+    total: number;
+    found: number;
   } | null>(null);
+  useEffect(
+    () =>
+      onEvent((event) => {
+        if (event.type === "scan-progress") setProgress(event);
+      }),
+    [],
+  );
+  async function rescan(folder: boolean) {
+    setScanning(true);
+    setProgress(null);
+    try {
+      const result = folder
+        ? await run("scanFolder", { confirmed: true })
+        : await run("detectGames", {});
+      // A cancelled folder dialog returns no sources; keep the previous table.
+      if (result && result.perLauncher.length) setScan(result);
+    } finally {
+      setScanning(false);
+      setProgress(null);
+    }
+  }
   const games = data.state.games.filter((g) =>
     g.name.toLowerCase().includes(search.toLowerCase()),
   );
@@ -61,33 +92,84 @@ export function Games({ data, run, pending }: ViewProps) {
         </div>
         <Button
           disabled={pending || data.mode === "demo"}
-          onClick={async () => {
-            const result = await run("detectGames", {});
-            if (result)
-              setScan({
-                count: result.games.length,
-                warnings: result.warnings,
-                launchers: result.launchers,
-              });
-          }}
+          onClick={() => void rescan(false)}
         >
-          <FolderSearch size={17} />
-          Scan installed games
+          <RefreshCw size={17} />
+          Rescan
+        </Button>
+        <Button
+          disabled={pending || data.mode === "demo"}
+          onClick={() => void rescan(true)}
+        >
+          <FolderOpen size={17} />
+          Scan a folder…
         </Button>
       </div>
-      {scan && (
+      {scanning && (
         <div role="status" className="notice">
           <FolderSearch size={18} />
           <div>
             <p>
-              {scan.count} installed games found.{" "}
-              {scan.launchers.length
-                ? `Scanned: ${scan.launchers.join(", ")}.`
-                : "No supported launchers found."}
+              {progress
+                ? `Scanned ${progress.launcher} (${progress.done}/${progress.total}). ${progress.found} games found so far.`
+                : "Scanning your PC for installed games…"}
+            </p>
+            <progress
+              aria-label="Scan progress"
+              max={progress?.total ?? 1}
+              value={progress?.done ?? 0}
+            />
+          </div>
+        </div>
+      )}
+      {scan && !scanning && (
+        <div role="status" className="notice">
+          <FolderSearch size={18} />
+          <div>
+            <p>
+              {scan.games.length} games found.
+              {scan.perLauncher.length > 0 &&
+                (scan.launchers.length
+                  ? ` Scanned: ${scan.launchers.join(", ")}.`
+                  : " No supported launchers found.")}
             </p>
             {scan.warnings.map((warning, index) => (
               <p key={index}>{warning}</p>
             ))}
+            {scan.perLauncher.length > 0 && (
+              <div className="table-wrap scan-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Source</th>
+                      <th>Found</th>
+                      <th>Skipped</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scan.perLauncher.map((row) => (
+                      <tr key={row.launcher}>
+                        <td>{row.launcher}</td>
+                        <td>{row.found}</td>
+                        <td>{row.skipped}</td>
+                        <td>
+                          {row.status === "scanned"
+                            ? row.found
+                              ? "Scanned"
+                              : row.launcher === sourceLabels.registry
+                                ? "Scanned, none found"
+                                : "Installed, no games found"
+                            : row.status === "not-installed"
+                              ? "Not installed"
+                              : "Failed"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -100,7 +182,7 @@ export function Games({ data, run, pending }: ViewProps) {
                 <span>{g.name.slice(0, 2).toUpperCase()}</span>
               </div>
               <div className="game-content">
-                <Badge tone="cyan">{g.source}</Badge>
+                <Badge tone="cyan">{sourceLabels[g.source]}</Badge>
                 <h2>{g.name}</h2>
                 <p className="muted">{g.profile} profile</p>
                 <div className="card-bottom">
@@ -133,7 +215,7 @@ export function Games({ data, run, pending }: ViewProps) {
           description={
             search
               ? "Try a different game name."
-              : "Add a local executable or scan installed Steam, Epic, GOG and Xbox games."
+              : "Add a local executable, Rescan to find games from Steam, Epic Games, GOG, Xbox app, EA app, Ubisoft Connect, Battle.net, Riot Games, Rockstar Games and itch.io, or scan a folder."
           }
         />
       )}
@@ -144,6 +226,11 @@ export function Games({ data, run, pending }: ViewProps) {
           onClose={() => setSelected(null)}
         >
           <p className="setting-path">{selected.path}</p>
+          <p className="muted">
+            {selected.executablePath
+              ? `Executable: ${selected.executablePath}`
+              : "Matched by folder"}
+          </p>
           <form
             onSubmit={async (e) => {
               e.preventDefault();

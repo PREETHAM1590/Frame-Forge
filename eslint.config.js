@@ -6,6 +6,7 @@ export default ts.config(
   {
     ignores: [
       "node_modules/**",
+      ".claude/**",
       "dist/**",
       "dist-electron/**",
       "release/**",

@@ -1,0 +1,38 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Battle.net]
+"DisplayName"="Battle.net"
+"Publisher"="Blizzard Entertainment"
+"InstallLocation"="C:\\Program Files (x86)\\Battle.net"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Overwatch]
+"DisplayName"="Overwatch 2"
+"Publisher"="Blizzard Entertainment"
+"InstallLocation"="C:\\Program Files (x86)\\Overwatch"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Uplay Install 720]
+"DisplayName"="Far Cry 5"
+"Publisher"="Ubisoft"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Riot Vanguard]
+"DisplayName"="Riot Vanguard"
+"Publisher"="Riot Games, Inc."
+"InstallLocation"="C:\\Program Files\\Riot Vanguard"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 1304930]
+"DisplayName"="The Outlast Trials"
+"Publisher"="Red Barrels"
+"InstallLocation"="C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Outlast Trials"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Samsung]
+"DisplayName"="Smart Switch"
+"Publisher"="Samsung Electronics Co., Ltd."
+"InstallLocation"="C:\\Program Files (x86)\\Samsung\\Smart Switch PC\\"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Cyberpunk]
+"DisplayName"="Cyberpunk 2077"
+"Publisher"="CD PROJEKT RED"
+"InstallLocation"="C:\\Games\\Cyberpunk 2077"
+"NoModify"=dword:00000001
+"UninstallString"=hex(2):25,00,50,00,72,00,6f,00,67,00,72,00,61,00,6d,00,46,00,69,00,6c,00,\
+  65,00,73,00,25,00,5c,00,78,00,2e,00,65,00,78,00,65,00,00,00

@@ -6,8 +6,10 @@ import {
   responses,
   defaultState,
   type Api,
+  type AppEvent,
   type AppState,
   type Bootstrap,
+  type FrameforgeApi,
   type Method,
   type Request,
   type Response,
@@ -180,6 +182,7 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "addGame":
       throw new Error("The native file picker requires the desktop app.");
     case "detectGames":
+    case "scanFolder":
       throw new Error("Installed game detection requires the desktop app.");
     case "restoreStatus":
       return {
@@ -214,7 +217,7 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
 }
 declare global {
   interface Window {
-    frameforge?: Api;
+    frameforge?: FrameforgeApi;
   }
 }
 export const isDesktop = !!window.frameforge;
@@ -223,9 +226,13 @@ export async function request<M extends Method>(
   input: Request<M>,
 ): Promise<Response<M>> {
   requests[method].parse(input);
-  const api = window.frameforge;
+  const api: Api | undefined = window.frameforge;
   const output = api
     ? await (api[method] as (input: Request<M>) => Promise<Response<M>>)(input)
     : await demoDispatch(method, input);
   return responses[method].parse(output) as Response<M>;
+}
+// Main-process events (scan progress). The browser demo never receives any.
+export function onEvent(callback: (event: AppEvent) => void): () => void {
+  return window.frameforge?.onEvent(callback) ?? (() => {});
 }

@@ -7,7 +7,13 @@ describe("validated IPC to SQLite integration", () => {
     const repo = new Repository(":memory:");
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
+      detectGames: async () => ({
+        games: [],
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
       setStartup: () => {},
       version: "test",
     });
@@ -42,7 +48,13 @@ describe("validated IPC to SQLite integration", () => {
     const setStartup = vi.fn();
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
+      detectGames: async () => ({
+        games: [],
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
       setStartup,
       version: "test",
     });
@@ -73,7 +85,13 @@ describe("validated IPC to SQLite integration", () => {
     const setStartup = vi.fn();
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
+      detectGames: async () => ({
+        games: [],
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
       setStartup,
       version: "test",
     });
@@ -98,7 +116,13 @@ describe("validated IPC to SQLite integration", () => {
     const setStartup = vi.fn();
     const service = new AppService(repo, new MockPlatform(), {
       pickGame: async () => null,
-      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
+      detectGames: async () => ({
+        games: [],
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
       setStartup,
       version: "test",
     });
@@ -114,6 +138,92 @@ describe("validated IPC to SQLite integration", () => {
     ).rejects.toThrow("Configuration failed");
     expect(setStartup.mock.calls).toEqual([[true], [false]]);
     expect(repo.state()).toEqual(previous);
+    repo.close();
+  });
+  it("does not add a folder or registry hit that is inside or above a launcher game already in the library", async () => {
+    const repo = new Repository(":memory:");
+    const game = (
+      name: string,
+      path: string,
+      source: "riot" | "folder" | "registry",
+    ) => ({
+      id: crypto.randomUUID(),
+      name,
+      path,
+      source,
+      executablePath: null,
+      profile: "balanced" as const,
+      notes: "",
+    });
+    const detection = (games: ReturnType<typeof game>[]) => ({
+      games,
+      warnings: [],
+      launchers: ["Riot Games"],
+      perLauncher: [],
+    });
+    let next = detection([
+      game("VALORANT", "D:\\Riot Games\\VALORANT\\live", "riot"),
+    ]);
+    const service = new AppService(repo, new MockPlatform(), {
+      pickGame: async () => null,
+      detectGames: async () => next,
+      scanFolder: async () => next,
+      setStartup: () => {},
+      version: "test",
+    });
+    await service.dispatch("detectGames", {});
+    next = detection([
+      game("VALORANT", "D:\\Riot Games\\VALORANT", "folder"),
+      game("Helper", "D:\\Riot Games\\VALORANT\\live\\helper", "registry"),
+      game("Riot Client", "D:\\Riot Games\\Riot Client", "folder"),
+    ]);
+    await service.dispatch("scanFolder", { confirmed: true });
+    expect(repo.state().games.map((g) => g.name)).toEqual([
+      "VALORANT",
+      "Riot Client",
+    ]);
+    repo.close();
+  });
+});
+
+describe("rescan source upgrade", () => {
+  it("upgrades a library entry first found by the registry or a folder scan to the launcher source", async () => {
+    const repo = new Repository(":memory:");
+    const game = (
+      source: "registry" | "riot",
+      executablePath: string | null,
+    ) => ({
+      id: crypto.randomUUID(),
+      name: "VALORANT",
+      path: "D:\\Riot Games\\VALORANT\\live",
+      source,
+      executablePath,
+      profile: "gaming" as const,
+      notes: "mine",
+    });
+    let next = [game("registry", null)];
+    const service = new AppService(repo, new MockPlatform(), {
+      pickGame: async () => null,
+      detectGames: async () => ({
+        games: next,
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
+      setStartup: () => {},
+      version: "test",
+    });
+    await service.dispatch("detectGames", {});
+    next = [game("riot", "D:\\Riot Games\\VALORANT\\live\\VALORANT.exe")];
+    await service.dispatch("detectGames", {});
+    expect(repo.state().games).toHaveLength(1);
+    expect(repo.state().games[0]).toMatchObject({
+      source: "riot",
+      executablePath: "D:\\Riot Games\\VALORANT\\live\\VALORANT.exe",
+      profile: "gaming",
+      notes: "mine",
+    });
     repo.close();
   });
 });

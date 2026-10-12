@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import {
   requests,
   responses,
@@ -21,6 +22,8 @@ type Handlers = { [M in Method]: (input: Request<M>) => Promise<Response<M>> };
 export interface DesktopServices {
   pickGame: () => Promise<Game | null>;
   detectGames: () => Promise<DetectionResult>;
+  /** Opens the native folder dialog and scans the chosen folder; null when cancelled. */
+  scanFolder: () => Promise<DetectionResult | null>;
   setStartup: (enabled: boolean) => void;
   version: string;
   startupSupported?: boolean;
@@ -123,24 +126,20 @@ export class AppService {
         guard();
         const result = await this.desktop.detectGames();
         guard();
-        const state = this.repo.state();
-        const added = result.games.filter(
-          (g) =>
-            !state.games.some(
-              (old) => old.path.toLowerCase() === g.path.toLowerCase(),
-            ),
-        );
-        const combined = [...state.games, ...added].slice(0, 500);
-        this.repo.updateState({ ...state, games: combined });
-        this.log(
-          "Installed game scan completed",
-          `${combined.length - state.games.length} new of ${result.games.length} found. Scanned: ${result.launchers.length ? result.launchers.join(", ") : "no supported launchers"}.`,
-        );
-        return {
-          games: result.games,
-          warnings: result.warnings,
-          launchers: result.launchers,
-        };
+        return this.merge(result);
+      },
+      scanFolder: async () => {
+        guard();
+        const result = await this.desktop.scanFolder();
+        guard();
+        return result
+          ? this.merge(result)
+          : {
+              games: [],
+              warnings: ["No folder was chosen."],
+              launchers: [],
+              perLauncher: [],
+            };
       },
       restoreStatus: async () => this.restorePoints.status(),
       restorePoints: async () => this.restorePoints.list(),
@@ -230,6 +229,46 @@ export class AppService {
         return true;
       },
     };
+  }
+  // Adds scanned games the library does not have yet (matched by install path) and logs the scan.
+  private merge(result: DetectionResult): DetectionResult {
+    const state = this.repo.state();
+    const known = state.games.map((g) => g.path.toLowerCase());
+    const generic = (source: string) =>
+      source === "registry" || source === "folder" || source === "msstore";
+    const nested = (a: string, b: string) =>
+      a.startsWith(b + path.sep) || b.startsWith(a + path.sep);
+    // A generic (registry/folder/store) hit inside, or above, a library game is the same game.
+    const added = result.games.filter((g) => {
+      const key = g.path.toLowerCase();
+      return (
+        !known.includes(key) &&
+        !(generic(g.source) && known.some((other) => nested(key, other)))
+      );
+    });
+    // A launcher-specific hit upgrades a library entry that was first found generically.
+    const upgrades = new Map(
+      result.games
+        .filter((g) => !generic(g.source))
+        .map((g) => [g.path.toLowerCase(), g]),
+    );
+    const library = state.games.map((old) => {
+      const better = upgrades.get(old.path.toLowerCase());
+      return better && generic(old.source)
+        ? {
+            ...old,
+            source: better.source,
+            executablePath: old.executablePath ?? better.executablePath,
+          }
+        : old;
+    });
+    const combined = [...library, ...added].slice(0, 500);
+    this.repo.updateState({ ...state, games: combined });
+    this.log(
+      "Installed game scan completed",
+      `${combined.length - state.games.length} new of ${result.games.length} found. Scanned: ${result.launchers.length ? result.launchers.join(", ") : "no supported launchers"}.`,
+    );
+    return result;
   }
   private log(
     label: string,

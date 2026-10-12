@@ -27,13 +27,44 @@ export const GameSchema = z
     id: Id,
     name: Name,
     path: z.string().max(2048),
-    source: z.enum(["custom", "steam", "epic", "gog", "xbox"]),
+    source: z.enum([
+      "custom",
+      "steam",
+      "epic",
+      "gog",
+      "xbox",
+      "msstore",
+      "ea",
+      "ubisoft",
+      "battlenet",
+      "riot",
+      "rockstar",
+      "itch",
+      "registry",
+      "folder",
+    ]),
     executablePath: z.string().max(2048).nullable().default(null),
     profile: z.enum(["balanced", "gaming", "quiet"]),
     notes: z.string().max(500),
   })
   .strict();
 export type Game = z.infer<typeof GameSchema>;
+export const sourceLabels: Record<Game["source"], string> = {
+  custom: "Added manually",
+  steam: "Steam",
+  epic: "Epic Games",
+  gog: "GOG",
+  xbox: "Xbox app",
+  msstore: "Microsoft Store",
+  ea: "EA app",
+  ubisoft: "Ubisoft Connect",
+  battlenet: "Battle.net",
+  riot: "Riot Games",
+  rockstar: "Rockstar Games",
+  itch: "itch.io",
+  registry: "Other installed games",
+  folder: "Chosen folder",
+};
 export const PresetSchema = z
   .object({ id: Id, name: Name, ids: z.array(OperationId).min(1).max(8) })
   .strict();
@@ -235,8 +266,19 @@ export const DetectionSchema = z
     games: z.array(GameSchema).max(500),
     warnings: z.array(z.string().max(1000)),
     launchers: z.array(z.string().max(80)),
+    perLauncher: z.array(
+      z
+        .object({
+          launcher: z.string().max(80),
+          found: z.number().int().nonnegative(),
+          skipped: z.number().int().nonnegative(),
+          status: z.enum(["scanned", "not-installed", "error"]),
+        })
+        .strict(),
+    ),
   })
   .strict();
+export type Detection = z.infer<typeof DetectionSchema>;
 export const BootstrapSchema = z
   .object({
     state: StateSchema,
@@ -282,6 +324,7 @@ export const requests = {
   addGame: Empty,
   detectGames: Empty,
   restoreStatus: Empty,
+  scanFolder: z.object({ confirmed: z.literal(true) }).strict(),
   restorePoints: Empty,
   createRestorePoint: z
     .object({
@@ -328,6 +371,7 @@ export const responses = {
   addGame: GameSchema.nullable(),
   detectGames: DetectionSchema,
   restoreStatus: RestoreStatusSchema,
+  scanFolder: DetectionSchema,
   restorePoints: RestorePointsSchema,
   createRestorePoint: CreateRestorePointResultSchema,
   enableSystemProtection: RestoreStatusSchema,
@@ -348,6 +392,21 @@ export type Request<M extends Method> = z.infer<(typeof requests)[M]>;
 export type Response<M extends Method> = z.infer<(typeof responses)[M]>;
 export type Api = {
   [M in Method]: (request: Request<M>) => Promise<Response<M>>;
+};
+export const EventSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("scan-progress"),
+      launcher: z.string().max(80),
+      done: z.number().int().nonnegative(),
+      total: z.number().int().positive(),
+      found: z.number().int().nonnegative(),
+    })
+    .strict(),
+]);
+export type AppEvent = z.infer<typeof EventSchema>;
+export type FrameforgeApi = Api & {
+  onEvent: (callback: (event: AppEvent) => void) => () => void;
 };
 export const Envelope = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), data: z.unknown() }).strict(),

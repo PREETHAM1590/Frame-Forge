@@ -1,0 +1,6 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\GOG.com\Games\1207658930]
+"gameName"="The Witcher 3"
+"path"="C:\\GOG Games\\Witcher 3"
+"exe"="\"C:\\GOG Games\\Witcher 3\\bin\\witcher3.exe\""

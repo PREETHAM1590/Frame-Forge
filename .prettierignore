@@ -7,3 +7,5 @@ windows
 package-lock.json
 test-results
 artifacts
+tests/fixtures
+.claude

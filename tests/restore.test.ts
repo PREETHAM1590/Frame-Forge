@@ -90,7 +90,13 @@ describe("Windows restore points", () => {
     const platform = new RestorePlatform();
     const service = new AppService(repo, platform, {
       pickGame: async () => null,
-      detectGames: async () => ({ games: [], warnings: [], launchers: [] }),
+      detectGames: async () => ({
+        games: [],
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
       setStartup: () => {},
       version: "test",
     });

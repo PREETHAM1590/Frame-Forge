@@ -1,0 +1,12 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Rockstar Games]
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Rockstar Games\Grand Theft Auto V]
+"InstallFolder"="C:\\Program Files\\Rockstar Games\\Grand Theft Auto V"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Rockstar Games\Launcher]
+"InstallFolder"="C:\\Program Files\\Rockstar Games\\Launcher"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Rockstar Games\Social Club]
+"InstallFolder"="C:\\Program Files\\Rockstar Games\\Social Club"
