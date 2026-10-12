@@ -1,6 +1,8 @@
 import { readFile, readdir, stat, realpath } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { parse } from "@node-steam/vdf";
 import { z } from "zod";
 import {
@@ -53,6 +55,8 @@ export type DetectionOptions = {
   driveRoots?: string[];
   riotMetadataRoots?: string[];
   itchRoots?: string[];
+  /** Installed Microsoft Store packages that ship a MicrosoftGame.config. */
+  storePackages?: () => Promise<launcher.StorePackage[]>;
 };
 export type DetectionResult = Detection;
 export type ScanProgress = {
@@ -107,10 +111,15 @@ async function installExecutable(
   return resolved;
 }
 
+// A missing, non-.exe or escaping executable must not hide a game: the install folder is enough to match it.
+const softExecutable = (install: string, input?: string) =>
+  installExecutable(install, input).catch(() => null);
+
 // Sources run in priority order (launcher-specific, then the registry heuristic), so the first writer wins.
 function collector() {
   const games: Game[] = [];
   const byKey = new Map<string, Game>();
+  let dropped = 0;
   // `install` must already be a realpath. Returns true when the game was added.
   function add(
     name: string,
@@ -119,9 +128,13 @@ function collector() {
     executablePath: string | null,
   ): boolean {
     const key = install.toLowerCase();
-    if (byKey.has(key) || games.length >= 500) return false;
+    if (byKey.has(key)) return false;
+    if (games.length >= 500) {
+      dropped++;
+      return false;
+    }
     // Generic sources must not list a helper folder inside, or a parent folder of, a known game.
-    if (source === "registry" || source === "folder")
+    if (source === "registry" || source === "folder" || source === "msstore")
       for (const known of byKey.keys())
         if (
           known.startsWith(key + path.sep) ||
@@ -154,13 +167,13 @@ function collector() {
         name,
         install,
         source,
-        await installExecutable(install, found.executable),
+        await softExecutable(install, found.executable),
       );
     } catch (error) {
       if (!missing(error)) skip();
     }
   }
-  return { games, add, addFound };
+  return { games, add, addFound, dropped: () => dropped };
 }
 
 async function fixedDrives(): Promise<string[]> {
@@ -184,17 +197,43 @@ async function fixedDrives(): Promise<string[]> {
   );
 }
 
-async function subdirectories(root: string, limit = 500): Promise<string[]> {
+async function subdirectories(root: string): Promise<string[]> {
   return (await readdir(root, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .slice(0, limit);
+    .map((entry) => entry.name);
+}
+
+const sourceCap = 500;
+// Real Windows: Store packages that ship a MicrosoftGame.config. PowerShell runs a fixed script with
+// no user input; the package database is read-only and WindowsApps itself is never listed.
+async function installedStorePackages(): Promise<launcher.StorePackage[]> {
+  if (process.platform !== "win32") return [];
+  const script = [
+    "[Console]::OutputEncoding=[Text.Encoding]::UTF8",
+    "$ErrorActionPreference='Stop'",
+    "$names=@{}",
+    "try{Get-StartApps|ForEach-Object{$k=$_.AppID.Split('!')[0];if(-not $names.ContainsKey($k)){$names[$k]=$_.Name}}}catch{}",
+    "$found=@(Get-AppxPackage|Where-Object{$_.InstallLocation -and -not $_.IsFramework -and $_.SignatureKind -ne 'System'}|Where-Object{Test-Path -LiteralPath (Join-Path $_.InstallLocation 'MicrosoftGame.config')}|ForEach-Object{[pscustomobject]@{name=$names[$_.PackageFamilyName];installLocation=$_.InstallLocation}})",
+    "ConvertTo-Json -Compress -InputObject $found",
+  ].join(";");
+  const { stdout } = await promisify(execFile)(
+    path.join(
+      process.env.SystemRoot ?? "C:\\Windows",
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+      "powershell.exe",
+    ),
+    ["-NoProfile", "-NonInteractive", "-Command", script],
+    { windowsHide: true, shell: false, timeout: 30000, encoding: "utf8" },
+  );
+  return launcher.parseStorePackages(stdout);
 }
 
 type Status = "scanned" | "not-installed";
 type Source = {
   source: Game["source"];
-  run: (skip: () => void) => Promise<Status>;
+  run: (skip: () => void, cap: <T>(items: T[]) => T[]) => Promise<Status>;
 };
 
 export async function detectInstalledGames(
@@ -207,7 +246,7 @@ export async function detectInstalledGames(
     launchers: [],
     perLauncher: [],
   };
-  const { games, add, addFound } = collector();
+  const { games, add, addFound, dropped } = collector();
   const cache = new Map<string, Promise<RegistryRecord[]>>();
   const reg: RegistryQuery = (key) => {
     if (options.registry === false) return Promise.resolve([]);
@@ -231,7 +270,7 @@ export async function detectInstalledGames(
   const sources: Source[] = [
     {
       source: "steam",
-      run: async (skip) => {
+      run: async (skip, cap) => {
         const defaultSteam = [
           process.env["ProgramFiles(x86)"],
           process.env.ProgramFiles,
@@ -307,11 +346,11 @@ export async function detectInstalledGames(
         for (const root of roots.values()) {
           const steamapps = path.join(root, "steamapps");
           try {
-            const files = (await readdir(steamapps))
-              .filter((file) => /^appmanifest_\d+\.acf$/i.test(file))
-              .slice(0, 500);
+            const files = (await readdir(steamapps)).filter((file) =>
+              /^appmanifest_\d+\.acf$/i.test(file),
+            );
             scanned = true;
-            for (const file of files) {
+            for (const file of cap(files)) {
               try {
                 const data = z
                   .object({
@@ -353,7 +392,7 @@ export async function detectInstalledGames(
     },
     {
       source: "epic",
-      run: async (skip) => {
+      run: async (skip, cap) => {
         const epicRoots =
           options.epicManifestRoots ??
           (programData
@@ -371,11 +410,11 @@ export async function detectInstalledGames(
         for (const root of epicRoots.slice(0, 8)) {
           try {
             const metadataRoot = await directory(root);
-            const files = (await readdir(metadataRoot))
-              .filter((file) => file.toLowerCase().endsWith(".item"))
-              .slice(0, 500);
+            const files = (await readdir(metadataRoot)).filter((file) =>
+              file.toLowerCase().endsWith(".item"),
+            );
             scanned = true;
-            for (const file of files) {
+            for (const file of cap(files)) {
               try {
                 const data = z
                   .object({
@@ -402,7 +441,7 @@ export async function detectInstalledGames(
                   data.DisplayName,
                   install,
                   "epic",
-                  await installExecutable(install, data.LaunchExecutable),
+                  await softExecutable(install, data.LaunchExecutable),
                 );
               } catch (error) {
                 if (!missing(error)) skip();
@@ -420,37 +459,33 @@ export async function detectInstalledGames(
     },
     {
       source: "gog",
-      run: async (skip) => {
+      run: async (skip, cap) => {
+        const records = await regAll([
+          "HKLM\\SOFTWARE\\WOW6432Node\\GOG.com\\Games",
+          "HKLM\\SOFTWARE\\GOG.com\\Games",
+        ]);
         const found: Found[] = [
           ...(options.gogGames ?? []).map((game) => ({
             name: game.name,
             installPath: game.path,
             ...(game.executablePath ? { executable: game.executablePath } : {}),
           })),
-          ...launcher.parseGog(
-            await regAll([
-              "HKLM\\SOFTWARE\\WOW6432Node\\GOG.com\\Games",
-              "HKLM\\SOFTWARE\\GOG.com\\Games",
-            ]),
-          ),
+          ...launcher.parseGog(records),
         ];
-        for (const game of found.slice(0, 500))
-          await addFound("gog", game, skip);
-        return found.length ? "scanned" : "not-installed";
+        for (const game of cap(found)) await addFound("gog", game, skip);
+        return found.length || records.length ? "scanned" : "not-installed";
       },
     },
     {
       source: "xbox",
-      run: async (skip) => {
+      run: async (skip, cap) => {
         const drives = options.driveRoots ?? (await fixedDrives());
         const candidates = new Map<string, string>();
-        let gamingRoot = false;
         for (const drive of drives) {
           let names: string[] = [];
           try {
             const file = path.join(drive, ".GamingRoot");
             if ((await stat(file)).size <= 64 * 1024) {
-              gamingRoot = true;
               names = launcher.parseGamingRoot(await readFile(file));
             }
           } catch (error) {
@@ -466,7 +501,7 @@ export async function detectInstalledGames(
           try {
             const root = await directory(candidate);
             scanned = true;
-            for (const folder of await subdirectories(root)) {
+            for (const folder of cap(await subdirectories(root))) {
               try {
                 const install = await directory(path.join(root, folder));
                 const config = launcher.parseMicrosoftGameConfig(
@@ -477,10 +512,10 @@ export async function detectInstalledGames(
                 );
                 // A wrong Executable entry must not hide the game, so it only drops the executable.
                 const executable = config.executable
-                  ? await installExecutable(
+                  ? await softExecutable(
                       install,
                       path.join("Content", config.executable),
-                    ).catch(() => null)
+                    )
                   : null;
                 await addFound(
                   "xbox",
@@ -499,51 +534,84 @@ export async function detectInstalledGames(
             if (!missing(error)) skip();
           }
         }
-        if (drives.length && !gamingRoot)
-          result.warnings.push(
-            "Microsoft Store titles outside XboxGames folders are not detectable without Store APIs.",
-          );
         return scanned ? "scanned" : "not-installed";
       },
     },
     {
+      source: "msstore",
+      run: async (skip, cap) => {
+        const packages = cap(
+          await (
+            options.storePackages ??
+            (options.registry === false
+              ? async () => []
+              : installedStorePackages)
+          )(),
+        );
+        for (const pkg of packages) {
+          try {
+            const install = await directory(pkg.installLocation);
+            const config = launcher.parseMicrosoftGameConfig(
+              await readText(path.join(install, "MicrosoftGame.config")),
+              path.basename(pkg.installLocation),
+            );
+            await addFound(
+              "msstore",
+              {
+                name: pkg.name ?? config.name,
+                installPath: install,
+                ...(config.executable ? { executable: config.executable } : {}),
+              },
+              skip,
+            );
+          } catch (error) {
+            if (!missing(error)) skip();
+          }
+        }
+        return packages.length ? "scanned" : "not-installed";
+      },
+    },
+    {
       source: "ea",
-      run: async (skip) => {
+      run: async (skip, cap) => {
         const records = await regAll([
           "HKLM\\SOFTWARE\\WOW6432Node\\Electronic Arts",
           "HKLM\\SOFTWARE\\WOW6432Node\\EA Games",
           "HKLM\\SOFTWARE\\Electronic Arts",
           "HKLM\\SOFTWARE\\EA Games",
         ]);
-        for (const game of launcher.parseEa(records).slice(0, 500))
+        for (const game of cap(launcher.parseEa(records)))
           await addFound("ea", game, skip);
         return records.length ? "scanned" : "not-installed";
       },
     },
     {
       source: "ubisoft",
-      run: async (skip) => {
+      run: async (skip, cap) => {
         const installs = await reg(
           "HKLM\\SOFTWARE\\WOW6432Node\\Ubisoft\\Launcher\\Installs",
         );
         const found = launcher.parseUbisoft(installs, await uninstalls());
-        for (const game of found.slice(0, 500))
-          await addFound("ubisoft", game, skip);
+        for (const game of cap(found)) await addFound("ubisoft", game, skip);
         return installs.length ? "scanned" : "not-installed";
       },
     },
     {
       source: "battlenet",
-      run: async (skip) => {
-        const found = launcher.parseBattlenet(await uninstalls());
-        for (const game of found.slice(0, 500))
+      run: async (skip, cap) => {
+        const all = await uninstalls();
+        for (const game of cap(launcher.parseBattlenet(all)))
           await addFound("battlenet", game, skip);
-        return found.length ? "scanned" : "not-installed";
+        return all.some(
+          (record) => record.values.publisher === "Blizzard Entertainment",
+        )
+          ? "scanned"
+          : "not-installed";
       },
     },
     {
       source: "riot",
-      run: async (skip) => {
+      run: async (skip, cap) => {
         const roots =
           options.riotMetadataRoots ??
           (programData
@@ -554,7 +622,7 @@ export async function detectInstalledGames(
           try {
             const root = await directory(candidate);
             scanned = true;
-            for (const folder of await subdirectories(root)) {
+            for (const folder of cap(await subdirectories(root))) {
               try {
                 const found = launcher.parseRiotSettings(
                   await readText(
@@ -577,20 +645,19 @@ export async function detectInstalledGames(
     },
     {
       source: "rockstar",
-      run: async (skip) => {
+      run: async (skip, cap) => {
         const records = await regAll([
           "HKLM\\SOFTWARE\\WOW6432Node\\Rockstar Games",
           "HKLM\\SOFTWARE\\Rockstar Games",
         ]);
         const found = launcher.parseRockstar(records, await uninstalls());
-        for (const game of found.slice(0, 500))
-          await addFound("rockstar", game, skip);
+        for (const game of cap(found)) await addFound("rockstar", game, skip);
         return records.length || found.length ? "scanned" : "not-installed";
       },
     },
     {
       source: "itch",
-      run: async (skip) => {
+      run: async (skip, cap) => {
         const roots =
           options.itchRoots ??
           (process.env.APPDATA
@@ -601,7 +668,7 @@ export async function detectInstalledGames(
           try {
             const root = await directory(candidate);
             scanned = true;
-            for (const folder of await subdirectories(root)) {
+            for (const folder of cap(await subdirectories(root))) {
               try {
                 const install = path.join(root, folder);
                 const title = launcher.parseItchReceipt(
@@ -628,9 +695,9 @@ export async function detectInstalledGames(
     },
     {
       source: "registry",
-      run: async (skip) => {
+      run: async (skip, cap) => {
         const all = await uninstalls();
-        for (const game of launcher.parseUninstallHeuristic(all).slice(0, 500))
+        for (const game of cap(launcher.parseUninstallHeuristic(all)))
           await addFound("registry", game, skip);
         return all.length ? "scanned" : "not-installed";
       },
@@ -641,8 +708,15 @@ export async function detectInstalledGames(
     const label = sourceLabels[source];
     let skipped = 0;
     let status: DetectionResult["perLauncher"][number]["status"] = "error";
+    const cap = <T>(items: T[]): T[] => {
+      if (items.length <= sourceCap) return items;
+      result.warnings.push(
+        `${label}: only the first ${sourceCap} entries were scanned.`,
+      );
+      return items.slice(0, sourceCap);
+    };
     try {
-      status = await run(() => skipped++);
+      status = await run(() => skipped++, cap);
     } catch {
       result.warnings.push(`${label} could not be scanned.`);
     }
@@ -664,6 +738,10 @@ export async function detectInstalledGames(
       found: games.length,
     });
   }
+  if (dropped())
+    result.warnings.push(
+      `The library holds at most 500 games; ${dropped()} more were not added.`,
+    );
   result.games = games;
   return result;
 }
@@ -698,7 +776,7 @@ export async function scanGameFolder(folder: string): Promise<DetectionResult> {
   };
   const { games, add } = collector();
   let skipped = 0;
-  const folders = await subdirectories(root, 201);
+  const folders = await subdirectories(root);
   if (folders.length > 200)
     result.warnings.push("Only the first 200 folders were scanned.");
   for (const name of folders.slice(0, 200)) {

@@ -18,8 +18,9 @@ import {
   pickGameExecutable,
   isEpicNonGame,
   isSteamNonGame,
+  parseStorePackages,
 } from "../electron/launchers.js";
-import { parseRegOutput } from "../electron/registry.js";
+import { decodeRegFile, parseRegExport } from "../electron/registry.js";
 import type { RegistryQuery } from "../electron/registry.js";
 import { detectInstalledGames, scanGameFolder } from "../electron/games.js";
 
@@ -28,8 +29,11 @@ const fixtures = fileURLToPath(
 );
 const fixture = (...parts: string[]) =>
   readFile(path.join(fixtures, ...parts), "utf8");
+// reg export writes UTF-16LE with a BOM; fixtures go through the same decoding.
+const utf16 = (text: string) =>
+  Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
 const records = async (name: string) =>
-  parseRegOutput(await fixture("registry", name));
+  parseRegExport(decodeRegFile(utf16(await fixture("registry", name))));
 
 const temporary: string[] = [];
 async function tempDir() {
@@ -61,11 +65,12 @@ const none = {
   driveRoots: [],
   riotMetadataRoots: [],
   itchRoots: [],
+  storePackages: async () => [],
 };
 
-describe("reg query parser", () => {
+describe("reg export parser", () => {
   it("keeps the subkey path, lower-cases value names and converts DWORD", async () => {
-    const parsed = await records("ea.txt");
+    const parsed = await records("ea.reg");
     const game = parsed.find((r) => r.key.endsWith("Battlefield 4"));
     expect(game?.key).toBe(
       "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Electronic Arts\\EA Games\\Battlefield 4",
@@ -76,16 +81,28 @@ describe("reg query parser", () => {
       version: "42",
     });
   });
-  it("handles CRLF output and empty values", () => {
-    const parsed = parseRegOutput(
-      "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Test\r\n    Empty    REG_SZ    \r\n    Path    REG_EXPAND_SZ    %ProgramFiles%\\X\r\n",
-    );
-    expect(parsed).toEqual([
+  it("handles CRLF, empty values, escaped quotes and hex(2) continuation lines", async () => {
+    const parsed = await records("uninstall.reg");
+    const cyberpunk = parsed.find((r) => r.key.endsWith("\\Cyberpunk"));
+    expect(cyberpunk?.values.uninstallstring).toBe("%ProgramFiles%\\x.exe");
+    expect(cyberpunk?.values.nomodify).toBe("1");
+    expect(
+      parseRegExport(
+        'Windows Registry Editor Version 5.00\r\n\r\n[HKEY_LOCAL_MACHINE\\SOFTWARE\\Test]\r\n"Empty"=""\r\n"Quoted"="say \\"hi\\""\r\n',
+      ),
+    ).toEqual([
       {
         key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Test",
-        values: { empty: "", path: "%ProgramFiles%\\X" },
+        values: { empty: "", quoted: 'say "hi"' },
       },
     ]);
+  });
+  it("decodes UTF-16LE exports so non-ASCII names and paths survive (reg query would garble them)", async () => {
+    const text =
+      'Windows Registry Editor Version 5.00\r\n\r\n[HKEY_LOCAL_MACHINE\\SOFTWARE\\Test\\Café Игры 日本語]\r\n"InstallLocation"="D:\\\\Игры\\\\Café"\r\n';
+    const [record] = parseRegExport(decodeRegFile(utf16(text)));
+    expect(record?.key.endsWith("Café Игры 日本語")).toBe(true);
+    expect(record?.values.installlocation).toBe("D:\\Игры\\Café");
   });
 });
 
@@ -179,7 +196,7 @@ describe("itch receipt parser", () => {
 
 describe("registry based parsers", () => {
   it("EA: names come from the subkey leaf and EA infrastructure is ignored", async () => {
-    expect(parseEa(await records("ea.txt"))).toEqual([
+    expect(parseEa(await records("ea.reg"))).toEqual([
       {
         name: "Battlefield 4",
         installPath: "C:\\Program Files (x86)\\Origin Games\\Battlefield 4\\",
@@ -189,8 +206,8 @@ describe("registry based parsers", () => {
   it("Ubisoft: uses the Uplay Install display name, else the folder basename", async () => {
     expect(
       parseUbisoft(
-        await records("ubisoft.txt"),
-        await records("uninstall.txt"),
+        await records("ubisoft.reg"),
+        await records("uninstall.reg"),
       ),
     ).toEqual([
       {
@@ -208,8 +225,8 @@ describe("registry based parsers", () => {
   it("Rockstar: excludes Launcher and Social Club", async () => {
     expect(
       parseRockstar(
-        await records("rockstar.txt"),
-        await records("uninstall.txt"),
+        await records("rockstar.reg"),
+        await records("uninstall.reg"),
       ),
     ).toEqual([
       {
@@ -219,7 +236,7 @@ describe("registry based parsers", () => {
     ]);
   });
   it("Battle.net: Blizzard games only, not the app", async () => {
-    expect(parseBattlenet(await records("uninstall.txt"))).toEqual([
+    expect(parseBattlenet(await records("uninstall.reg"))).toEqual([
       {
         name: "Overwatch 2",
         installPath: "C:\\Program Files (x86)\\Overwatch",
@@ -227,7 +244,7 @@ describe("registry based parsers", () => {
     ]);
   });
   it("GOG: name, path and unquoted exe", async () => {
-    expect(parseGog(await records("gog.txt"))).toEqual([
+    expect(parseGog(await records("gog.reg"))).toEqual([
       {
         name: "The Witcher 3",
         installPath: "C:\\GOG Games\\Witcher 3",
@@ -236,7 +253,7 @@ describe("registry based parsers", () => {
     ]);
   });
   it("Uninstall heuristic: allowlisted publishers and Steam App keys, never launchers or other vendors", async () => {
-    const names = parseUninstallHeuristic(await records("uninstall.txt")).map(
+    const names = parseUninstallHeuristic(await records("uninstall.reg")).map(
       (game) => game.name,
     );
     expect(names).toEqual([
@@ -281,14 +298,16 @@ describe("store specific filters", () => {
 function fakeRegistry(table: Record<string, string>): RegistryQuery {
   return async (key) => {
     const text = table[key];
-    return text ? parseRegOutput(text) : [];
+    return text ? parseRegExport(text) : [];
   };
 }
 const uninstallKey =
   "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
 function reg(key: string, values: Record<string, string>) {
-  return `\nHKEY_LOCAL_MACHINE\\${key}\n${Object.entries(values)
-    .map(([name, value]) => `    ${name}    REG_SZ    ${value}`)
+  const escape = (text: string) =>
+    text.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+  return `\n[HKEY_LOCAL_MACHINE\\${key}]\n${Object.entries(values)
+    .map(([name, value]) => `"${escape(name)}"="${escape(value)}"`)
     .join("\n")}\n`;
 }
 
@@ -325,7 +344,7 @@ describe("detection across launchers", () => {
       status: "scanned",
     });
   });
-  it("falls back to X:\\XboxGames and explains the Store limitation when there is no .GamingRoot", async () => {
+  it("falls back to X:\\XboxGames when there is no .GamingRoot", async () => {
     const drive = await tempDir();
     const content = path.join(drive, "XboxGames", "Localized", "Content");
     await mkdir(content, { recursive: true });
@@ -339,9 +358,7 @@ describe("detection across launchers", () => {
       name: "Localized",
       executablePath: null,
     });
-    expect(result.warnings).toContain(
-      "Microsoft Store titles outside XboxGames folders are not detectable without Store APIs.",
-    );
+    expect(result.warnings).toEqual([]);
   });
   it("keeps an Xbox game but drops an executable that escapes its folder", async () => {
     const drive = await tempDir();
@@ -626,5 +643,166 @@ describe("folder scan", () => {
   });
   it("rejects a network folder", async () => {
     await expect(scanGameFolder("\\\\server\\share")).rejects.toThrow();
+  });
+});
+
+describe("degraded and extended detection", () => {
+  it("keeps Epic and GOG games whose executable is missing, not an exe or escaping the install", async () => {
+    const root = await tempDir();
+    const manifests = path.join(root, "Manifests");
+    await mkdir(manifests);
+    const installs = ["a", "b", "c", "d"].map((name) => path.join(root, name));
+    for (const install of installs) await mkdir(install);
+    await writeFile(path.join(root, "outside.exe"), "x");
+    await writeFile(path.join(installs[1]!, "readme.txt"), "x");
+    const launches = ["missing.exe", "readme.txt", "../outside.exe"];
+    for (const [index, launch] of launches.entries())
+      await writeFile(
+        path.join(manifests, `${index}.item`),
+        JSON.stringify({
+          DisplayName: `Epic ${index}`,
+          InstallLocation: installs[index],
+          LaunchExecutable: launch,
+        }),
+      );
+    const result = await detectInstalledGames({
+      ...none,
+      epicManifestRoots: [manifests],
+      gogGames: [
+        { name: "GOG Game", path: installs[3]!, executablePath: "nope.exe" },
+      ],
+    });
+    expect(result.games.map((g) => [g.name, g.executablePath])).toEqual([
+      ["Epic 0", null],
+      ["Epic 1", null],
+      ["Epic 2", null],
+      ["GOG Game", null],
+    ]);
+    expect(result.warnings).toEqual([]);
+  });
+  it("finds games with non-ASCII names and paths from a UTF-16 registry export", async () => {
+    const root = await tempDir();
+    const install = path.join(root, "Игры", "Café");
+    await mkdir(install, { recursive: true });
+    const ea = "HKLM\\SOFTWARE\\WOW6432Node\\Electronic Arts";
+    const result = await detectInstalledGames({
+      ...none,
+      registry: undefined,
+      queryRegistry: async (key) =>
+        key === ea
+          ? parseRegExport(
+              decodeRegFile(
+                utf16(
+                  reg(`${ea.slice(5)}\\EA Games\\Café Игры`, {
+                    "Install Dir": install,
+                  }),
+                ),
+              ),
+            )
+          : [],
+    });
+    expect(result.games).toHaveLength(1);
+    expect(result.games[0]).toMatchObject({ name: "Café Игры", path: install });
+  });
+  it("lists installed Microsoft Store game packages and drops one nested in an Xbox folder", async () => {
+    const root = await tempDir();
+    const forza = path.join(root, "WindowsApps", "Forza_1.0_x64__abc");
+    await mkdir(forza, { recursive: true });
+    await writeFile(path.join(forza, "Forza.exe"), "exe");
+    await writeFile(
+      path.join(forza, "MicrosoftGame.config"),
+      '<Game><ExecutableList><Executable Name="Forza.exe"/></ExecutableList><ShellVisuals DefaultDisplayName="ms-resource:Name"/></Game>',
+    );
+    const drive = await tempDir();
+    await writeFile(path.join(drive, ".GamingRoot"), gamingRoot("XboxGames"));
+    const roblox = path.join(drive, "XboxGames", "Roblox");
+    await mkdir(path.join(roblox, "Content"), { recursive: true });
+    await writeFile(
+      path.join(roblox, "Content", "MicrosoftGame.config"),
+      await fixture("xbox", "Roblox.MicrosoftGame.config"),
+    );
+    const result = await detectInstalledGames({
+      ...none,
+      driveRoots: [drive],
+      storePackages: async () => [
+        { name: "Forza Horizon", installLocation: forza },
+        { name: "Roblox", installLocation: path.join(roblox, "Content") },
+      ],
+    });
+    expect(result.games.map((g) => [g.name, g.source]).sort()).toEqual([
+      ["Forza Horizon", "msstore"],
+      ["Roblox", "xbox"],
+    ]);
+    expect(
+      result.games.find((g) => g.source === "msstore")?.executablePath,
+    ).toBe(path.join(forza, "Forza.exe"));
+    expect(
+      result.perLauncher.find((l) => l.launcher === "Microsoft Store"),
+    ).toEqual({
+      launcher: "Microsoft Store",
+      found: 1,
+      skipped: 0,
+      status: "scanned",
+    });
+  });
+  it("parses the Store package script output (array, single object, empty)", () => {
+    expect(parseStorePackages("")).toEqual([]);
+    expect(parseStorePackages('{"name":"A","installLocation":"C:/x"}')).toEqual(
+      [{ name: "A", installLocation: "C:/x" }],
+    );
+    expect(
+      parseStorePackages(
+        '[{"name":null,"installLocation":"C:/y"},{"name":"B"}]',
+      ),
+    ).toEqual([{ name: null, installLocation: "C:/y" }]);
+  });
+  it("warns when a source or the whole library is truncated", async () => {
+    const root = await tempDir();
+    const apps = path.join(root, "apps");
+    await mkdir(apps);
+    const installs: string[] = [];
+    for (let index = 0; index < 501; index++) {
+      const install = path.join(root, `g${index}`);
+      await mkdir(install);
+      installs.push(install);
+    }
+    await mkdir(path.join(apps, "extra", ".itch"), { recursive: true });
+    await writeFile(
+      path.join(apps, "extra", ".itch", "receipt.json.gz"),
+      gzipSync(JSON.stringify({ game: { title: "Extra" } })),
+    );
+    const result = await detectInstalledGames({
+      ...none,
+      gogGames: installs.map((install, index) => ({
+        name: `Game ${index}`,
+        path: install,
+      })),
+      itchRoots: [apps],
+    });
+    expect(result.games).toHaveLength(500);
+    expect(result.warnings).toContain(
+      "GOG: only the first 500 entries were scanned.",
+    );
+    expect(result.warnings).toContain(
+      "The library holds at most 500 games; 1 more were not added.",
+    );
+  });
+  it("reports a launcher that is present but has no games as scanned with zero found", async () => {
+    const u =
+      "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+    const result = await detectInstalledGames({
+      ...none,
+      registry: undefined,
+      queryRegistry: fakeRegistry({
+        [u]: reg(`${u.slice(5)}\\Battle.net`, {
+          DisplayName: "Battle.net",
+          Publisher: "Blizzard Entertainment",
+          InstallLocation: "C:/Program Files (x86)/Battle.net",
+        }),
+      }),
+    });
+    expect(
+      result.perLauncher.find((l) => l.launcher === "Battle.net"),
+    ).toMatchObject({ found: 0, status: "scanned" });
   });
 });

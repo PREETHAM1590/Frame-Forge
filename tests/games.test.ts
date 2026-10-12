@@ -141,8 +141,10 @@ describe("installed game discovery", () => {
     const root = await fixture();
     const manifests = path.join(root, "Manifests");
     const install = path.join(root, "Game");
+    const escapeInstall = path.join(root, "Escape");
     await mkdir(manifests);
     await mkdir(install);
+    await mkdir(escapeInstall);
     await writeFile(path.join(install, "game.exe"), "fixture");
     await writeFile(path.join(root, "outside.exe"), "fixture");
     await writeFile(
@@ -158,7 +160,7 @@ describe("installed game discovery", () => {
       path.join(manifests, "escape.item"),
       JSON.stringify({
         DisplayName: "Bad Target",
-        InstallLocation: install,
+        InstallLocation: escapeInstall,
         LaunchExecutable: "../outside.exe",
       }),
     );
@@ -167,10 +169,11 @@ describe("installed game discovery", () => {
       ...options,
       epicManifestRoots: [manifests],
     });
-    expect(result.games).toHaveLength(1);
-    expect(result.games[0]?.executablePath).toBe(
-      path.join(install, "game.exe"),
-    );
+    // An escaping executable is never used, but it does not hide the game either.
+    expect(result.games.map((g) => [g.name, g.executablePath])).toEqual([
+      ["Bad Target", null],
+      ["Epic Game", path.join(install, "game.exe")],
+    ]);
     expect(result.warnings.length).toBeGreaterThan(0);
   });
   it("uses GOG install metadata and rejects absent installs", async () => {

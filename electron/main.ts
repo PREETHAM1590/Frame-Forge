@@ -65,12 +65,18 @@ if (!app.requestSingleInstanceLock()) {
           app.setLoginItemSettings({ openAtLogin: enabled });
         },
         detectGames: () =>
-          detectInstalledGames({}, (progress) =>
-            window?.webContents.send(
-              "frameforge:event",
-              EventSchema.parse({ type: "scan-progress", ...progress }),
-            ),
-          ),
+          detectInstalledGames({}, (progress) => {
+            // A window closed mid-scan must not fail the scan.
+            try {
+              if (window && !window.isDestroyed())
+                window.webContents.send(
+                  "frameforge:event",
+                  EventSchema.parse({ type: "scan-progress", ...progress }),
+                );
+            } catch {
+              /* progress is best effort */
+            }
+          }),
         scanFolder: async () => {
           if (!window) return null;
           const result = await dialog.showOpenDialog(window, {

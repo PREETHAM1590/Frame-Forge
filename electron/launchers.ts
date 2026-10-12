@@ -215,3 +215,21 @@ export function pickGameExecutable(
     )
     .sort((a, b) => b.size - a.size)[0]?.file;
 }
+
+export type StorePackage = { name: string | null; installLocation: string };
+// JSON from the Store package script: an array of { name, installLocation }.
+export function parseStorePackages(text: string): StorePackage[] {
+  if (!text.trim()) return [];
+  const data = JSON.parse(text) as unknown;
+  return (Array.isArray(data) ? data : [data]).flatMap((entry: unknown) => {
+    const { name, installLocation } = (entry ?? {}) as Record<string, unknown>;
+    return typeof installLocation === "string" && installLocation
+      ? [
+          {
+            name: typeof name === "string" && name.trim() ? name.trim() : null,
+            installLocation,
+          },
+        ]
+      : [];
+  });
+}

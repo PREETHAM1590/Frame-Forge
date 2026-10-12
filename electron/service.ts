@@ -220,20 +220,35 @@ export class AppService {
   private merge(result: DetectionResult): DetectionResult {
     const state = this.repo.state();
     const known = state.games.map((g) => g.path.toLowerCase());
+    const generic = (source: string) =>
+      source === "registry" || source === "folder" || source === "msstore";
     const nested = (a: string, b: string) =>
       a.startsWith(b + path.sep) || b.startsWith(a + path.sep);
-    // A generic (registry/folder) hit inside, or above, a library game is the same game.
+    // A generic (registry/folder/store) hit inside, or above, a library game is the same game.
     const added = result.games.filter((g) => {
       const key = g.path.toLowerCase();
       return (
         !known.includes(key) &&
-        !(
-          (g.source === "registry" || g.source === "folder") &&
-          known.some((other) => nested(key, other))
-        )
+        !(generic(g.source) && known.some((other) => nested(key, other)))
       );
     });
-    const combined = [...state.games, ...added].slice(0, 500);
+    // A launcher-specific hit upgrades a library entry that was first found generically.
+    const upgrades = new Map(
+      result.games
+        .filter((g) => !generic(g.source))
+        .map((g) => [g.path.toLowerCase(), g]),
+    );
+    const library = state.games.map((old) => {
+      const better = upgrades.get(old.path.toLowerCase());
+      return better && generic(old.source)
+        ? {
+            ...old,
+            source: better.source,
+            executablePath: old.executablePath ?? better.executablePath,
+          }
+        : old;
+    });
+    const combined = [...library, ...added].slice(0, 500);
     this.repo.updateState({ ...state, games: combined });
     this.log(
       "Installed game scan completed",

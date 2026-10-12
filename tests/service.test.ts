@@ -185,3 +185,45 @@ describe("validated IPC to SQLite integration", () => {
     repo.close();
   });
 });
+
+describe("rescan source upgrade", () => {
+  it("upgrades a library entry first found by the registry or a folder scan to the launcher source", async () => {
+    const repo = new Repository(":memory:");
+    const game = (
+      source: "registry" | "riot",
+      executablePath: string | null,
+    ) => ({
+      id: crypto.randomUUID(),
+      name: "VALORANT",
+      path: "D:\\Riot Games\\VALORANT\\live",
+      source,
+      executablePath,
+      profile: "gaming" as const,
+      notes: "mine",
+    });
+    let next = [game("registry", null)];
+    const service = new AppService(repo, new MockPlatform(), {
+      pickGame: async () => null,
+      detectGames: async () => ({
+        games: next,
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
+      setStartup: () => {},
+      version: "test",
+    });
+    await service.dispatch("detectGames", {});
+    next = [game("riot", "D:\\Riot Games\\VALORANT\\live\\VALORANT.exe")];
+    await service.dispatch("detectGames", {});
+    expect(repo.state().games).toHaveLength(1);
+    expect(repo.state().games[0]).toMatchObject({
+      source: "riot",
+      executablePath: "D:\\Riot Games\\VALORANT\\live\\VALORANT.exe",
+      profile: "gaming",
+      notes: "mine",
+    });
+    repo.close();
+  });
+});

@@ -110,6 +110,12 @@ describe("configuration and safety UI", () => {
                   status: "not-installed",
                 },
                 { launcher: "EA app", found: 0, skipped: 0, status: "error" },
+                {
+                  launcher: "Riot Games",
+                  found: 0,
+                  skipped: 0,
+                  status: "scanned",
+                },
               ],
             });
         }),
@@ -147,6 +153,11 @@ describe("configuration and safety UI", () => {
       within(
         screen.getByRole("cell", { name: "EA app" }).closest("tr")!,
       ).getByText("Failed"),
+    ).toBeVisible();
+    expect(
+      within(
+        screen.getByRole("cell", { name: "Riot Games" }).closest("tr")!,
+      ).getByText("Installed, no games found"),
     ).toBeVisible();
     expect(
       screen.getByText("Microsoft Store titles are limited."),

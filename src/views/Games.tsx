@@ -47,7 +47,8 @@ export function Games({ data, run, pending }: ViewProps) {
       const result = folder
         ? await run("scanFolder", { confirmed: true })
         : await run("detectGames", {});
-      if (result) setScan(result);
+      // A cancelled folder dialog returns no sources; keep the previous table.
+      if (result && result.perLauncher.length) setScan(result);
     } finally {
       setScanning(false);
       setProgress(null);
@@ -154,7 +155,11 @@ export function Games({ data, run, pending }: ViewProps) {
                         <td>{row.skipped}</td>
                         <td>
                           {row.status === "scanned"
-                            ? "Scanned"
+                            ? row.found
+                              ? "Scanned"
+                              : row.launcher === sourceLabels.registry
+                                ? "Scanned, none found"
+                                : "Installed, no games found"
                             : row.status === "not-installed"
                               ? "Not installed"
                               : "Failed"}
