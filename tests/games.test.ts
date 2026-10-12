@@ -1,0 +1,60 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { detectInstalledGames } from "../electron/games.js";
+
+const temporary: string[] = [];
+async function fixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "frameforge-games-"));
+  temporary.push(root);
+  return root;
+}
+afterEach(async () => {
+  await Promise.all(temporary.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+const options = { registry: false as const, steamRoots: [], epicManifestRoots: [], gogGames: [] };
+describe("installed game discovery", () => {
+  it("reads custom Steam libraries, deduplicates roots and skips stale or incomplete installs", async () => {
+    const root = await fixture();
+    const steam = path.join(root, "Custom Steam");
+    const library = path.join(root, "Other Library");
+    await mkdir(path.join(steam, "steamapps"), { recursive: true });
+    await mkdir(path.join(library, "steamapps", "common", "Example"), { recursive: true });
+    await mkdir(path.join(library, "steamapps", "common", "Downloading"), { recursive: true });
+    await writeFile(path.join(steam, "steamapps", "libraryfolders.vdf"), `"libraryfolders" { "1" { "path" "${library.replaceAll("\\", "\\\\")}" } }`);
+    await writeFile(path.join(library, "steamapps", "appmanifest_100.acf"), '"AppState" { "name" "Example Game" "installdir" "Example" "StateFlags" "4" }');
+    await writeFile(path.join(library, "steamapps", "appmanifest_101.acf"), '"AppState" { "name" "Stale Game" "installdir" "Missing" }');
+    await writeFile(path.join(library, "steamapps", "appmanifest_102.acf"), '"AppState" { "name" "Incomplete Game" "installdir" "Downloading" "StateFlags" "2" }');
+    const result = await detectInstalledGames({ ...options, steamRoots: [steam, library, library] });
+    expect(result.games).toHaveLength(1);
+    expect(result.games[0]).toMatchObject({ name: "Example Game", source: "steam", executablePath: null });
+    expect(result.launchers).toContain("Steam");
+  });
+  it("validates Epic executables and reports malformed metadata without inventing launch targets", async () => {
+    const root = await fixture();
+    const manifests = path.join(root, "Manifests");
+    const install = path.join(root, "Game");
+    await mkdir(manifests);
+    await mkdir(install);
+    await writeFile(path.join(install, "game.exe"), "fixture");
+    await writeFile(path.join(root, "outside.exe"), "fixture");
+    await writeFile(path.join(manifests, "good.item"), JSON.stringify({ DisplayName: "Epic Game", InstallLocation: install, LaunchExecutable: "game.exe", bIsIncompleteInstall: false }));
+    await writeFile(path.join(manifests, "escape.item"), JSON.stringify({ DisplayName: "Bad Target", InstallLocation: install, LaunchExecutable: "../outside.exe" }));
+    await writeFile(path.join(manifests, "bad.item"), "{");
+    const result = await detectInstalledGames({ ...options, epicManifestRoots: [manifests] });
+    expect(result.games).toHaveLength(1);
+    expect(result.games[0]?.executablePath).toBe(path.join(install, "game.exe"));
+    expect(result.warnings.length).toBeGreaterThan(0);
+  });
+  it("uses GOG install metadata and rejects absent installs", async () => {
+    const root = await fixture();
+    await writeFile(path.join(root, "game.exe"), "fixture");
+    const result = await detectInstalledGames({ ...options, gogGames: [
+      { name: "GOG Game", path: root, executablePath: path.join(root, "game.exe") },
+      { name: "Stale", path: path.join(root, "missing") },
+    ] });
+    expect(result.games).toHaveLength(1);
+    expect(result.games[0]).toMatchObject({ source: "gog", executablePath: path.join(root, "game.exe") });
+  });
+});

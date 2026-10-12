@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-electron/
+release/
+coverage/
+windows/**/bin/
+windows/**/obj/
+windows/publish/
+*.db*
+.tools/
+test-results/
+artifacts/
+.superpowers/
+out/
+*.log

@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-electron
+release
+windows
+.tools
+package-lock.json
+test-results
+artifacts

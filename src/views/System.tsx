@@ -1,0 +1,224 @@
+import {
+  Cpu,
+  Monitor,
+  MemoryStick,
+  HardDrive,
+  RefreshCw,
+  Settings2,
+  Archive,
+  Info,
+} from "lucide-react";
+import {
+  PageTitle,
+  Button,
+  Badge,
+  Toggle,
+  formatBytes,
+  formatTime,
+} from "../components/ui";
+import type { ViewProps } from "../types";
+export function System({ data, run, pending }: ViewProps) {
+  const h = data.hardware;
+  return (
+    <>
+      <PageTitle
+        title="System information"
+        subtitle={`Read-only discovery / collected ${formatTime(h.collectedAt)}`}
+        action={
+          <Button
+            disabled={pending}
+            onClick={() =>
+              void run("refresh", {}, "System readings refreshed.")
+            }
+          >
+            <RefreshCw size={17} />
+            Refresh
+          </Button>
+        }
+      />
+      {h.warnings.map((w) => (
+        <div className="notice" key={w}>
+          <Info size={18} />
+          {w}
+        </div>
+      ))}
+      <section className="system-section">
+        <h2>
+          <Cpu size={20} />
+          Processor
+        </h2>
+        <dl>
+          <dt>Model</dt>
+          <dd>{h.cpu || "Unavailable"}</dd>
+          <dt>Logical processors</dt>
+          <dd>{h.cores || "Unavailable"}</dd>
+          <dt>Live CPU utilization</dt>
+          <dd>Unavailable in this release</dd>
+        </dl>
+      </section>
+      <section className="system-section">
+        <h2>
+          <Monitor size={20} />
+          Graphics & display
+        </h2>
+        <dl>
+          <dt>Adapters</dt>
+          <dd>{h.gpu.join(" / ") || "Unavailable"}</dd>
+          <dt>Driver information</dt>
+          <dd>{h.drivers.join(" / ") || "Unavailable"}</dd>
+          <dt>Displays</dt>
+          <dd>{h.displays.join(" / ") || "Unavailable"}</dd>
+          <dt>Temperature & GPU load</dt>
+          <dd>Unavailable in this release</dd>
+        </dl>
+      </section>
+      <section className="system-section">
+        <h2>
+          <MemoryStick size={20} />
+          Memory
+        </h2>
+        <dl>
+          <dt>Installed / visible</dt>
+          <dd>{formatBytes(h.memoryBytes)}</dd>
+          <dt>Available</dt>
+          <dd>{formatBytes(h.freeMemoryBytes)}</dd>
+          <dt>Used</dt>
+          <dd>{formatBytes(h.memoryBytes - h.freeMemoryBytes)}</dd>
+        </dl>
+      </section>
+      <section className="system-section">
+        <h2>
+          <HardDrive size={20} />
+          Drives & operating system
+        </h2>
+        <dl>
+          {h.drives.map((d) => (
+            <div className="dl-row" key={d.name}>
+              <dt>{d.name}</dt>
+              <dd>
+                {formatBytes(d.freeBytes)} free of {formatBytes(d.totalBytes)}
+              </dd>
+            </div>
+          ))}
+          <dt>Operating system</dt>
+          <dd>{h.os || "Unavailable"}</dd>
+          <dt>Data source</dt>
+          <dd>
+            <Badge tone={h.source === "demo" ? "amber" : "cyan"}>
+              {h.source}
+            </Badge>
+          </dd>
+        </dl>
+      </section>
+    </>
+  );
+}
+export function Settings({ data, run, pending, navigate }: ViewProps) {
+  const settings = data.state.settings;
+  const update = (patch: Partial<typeof settings>) =>
+    void run("settings", { ...settings, ...patch }, "Preferences saved.");
+  return (
+    <>
+      <PageTitle
+        title="Settings"
+        subtitle="A local app, configured your way."
+      />
+      <section className="settings-section">
+        <h2>
+          <Settings2 size={20} />
+          Preferences
+        </h2>
+        <div className="setting-row">
+          <div>
+            <label htmlFor="theme">Appearance</label>
+            <p className="muted">Choose a workspace theme.</p>
+          </div>
+          <select
+            id="theme"
+            value={settings.theme}
+            disabled={pending}
+            onChange={(e) =>
+              update({ theme: e.target.value as "dark" | "light" })
+            }
+          >
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </div>
+        <Toggle
+          label="Launch at sign-in"
+          description={
+            data.startupSupported
+              ? "Start Frameforge when you sign in to Windows."
+              : "Available in the installed desktop app; unavailable in the browser or development desktop."
+          }
+          checked={settings.startup}
+          disabled={pending || !data.startupSupported}
+          onChange={(startup) => update({ startup })}
+        />
+        <Toggle
+          label="In-app notifications"
+          description="Show success notifications for completed app actions."
+          checked={settings.notifications}
+          disabled={pending}
+          onChange={(notifications) => update({ notifications })}
+        />
+        <Toggle
+          label="Local diagnostics"
+          description="Record request timing in the local activity log. Nothing is uploaded."
+          checked={settings.diagnostics}
+          disabled={pending}
+          onChange={(diagnostics) => update({ diagnostics })}
+        />
+      </section>
+      <section className="settings-section">
+        <h2>
+          <Archive size={20} />
+          Data management
+        </h2>
+        <div className="setting-row">
+          <div>
+            <strong>Configuration backups</strong>
+            <p className="muted">
+              Save or restore app settings, profiles and presets.
+            </p>
+          </div>
+          <Button onClick={() => navigate("Restore & backups")}>
+            Manage backups
+          </Button>
+        </div>
+        <div className="setting-row">
+          <div>
+            <strong>Activity and recovery records</strong>
+            <p className="muted">
+              Inspect operations and clear completed logs.
+            </p>
+          </div>
+          <Button onClick={() => navigate("Activity")}>Open activity</Button>
+        </div>
+      </section>
+      <section className="settings-section">
+        <h2>
+          <Info size={20} />
+          About Frameforge
+        </h2>
+        <dl>
+          <dt>Version</dt>
+          <dd>{data.version}</dd>
+          <dt>Runtime</dt>
+          <dd>
+            {data.mode === "desktop" ? "Electron desktop" : "Browser demo"}
+          </dd>
+          <dt>Telemetry</dt>
+          <dd>None</dd>
+          <dt>Windows operation access</dt>
+          <dd>
+            {data.capabilities.length
+              ? `${data.capabilities.length} current-user preferences`
+              : "Unavailable; desktop helper required"}
+          </dd>
+        </dl>
+      </section>
+    </>
+  );
+}

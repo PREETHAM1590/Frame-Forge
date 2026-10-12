@@ -1,0 +1,11 @@
+# Security and Safety Boundaries
+
+Frameforge runs with the current user's privileges. Its renderer has context isolation, sandboxing and web security enabled, and Node integration disabled. Preload exposes a typed request API rather than raw IPC or Node. Main process checks sender identity, main frame and exact renderer URL, validates requests through Zod and validates responses at the boundary. New windows, unapproved navigation and browser permission requests are denied. Production uses a restrictive Content Security Policy and local assets.
+
+The helper path is fixed by the application. It is spawned with `shell: false`, a hidden window, structured JSON input, a timeout and bounded output. Renderer/database values are never shell commands. The Windows helper accepts only allowlisted commands and operation IDs; registry snapshots must match supported paths, names and types. Custom executable paths are selected natively and validated; selecting a game does not execute it. Steam discovery reads metadata, not scripts.
+
+Registry writes require a fresh preview and explicit confirmation. The app serializes mutations, journals snapshots before writes, verifies results and attempts recovery on failure or cancellation. Closing is blocked during mutations. Rollback refuses unexpected external settings. Recovery is reported honestly when restoration fails. No administrator helper, service, driver installation, security setting changes or automatic restarts are included.
+
+SQLite is local and unencrypted. It contains app preferences, game paths, backups and operation snapshots, not credentials. Core functionality has no telemetry, remote uploads or network requirement. Helper stderr is not copied into activity logs; structured errors are bounded. Avoid sharing the database or diagnostics without reviewing them for local paths. Build tooling may download dependencies and packaging tools.
+
+This is an unsigned development application. Automated tests and read-only hardware checks are not a penetration test or proof of live registry recovery. Release signing, installer validation and testing on disposable Windows machines remain distribution prerequisites; current proof is recorded in [Phase Report](PHASE_REPORT.md).
