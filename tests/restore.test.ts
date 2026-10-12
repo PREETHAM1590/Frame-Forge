@@ -6,8 +6,16 @@ import {
   type PlatformRestoreStatus,
 } from "../electron/platform";
 import { AppService } from "../electron/service";
-import { RestorePointService, overrideLabel } from "../electron/restore";
-import { requests, type Frequency } from "../shared/contracts";
+import {
+  RestorePointService,
+  overrideLabel,
+  pendingLabel,
+} from "../electron/restore";
+import {
+  requests,
+  type Frequency,
+  type RestorePoints,
+} from "../shared/contracts";
 class RestorePlatform extends MockPlatform {
   frequency: Frequency = { existed: false, minutes: null };
   outcomes: PlatformCreateResult["outcome"][] = [];
@@ -41,10 +49,31 @@ class RestorePlatform extends MockPlatform {
       lastPoint: outcome === "throttled" ? point : null,
       message: "Helper message.",
       frequencyRestored: bypass ? !this.leaveBypass : null,
+      resultPath: outcome === "pending" ? this.pendingPath : null,
     };
   }
   async restoreFrequencySet(original: Frequency) {
     this.frequency = original;
+    return this.restoreStatus();
+  }
+  pendingPath: string | null = null;
+  laterResult: PlatformCreateResult | null = null;
+  async restoreResult() {
+    return this.laterResult;
+  }
+  points: RestorePoints["points"] = [];
+  async restoreList(): Promise<RestorePoints> {
+    return {
+      points: this.points,
+      available: true,
+      message: "",
+      createdSequence: null,
+    };
+  }
+  enableFails = false;
+  async restoreEnable() {
+    if (this.enableFails)
+      throw new Error("Windows could not turn on System Protection (error 5).");
     return this.restoreStatus();
   }
 }
@@ -114,9 +143,74 @@ describe("Windows restore points", () => {
         ["Windows restore point created", "success"],
       ]),
     );
+    expect(second.message).toContain('#5 "Frameforge"');
     const status = await restore.status();
     expect(status.pendingFrequencyRecovery).toBe(false);
     expect(status.lastAppCreatedAt).not.toBeNull();
+    // Consent covers one attempt only.
+    await expect(restore.create("Frameforge", true)).rejects.toThrow(
+      "Retry the normal creation first",
+    );
+    repo.close();
+  });
+  it("keeps a creation that outlives the helper and verifies it later", async () => {
+    const { repo, platform, restore } = setup();
+    platform.outcomes = ["pending"];
+    platform.pendingPath = "C:\\Temp\\frameforge-0123.json";
+    const result = await restore.create("Frameforge", false);
+    expect(result.outcome).toBe("pending");
+    expect((await restore.status()).pendingCreation).toBe(true);
+    platform.laterResult = {
+      outcome: "created",
+      point: {
+        sequence: 9,
+        description: "Frameforge",
+        createdAt: "2026-10-13T10:00:00.000Z",
+      },
+      lastPoint: null,
+      message: "Windows restore point created and verified.",
+      frequencyRestored: null,
+      resultPath: null,
+    };
+    const status = await restore.status();
+    expect(status.pendingCreation).toBe(false);
+    expect(status.lastAppCreatedAt).toBe("2026-10-13T10:00:00.000Z");
+    expect(labels(repo)).toEqual(
+      expect.arrayContaining([
+        [pendingLabel, "success"],
+        ["Windows restore point created", "success"],
+      ]),
+    );
+    repo.close();
+  });
+  it("verifies a timed-out creation against the restore point list", async () => {
+    const { repo, platform, restore } = setup();
+    platform.outcomes = ["pending"];
+    await restore.create("Frameforge", false);
+    repo.recoverInterrupted();
+    expect(
+      repo.activity().find((a) => a.label === pendingLabel)?.message,
+    ).toContain("Restore & backups");
+    platform.points = [
+      {
+        sequence: 3,
+        description: "Frameforge",
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    await restore.list();
+    expect(labels(repo)).toContainEqual([pendingLabel, "success"]);
+    expect((await restore.status()).pendingCreation).toBe(false);
+    repo.close();
+  });
+  it("logs a failed System Protection change", async () => {
+    const { repo, platform, restore } = setup();
+    platform.enableFails = true;
+    await expect(restore.enable()).rejects.toThrow("error 5");
+    expect(labels(repo)).toContainEqual([
+      "System Protection not turned on",
+      "failed",
+    ]);
     repo.close();
   });
   it("surfaces and recovers a frequency that was not restored", async () => {
@@ -143,6 +237,7 @@ describe("Windows restore points", () => {
       "Restore point limit lifted temporarily.",
     );
     repo.recoverInterrupted();
+    expect(repo.activity()[0]?.message).toContain("Restore the original limit");
     expect((await restore.status()).pendingFrequencyRecovery).toBe(true);
     platform.frequency = { existed: true, minutes: 30 };
     const status = await restore.recoverFrequency();

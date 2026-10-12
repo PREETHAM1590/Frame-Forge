@@ -206,6 +206,7 @@ export type HelperRestoreStatus = z.infer<typeof HelperRestoreStatusSchema>;
 export const RestoreStatusSchema = HelperRestoreStatusSchema.extend({
   lastAppCreatedAt: z.string().nullable(),
   pendingFrequencyRecovery: z.boolean(),
+  pendingCreation: z.boolean(),
   message: z.string().max(1000),
 }).strict();
 export type RestoreStatus = z.infer<typeof RestoreStatusSchema>;
@@ -216,6 +217,7 @@ export const RestoreOutcome = z.enum([
   "policy-disabled",
   "elevation-cancelled",
   "failed",
+  "pending",
 ]);
 export const CreateRestorePointResultSchema = z
   .object({
@@ -393,6 +395,7 @@ export const HelperResult = z
     point: RestorePointSchema.optional(),
     lastPoint: RestorePointSchema.optional(),
     frequencyRestored: z.boolean().optional(),
+    resultPath: z.string().max(2048).optional(),
     processes: z.array(ProcessTargetSchema).optional(),
     boostSnapshot: ProcessTargetSchema.optional(),
   })

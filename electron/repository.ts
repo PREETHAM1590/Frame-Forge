@@ -14,6 +14,16 @@ import {
 } from "../shared/contracts.js";
 import { migrations } from "./migrations.js";
 type Row = Record<string, unknown>;
+export const restoreLabels = {
+  override: "Restore point throttle override",
+  pending: "Restore point pending verification",
+} as const;
+const restoreRecovery: Record<string, string> = {
+  [restoreLabels.override]:
+    "The app stopped while the Windows restore point limit was lifted. Open Restore & backups and choose Restore the original limit.",
+  [restoreLabels.pending]:
+    "The app stopped while Windows was creating a restore point. Open Restore & backups to check it.",
+};
 export class Repository {
   private db: DatabaseSync;
   constructor(file: string) {
@@ -233,6 +243,13 @@ export class Repository {
       : null;
   }
   recoverInterrupted(): void {
+    // Restore point rows are resolved on Restore & backups, not by a registry snapshot.
+    for (const [label, message] of Object.entries(restoreRecovery))
+      this.db
+        .prepare(
+          "UPDATE operations SET status='recovery-needed',message=? WHERE status='running' AND label=?",
+        )
+        .run(message, label);
     this.db
       .prepare(
         "UPDATE operations SET status='recovery-needed',message='The app stopped during this operation. Inspect and restore the saved Windows snapshot.' WHERE status='running'",

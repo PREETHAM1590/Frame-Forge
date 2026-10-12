@@ -6,31 +6,41 @@ import {
   type RestorePoints,
   type RestoreStatus,
 } from "../shared/contracts.js";
-import type { Repository } from "./repository.js";
+import { restoreLabels, type Repository } from "./repository.js";
 import type {
   Platform,
   PlatformCreateResult,
   PlatformRestoreStatus,
 } from "./platform.js";
-export const overrideLabel = "Restore point throttle override";
+export const overrideLabel = restoreLabels.override;
+export const pendingLabel = restoreLabels.pending;
 const metaKey = "restore_meta";
 const bypassValue: Frequency = { existed: true, minutes: 0 };
+// A bypass needs fresh consent: one attempt, shortly after the explained throttle.
+const bypassWindowMs = 10 * 60 * 1000;
 const same = (a: Frequency, b: Frequency) =>
   a.existed === b.existed && (a.minutes ?? null) === (b.minutes ?? null);
+const windowText = (minutes: number) =>
+  minutes === 1440
+    ? "24-hour"
+    : minutes % 60 === 0
+      ? `${minutes / 60}-hour`
+      : `${minutes}-minute`;
 const outcomeLog: Record<
   CreateRestorePointResult["outcome"],
   [string, Activity["status"]]
 > = {
   created: ["Windows restore point created", "success"],
-  throttled: ["Restore point skipped: Windows 24-hour limit", "cancelled"],
+  throttled: ["Restore point skipped: Windows limit", "cancelled"],
   "protection-disabled": ["System Protection is off", "failed"],
   "policy-disabled": ["System Restore is disabled by policy", "failed"],
   "elevation-cancelled": ["Restore point cancelled", "cancelled"],
   failed: ["Restore point not created", "failed"],
+  pending: ["Restore point pending verification", "running"],
 };
 const declined = "Administrator approval was declined. Nothing was changed.";
+type PendingSnapshot = { resultPath: string | null; name: string; at: string };
 export class RestorePointService {
-  // Bypass is only accepted after Windows throttled a normal request in this session.
   private lastThrottledAt: number | null = null;
   private busy = false;
   get isBusy() {
@@ -60,21 +70,74 @@ export class RestorePointService {
           : null,
       pendingFrequencyRecovery:
         this.repo.pendingJournal(overrideLabel) !== null,
+      pendingCreation: this.repo.pendingJournal(pendingLabel) !== null,
     };
   }
   async status(): Promise<RestoreStatus> {
-    return this.withAppState(await this.platform.restoreStatus());
+    const status = await this.platform.restoreStatus();
+    if (!this.busy) await this.checkPending(status);
+    return this.withAppState(status);
   }
-  list(): Promise<RestorePoints> {
-    return this.platform.restoreList();
+  // Reads the result an elevated child wrote after the helper stopped waiting.
+  private async checkPending(status: PlatformRestoreStatus) {
+    const pending = this.repo.pendingJournal(pendingLabel);
+    const snapshot = pending?.snapshot as PendingSnapshot | undefined;
+    if (!pending || !snapshot?.resultPath) return;
+    let result: PlatformCreateResult | null = null;
+    try {
+      result = await this.platform.restoreResult(snapshot.resultPath);
+    } catch {
+      /* Still unverified; the row stays visible. */
+    }
+    if (!result) return;
+    const message = this.record(result, status).message;
+    this.repo.finish(
+      pending.id,
+      result.outcome === "created" ? "success" : "failed",
+      message,
+      false,
+    );
+  }
+  async list(): Promise<RestorePoints> {
+    const points = await this.platform.restoreList();
+    // A pending creation without a result file is verified against the real list.
+    const pending = this.repo.pendingJournal(pendingLabel);
+    const snapshot = pending?.snapshot as PendingSnapshot | undefined;
+    if (pending && snapshot && points.available) {
+      const since = Date.parse(snapshot.at) - 60000;
+      const point = points.points.find(
+        (p) =>
+          p.description === snapshot.name && Date.parse(p.createdAt) >= since,
+      );
+      if (point)
+        this.repo.finish(
+          pending.id,
+          "success",
+          `Verified restore point #${point.sequence} "${point.description}".`,
+          false,
+        );
+      else if (!snapshot.resultPath)
+        this.repo.finish(
+          pending.id,
+          "failed",
+          "No matching restore point was found. Create a new one.",
+          false,
+        );
+    }
+    return points;
   }
   async create(
     name: string,
     bypass: boolean,
   ): Promise<CreateRestorePointResult> {
-    if (bypass && this.lastThrottledAt === null)
+    if (
+      bypass &&
+      (this.lastThrottledAt === null ||
+        Date.now() - this.lastThrottledAt > bypassWindowMs)
+    )
       throw new Error("Retry the normal creation first.");
     return this.exclusive(async () => {
+      if (bypass) this.lastThrottledAt = null;
       // Read unelevated before the elevated call so the original value is journalled first.
       const status = await this.platform.restoreStatus();
       if (status.policyDisabled)
@@ -85,6 +148,7 @@ export class RestorePointService {
             lastPoint: null,
             message: status.message,
             frequencyRestored: null,
+            resultPath: null,
           },
           status,
         );
@@ -95,6 +159,7 @@ export class RestorePointService {
             "Restore point limit lifted temporarily; the original frequency is saved.",
           )
         : null;
+      const at = new Date().toISOString();
       let result: PlatformCreateResult;
       try {
         result = await this.platform.restoreCreate(
@@ -111,6 +176,14 @@ export class RestorePointService {
         throw error;
       } finally {
         if (journal) await this.finishJournal(journal, status.frequency);
+      }
+      if (result.outcome === "pending") {
+        this.repo.journal(
+          pendingLabel,
+          { resultPath: result.resultPath, name, at } satisfies PendingSnapshot,
+          result.message,
+        );
+        return this.response(result);
       }
       return this.record(result, status);
     });
@@ -133,24 +206,38 @@ export class RestorePointService {
       this.repo.finish(
         id,
         "recovery-needed",
-        "The original restore point frequency was not confirmed. Restore it from Restore & backups.",
+        "The original restore point frequency was not confirmed. Open Restore & backups and choose Restore the original limit.",
         false,
       );
+  }
+  private response(result: PlatformCreateResult): CreateRestorePointResult {
+    return {
+      outcome: result.outcome,
+      point: result.point,
+      lastPoint: result.lastPoint,
+      message: result.message,
+    };
   }
   private record(
     result: PlatformCreateResult,
     status: PlatformRestoreStatus,
   ): CreateRestorePointResult {
     let message = result.message;
+    const [baseLabel, activity] = outcomeLog[result.outcome];
+    let label = baseLabel;
     if (result.outcome === "created") {
       this.lastThrottledAt = null;
+      const point = result.point;
       this.repo.setMeta(metaKey, {
-        lastAppCreatedAt: result.point?.createdAt ?? new Date().toISOString(),
+        lastAppCreatedAt: point?.createdAt ?? new Date().toISOString(),
       });
+      if (point)
+        message = `Restore point #${point.sequence} "${point.description}" created ${new Date(point.createdAt).toLocaleString()} and verified in the Windows list.`;
     }
     if (result.outcome === "throttled") {
       this.lastThrottledAt = Date.now();
       const minutes = status.frequency.minutes ?? 1440;
+      label = `Restore point skipped: Windows ${windowText(minutes)} limit`;
       const last = result.lastPoint
         ? new Date(result.lastPoint.createdAt).toLocaleString()
         : "an unknown time";
@@ -159,22 +246,28 @@ export class RestorePointService {
     if (result.frequencyRestored === false)
       message +=
         " The original restore point frequency was not confirmed; use the recovery action.";
-    const [label, activity] = outcomeLog[result.outcome];
     this.repo.log(label, message, activity);
-    return {
-      outcome: result.outcome,
-      point: result.point,
-      lastPoint: result.lastPoint,
-      message,
-    };
+    return this.response({ ...result, message });
   }
   async enable(): Promise<RestoreStatus> {
     return this.exclusive(async () => {
       const before = await this.platform.restoreStatus();
       if (before.policyDisabled)
         throw new Error("System Restore is turned off by policy on this PC.");
-      // The drive comes from the helper, never from the renderer.
-      const after = await this.platform.restoreEnable(before.systemDrive);
+      let after: PlatformRestoreStatus | null;
+      try {
+        // The drive comes from the helper, never from the renderer.
+        after = await this.platform.restoreEnable(before.systemDrive);
+      } catch (error) {
+        this.repo.log(
+          "System Protection not turned on",
+          error instanceof Error
+            ? error.message
+            : "Windows refused the change.",
+          "failed",
+        );
+        throw error;
+      }
       if (!after) {
         this.repo.log("System Protection unchanged", declined, "cancelled");
         return this.withAppState({ ...before, message: declined });
@@ -216,12 +309,12 @@ export class RestorePointService {
         return this.withAppState(current);
       }
       const after = await this.platform.restoreFrequencySet(original);
-      if (!after)
-        return this.withAppState({
-          ...current,
-          message:
-            "Administrator approval was declined. The restore point limit is still lifted.",
-        });
+      if (!after) {
+        const message =
+          "Administrator approval was declined. The restore point limit is still lifted.";
+        this.repo.log("Restore point limit not restored", message, "cancelled");
+        return this.withAppState({ ...current, message });
+      }
       if (same(after.frequency, original))
         this.repo.finish(
           pending.id,

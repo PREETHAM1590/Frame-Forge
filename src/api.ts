@@ -190,6 +190,7 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
         systemDrive: "C:",
         lastAppCreatedAt: null,
         pendingFrequencyRecovery: false,
+        pendingCreation: false,
         message: "Windows System Restore requires the desktop app.",
       };
     case "restorePoints":

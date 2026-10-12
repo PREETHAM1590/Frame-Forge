@@ -145,6 +145,21 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
           </div>
         </div>
       )}
+      {status?.pendingCreation && (
+        <div className="notice" role="status">
+          <Info size={18} />
+          <div>
+            Windows may still be creating a restore point requested earlier.
+            Check again, or use Load restore points to verify it.
+            <div className="restore-actions">
+              <Button disabled={pending} onClick={() => void refresh()}>
+                <RotateCcw size={16} />
+                Check again
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="restore-actions">
         <Button
           variant="primary"
@@ -160,6 +175,7 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
           onClick={async () => {
             const output = await run("restorePoints", {});
             if (output) setPoints(output);
+            await refresh();
           }}
         >
           Load restore points
@@ -185,6 +201,7 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
       {result && (
         <div className="notice" role="status">
           {result.outcome === "created" ||
+          result.outcome === "pending" ||
           result.outcome === "elevation-cancelled" ? (
             <Info size={18} />
           ) : (
@@ -203,7 +220,8 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
                 </Button>
               </div>
             )}
-            {result.outcome === "protection-disabled" && (
+            {(result.outcome === "protection-disabled" ||
+              result.outcome === "failed") && (
               <div className="restore-actions">
                 <Button disabled={pending} onClick={() => setEnabling(true)}>
                   Turn on System Protection for {drive}
@@ -498,7 +516,12 @@ export function Backups(props: ViewProps) {
     </>
   );
 }
-export function ActivityLog({ data, run, pending }: ViewProps) {
+/** Restore point journal rows are resolved on Restore & backups, not by a registry rollback. */
+export const restoreRecoveryRow = (a: Activity) =>
+  !a.rollback &&
+  a.label.startsWith("Restore point") &&
+  (a.status === "running" || a.status === "recovery-needed");
+export function ActivityLog({ data, run, pending, navigate }: ViewProps) {
   const [selected, setSelected] = useState<Activity | null>(null);
   const [filter, setFilter] = useState("All");
   const [clear, setClear] = useState(false);
@@ -564,6 +587,12 @@ export function ActivityLog({ data, run, pending }: ViewProps) {
                 <p className="muted">{a.message}</p>
                 <span className="muted">{formatTime(a.at)}</span>
               </div>
+              {restoreRecoveryRow(a) && (
+                <Button onClick={() => navigate("Restore & backups")}>
+                  <ArrowUpRight size={16} />
+                  Open Restore & backups
+                </Button>
+              )}
               {a.rollback && (
                 <Button disabled={pending} onClick={() => setSelected(a)}>
                   <RotateCcw size={16} />

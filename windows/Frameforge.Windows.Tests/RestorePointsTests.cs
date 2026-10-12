@@ -13,6 +13,9 @@ public class RestorePointsTests
         public bool Throws { get; set; }
         public bool Policy { get; set; }
         public bool PolicyDisabled() => Policy;
+        public Queue<bool?> Protection { get; } = new();
+        public bool? SystemDriveProtected() => Protection.Count > 0 ? Protection.Dequeue() : true;
+        public string? ForeignDescription { get; set; }
         public int? SessionInterval() => 1;
         public FrequencyState ReadFrequency() => Frequency;
         public void WriteFrequency(FrequencyState state) => Frequency = state;
@@ -21,7 +24,7 @@ public class RestorePointsTests
         {
             FrequencyDuringCreate.Add(Frequency);
             if (Throws) throw new InvalidOperationException("WMI failed");
-            if (CreateCode == 0 && AddsPoint) Points.Add(new(Points.Count + 1, description, DateTime.UtcNow));
+            if (CreateCode == 0 && AddsPoint) Points.Add(new(Points.Count + 1, ForeignDescription ?? description, DateTime.UtcNow));
             return CreateCode;
         }
         public uint Enable(string driveRoot) => 0;
@@ -36,6 +39,54 @@ public class RestorePointsTests
         var result = new RestorePoints(store).Create("Frameforge 2026-10-13", false, store.Frequency);
         Assert.Equal("created", result.Outcome);
         Assert.Equal(1, result.CreatedSequence);
+    }
+
+    [Fact]
+    public void SystemDriveOffIsProtectionDisabledBeforeCreating()
+    {
+        var store = new FakeRestoreStore();
+        store.Protection.Enqueue(false);
+        Assert.Equal("protection-disabled", new RestorePoints(store).Create("Name", false, store.Frequency).Outcome);
+        Assert.Empty(store.FrequencyDuringCreate);
+    }
+
+    [Fact]
+    public void PointNotCoveringSystemDriveIsNotReportedAsCreated()
+    {
+        var store = new FakeRestoreStore();
+        store.Protection.Enqueue(null);
+        store.Protection.Enqueue(false);
+        var result = new RestorePoints(store).Create("Name", false, store.Frequency);
+        Assert.Equal("protection-disabled", result.Outcome);
+        Assert.Equal(1, result.Point!.Sequence);
+    }
+
+    [Fact]
+    public void AnotherAppsNewPointIsNotOurs()
+    {
+        var store = new FakeRestoreStore { ForeignDescription = "Windows Update" };
+        var result = new RestorePoints(store).Create("Frameforge", false, store.Frequency);
+        Assert.NotEqual("created", result.Outcome);
+    }
+
+    [Fact]
+    public void PendingResultIsReadLaterAndDeleted()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"frameforge-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, "");
+            using (new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None))
+                Assert.Equal("elevated-pending", ((RestoreResult)RestoreCommands.ReadResult(path)).Code);
+            Assert.Equal("elevated-pending", ((RestoreResult)RestoreCommands.ReadResult(path)).Code);
+            File.WriteAllText(path, "{\"ok\":true,\"message\":\"done\",\"outcome\":\"created\"}");
+            var result = (System.Text.Json.JsonElement)RestoreCommands.ReadResult(path);
+            Assert.Equal("created", result.GetProperty("outcome").GetString());
+            Assert.False(File.Exists(path));
+            Assert.Equal("elevated-missing", ((RestoreResult)RestoreCommands.ReadResult(path)).Code);
+            Assert.Throws<InvalidOperationException>(() => RestoreCommands.ReadResult(@"C:\Windows\win.ini"));
+        }
+        finally { File.Delete(path); }
     }
 
     [Fact]
@@ -118,6 +169,7 @@ public class RestorePointsTests
     private sealed class SlowStore : IRestoreStore
     {
         public bool PolicyDisabled() => false;
+        public bool? SystemDriveProtected() => null;
         public int? SessionInterval() => null;
         public FrequencyState ReadFrequency() => new(false, null);
         public void WriteFrequency(FrequencyState state) { }

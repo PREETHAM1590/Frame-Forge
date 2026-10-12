@@ -34,7 +34,7 @@ import { Button, Modal, Badge, Busy, formatTime } from "./components/ui";
 import { Dashboard } from "./views/Dashboard";
 import { Optimizations, Presets } from "./views/Optimizations";
 import { Games, GameMode } from "./views/Games";
-import { Backups, ActivityLog } from "./views/Recovery";
+import { Backups, ActivityLog, restoreRecoveryRow } from "./views/Recovery";
 import { System, Settings } from "./views/System";
 const dayMs = 24 * 60 * 60 * 1000;
 const changeKey = (changes: Preview["changes"]) =>
@@ -258,9 +258,14 @@ export default function App() {
     Activity: <ActivityLog {...props} />,
     Settings: <Settings {...props} />,
   };
-  const recovery = data.activity.filter(
+  const recoveryRows = data.activity.filter(
     (a) => a.status === "recovery-needed",
-  ).length;
+  );
+  const recovery = recoveryRows.length;
+  // Restore point rows are resolved on Restore & backups, so send the user there.
+  const recoveryPage: Page = recoveryRows.every(restoreRecoveryRow)
+    ? "Restore & backups"
+    : "Activity";
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
@@ -351,11 +356,13 @@ export default function App() {
         {recovery > 0 && (
           <button
             className="recovery-banner"
-            onClick={() => navigate("Activity")}
+            onClick={() => navigate(recoveryPage)}
           >
             <AlertTriangle size={18} />
             {recovery} operation{recovery === 1 ? "" : "s"} need recovery.
-            Review saved snapshots.
+            {recoveryPage === "Activity"
+              ? " Review saved snapshots."
+              : " Open Restore & backups."}
             <ChevronRight size={17} />
           </button>
         )}

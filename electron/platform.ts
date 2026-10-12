@@ -39,13 +39,38 @@ export interface Platform {
   restoreFrequencySet(
     original: Frequency,
   ): Promise<PlatformRestoreStatus | null>;
+  /** Result of an elevated creation that outlived the helper's wait; null while still running. */
+  restoreResult(resultPath: string): Promise<PlatformCreateResult | null>;
 }
 export type PlatformRestoreStatus = HelperRestoreStatus & { message: string };
 export type PlatformCreateResult = CreateRestorePointResult & {
   frequencyRestored: boolean | null;
+  resultPath: string | null;
 };
 type HelperOutput = ReturnType<typeof HelperResult.parse>;
-const elevatedTimeout = 180000;
+// Covers the UAC prompt plus the helper's 150 s wait (which itself covers the child's 120 s create).
+const elevatedTimeout = 330000;
+const stillRunning =
+  "Windows is still creating the restore point. Frameforge checks the result when Restore & backups refreshes.";
+function createResultOf(result: HelperOutput): PlatformCreateResult {
+  const pending = result.code === "elevated-pending";
+  const outcome = cancelled(result)
+    ? "elevation-cancelled"
+    : pending
+      ? "pending"
+      : result.code === "elevated-missing"
+        ? "failed"
+        : result.outcome;
+  if (!outcome) throw new Error("Missing restore point result");
+  return {
+    outcome,
+    point: result.point ?? null,
+    lastPoint: result.lastPoint ?? null,
+    message: pending ? stillRunning : result.message,
+    frequencyRestored: result.frequencyRestored ?? null,
+    resultPath: result.resultPath ?? null,
+  };
+}
 function restoreStatusOf(result: HelperOutput): PlatformRestoreStatus {
   if (!result.restoreStatus) throw new Error("Missing restore status");
   return { ...result.restoreStatus, message: result.message };
@@ -202,21 +227,42 @@ export class WindowsPlatform implements Platform {
       createdSequence: null,
     };
   }
-  async restoreCreate(name: string, bypass: boolean, original: Frequency) {
-    const result = await this.elevated("restore-create", [
-      name,
-      bypass ? "1" : "0",
-      ...frequencyArgs(original),
-    ]);
-    const outcome = cancelled(result) ? "elevation-cancelled" : result.outcome;
-    if (!outcome) throw new Error("Missing restore point result");
-    return {
-      outcome,
-      point: result.point ?? null,
-      lastPoint: result.lastPoint ?? null,
-      message: result.message,
-      frequencyRestored: result.frequencyRestored ?? null,
-    };
+  async restoreCreate(
+    name: string,
+    bypass: boolean,
+    original: Frequency,
+  ): Promise<PlatformCreateResult> {
+    try {
+      return createResultOf(
+        await this.elevated("restore-create", [
+          name,
+          bypass ? "1" : "0",
+          ...frequencyArgs(original),
+        ]),
+      );
+    } catch (error) {
+      // The elevated child may still finish; verify later instead of reporting failure.
+      if (
+        error instanceof Error &&
+        error.message === "Windows helper timed out."
+      )
+        return {
+          outcome: "pending",
+          point: null,
+          lastPoint: null,
+          message:
+            "Windows is still creating the restore point. Use Load restore points to verify it.",
+          frequencyRestored: null,
+          resultPath: null,
+        };
+      throw error;
+    }
+  }
+  async restoreResult(resultPath: string) {
+    const result = createResultOf(
+      await this.call({ command: "elevated-result", resultPath }),
+    );
+    return result.outcome === "pending" ? null : result;
   }
   async restoreEnable(drive: string) {
     const result = await this.elevated("restore-enable", [drive]);
@@ -326,6 +372,10 @@ export class MockPlatform implements Platform {
   ): Promise<PlatformRestoreStatus | null>;
   async restoreFrequencySet(): Promise<PlatformRestoreStatus | null> {
     throw new Error(restoreUnavailable);
+  }
+  restoreResult(resultPath: string): Promise<PlatformCreateResult | null>;
+  async restoreResult(): Promise<PlatformCreateResult | null> {
+    return null;
   }
 }
 const restoreUnavailable =

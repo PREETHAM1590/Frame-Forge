@@ -9,7 +9,8 @@ object response;
 try
 {
     if (!OperatingSystem.IsWindows()) throw new InvalidOperationException("Windows is required.");
-    var line = Console.ReadLine();
+    // Node writes UTF-8; the console code page would garble non-ASCII names.
+    var line = new StreamReader(Console.OpenStandardInput(), new System.Text.UTF8Encoding(false)).ReadLine();
     if (line is null || line.Length > 32768) throw new InvalidOperationException("Invalid request size.");
     var request = JsonSerializer.Deserialize<Request>(line, options) ?? throw new InvalidOperationException("Missing request.");
     var engine = new RegistryOperations(new WindowsRegistryStore());
@@ -26,6 +27,7 @@ try
         "boost-stop" when request.Target is not null => new GameProcessOperations(new WindowsProcessStore()).Stop(request.Target),
         "restore-status" when ids.Length == 0 && request.Elevated is null => new RestorePoints(new WindowsRestoreStore()).StatusResult(),
         "elevated" when request.Elevated is not null => RestoreCommands.Run(request.Elevated),
+        "elevated-result" when request.ResultPath is not null => RestoreCommands.ReadResult(request.ResultPath),
         _ => throw new InvalidOperationException("Unsupported helper request.")
     };
 }
@@ -36,4 +38,4 @@ catch (Exception error)
 Console.WriteLine(JsonSerializer.Serialize(response, options));
 static object Apply(RegistryOperations engine, string[] ids, Snapshot snapshot) { engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written." }; }
 static object Restore(RegistryOperations engine, Snapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
-record Request(string Command, string[]? Ids, Snapshot? Snapshot, bool Force = false, string? GamePath = null, string? ExecutablePath = null, ProcessTarget? Target = null, ElevatedRequest? Elevated = null);
+record Request(string Command, string[]? Ids, Snapshot? Snapshot, bool Force = false, string? GamePath = null, string? ExecutablePath = null, ProcessTarget? Target = null, ElevatedRequest? Elevated = null, string? ResultPath = null);

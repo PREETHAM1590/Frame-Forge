@@ -28,11 +28,14 @@ public record RestoreResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? FrequencyRestored = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RestoreStatus? RestoreStatus = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RestorePoint[]? RestorePoints = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Available = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Available = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ResultPath = null);
 
 public interface IRestoreStore
 {
     bool PolicyDisabled();
+    /// <summary>Per-volume System Protection for the system drive; null when it cannot be determined.</summary>
+    bool? SystemDriveProtected();
     int? SessionInterval();
     FrequencyState ReadFrequency();
     void WriteFrequency(FrequencyState state);
@@ -47,6 +50,8 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
 {
     private static readonly Regex Drive = new(@"\A[A-Z]:\z");
     private static readonly FrequencyState Bypass = new(true, 0);
+    // Nested budgets: child create 120 s < parent wait 150 s after UAC approval < Node 330 s including the prompt.
+    public static readonly TimeSpan CreateLimit = TimeSpan.FromSeconds(120);
     public RestoreStatus Status()
     {
         var drive = store.SystemDrive;
@@ -76,6 +81,8 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
     public RestoreResult Create(string description, bool bypass, FrequencyState original)
     {
         if (store.PolicyDisabled()) return new(true, "System Restore is turned off by policy on this PC.", Outcome: "policy-disabled");
+        // A point is useless for whole-PC recovery unless the system drive itself is protected.
+        if (store.SystemDriveProtected() == false) return new(true, $"System Protection is off for {store.SystemDrive}.", Outcome: "protection-disabled");
         if (bypass && store.ReadFrequency() != original) throw new InvalidOperationException("The restore point frequency changed. Retry the normal creation first.");
         var before = Sorted().FirstOrDefault()?.Sequence ?? 0;
         if (!bypass) return CreateCore(description, before, null);
@@ -88,14 +95,19 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
     private RestoreResult CreateCore(string description, long before, int? window)
     {
         var task = Task.Run(() => store.Create(description));
-        if (Task.WhenAny(task, Task.Delay(createTimeout ?? TimeSpan.FromSeconds(150))).GetAwaiter().GetResult() != task)
-            return new(true, "Windows did not finish creating the restore point within 150 seconds.", "restore-timeout", "failed");
+        if (Task.WhenAny(task, Task.Delay(createTimeout ?? CreateLimit)).GetAwaiter().GetResult() != task)
+            return new(true, $"Windows did not finish creating the restore point within {CreateLimit.TotalSeconds:0} seconds. It may still be created; check Load restore points.", "restore-timeout", "failed");
         var code = task.GetAwaiter().GetResult();
         if (code is 1058 or 0x80070422) return new(true, $"System Protection is off for {store.SystemDrive}.", Outcome: "protection-disabled");
         if (code != 0) return new(true, $"Windows could not create the restore point (error {code}).", "restore-failed", "failed");
-        var newest = Sorted().FirstOrDefault();
-        if (newest is not null && newest.Sequence > before)
-            return new(true, "Windows restore point created and verified.", Outcome: "created", Point: newest, CreatedSequence: newest.Sequence);
+        var points = Sorted();
+        var newest = points.FirstOrDefault();
+        // Only a new point carrying our description counts; another app may create one at the same time.
+        var created = points.FirstOrDefault(p => p.Sequence > before && p.Description == description);
+        if (created is not null)
+            return store.SystemDriveProtected() == false
+                ? new(true, $"Windows created restore point #{created.Sequence}, but System Protection is off for {store.SystemDrive}, so it does not cover the system drive.", Outcome: "protection-disabled", Point: created)
+                : new(true, "Windows restore point created and verified.", Outcome: "created", Point: created, CreatedSequence: created.Sequence);
         // Windows returns 0 but silently skips creation inside the frequency window, so 0 alone is not success.
         var minutes = window ?? store.ReadFrequency().Minutes ?? 1440;
         if (newest is not null && minutes > 0 && newest.CreatedAt > DateTime.UtcNow.AddMinutes(-minutes))
@@ -108,8 +120,14 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
         var code = store.Enable(drive + "\\");
         if (code != 0) return new(false, $"Windows could not turn on System Protection (error {code}).", "enable-failed");
         var result = StatusResult();
-        return result.RestoreStatus!.Protection == "enabled" ? result with { Message = $"System Protection turned on for {drive}." }
-            : result with { Message = $"Windows accepted the request but has not confirmed System Protection for {drive} yet." };
+        var status = result.RestoreStatus!;
+        // The status chip reports the system drive here, not the any-drive hint.
+        var confirmed = store.SystemDriveProtected() ?? status.Protection == "enabled";
+        return result with
+        {
+            Message = confirmed ? $"System Protection turned on for {drive}." : $"Windows accepted the request but has not confirmed System Protection for {drive} yet.",
+            RestoreStatus = status with { Protection = confirmed ? "enabled" : status.Protection == "enabled" ? "unknown" : status.Protection }
+        };
     }
     public RestoreResult SetFrequency(FrequencyState state)
     {
@@ -176,30 +194,86 @@ public static class RestoreCommands
     {
         var action = Parse(request);
         if (IsElevated()) return action(new RestorePoints(new WindowsRestoreStore()));
+        SweepStaleResults();
         var draft = Path.Combine(Path.GetTempPath(), $"frameforge-{Guid.NewGuid():N}.json");
         string resultPath;
         using (var file = new FileStream(draft, FileMode.CreateNew, FileAccess.Write, FileShare.Read)) resultPath = FinalPath(file.SafeFileHandle);
+        var keep = false;
         try
         {
             var info = new ProcessStartInfo { FileName = Environment.ProcessPath!, UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
             foreach (var argument in new[] { "--elevated", request.Action, resultPath }.Concat(request.Args ?? [])) info.ArgumentList.Add(argument);
             Process? child;
+            // Blocks while the consent prompt is open; the wait below starts only after approval.
             try { child = Process.Start(info); }
             catch (Win32Exception error) when (error.NativeErrorCode == 1223)
             {
                 return new RestoreResult(true, "Administrator approval was declined. Nothing was changed.", "elevation-cancelled");
             }
             using (child)
-                if (child is null || !child.WaitForExit(170_000)) return new RestoreResult(false, "Windows did not finish the administrator request in time.", "elevated-timeout");
-            var text = File.ReadAllText(resultPath);
-            using var document = JsonDocument.Parse(text.Length is > 0 and < 1024 * 1024 ? text : throw new InvalidOperationException("The administrator request returned no result."));
-            if (document.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("Invalid administrator result.");
-            return document.RootElement.Clone();
+            {
+                if (child is null) throw new InvalidOperationException("The administrator request could not start.");
+                if (!child.WaitForExit(ParentWait))
+                {
+                    // Keep the file: the child still writes its verified result, which the app reads on the next refresh.
+                    keep = true;
+                    return new RestoreResult(true, "Windows is still working on the administrator request. The result is checked on the next refresh.", "elevated-pending", ResultPath: resultPath);
+                }
+                if (ExitCode(child) == 2) return new RestoreResult(false, "The administrator helper rejected its result file. Nothing was changed.", "elevated-rejected");
+            }
+            return ParseResult(File.ReadAllText(resultPath));
         }
         finally
         {
-            try { File.Delete(resultPath); } catch (IOException) { /* The elevated child still holds it; it is empty or ours. */ }
+            if (!keep) TryDelete(resultPath);
         }
+    }
+    public static readonly TimeSpan ParentWait = TimeSpan.FromSeconds(150);
+    private static int? ExitCode(Process child)
+    {
+        try { return child.ExitCode; } catch (Exception error) when (error is InvalidOperationException or Win32Exception) { return null; }
+    }
+    private static JsonElement ParseResult(string text)
+    {
+        using var document = JsonDocument.Parse(text.Length is > 0 and < 1024 * 1024 ? text : throw new InvalidOperationException("The administrator request returned no result."));
+        if (document.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("Invalid administrator result.");
+        return document.RootElement.Clone();
+    }
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { /* Swept on a later run. */ }
+    }
+    private static void SweepStaleResults()
+    {
+        try
+        {
+            foreach (var old in Directory.EnumerateFiles(Path.GetTempPath(), "frameforge-*.json"))
+                if (ResultName.IsMatch(Path.GetFileName(old)) && File.GetLastWriteTimeUtc(old) < DateTime.UtcNow.AddDays(-1)) TryDelete(old);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { /* Best effort. */ }
+    }
+    // Unelevated read of a result the elevated child finished after the parent stopped waiting.
+    public static object ReadResult(string path)
+    {
+        if (!Path.IsPathFullyQualified(path) || path.StartsWith(@"\\", StringComparison.Ordinal) || !ResultName.IsMatch(Path.GetFileName(path)))
+            throw new InvalidOperationException("Invalid result path.");
+        if (!File.Exists(path)) return new RestoreResult(true, "The administrator request finished without a result.", "elevated-missing");
+        string text;
+        try
+        {
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+            text = new StreamReader(file, Encoding.UTF8).ReadToEnd();
+        }
+        catch (IOException) { return new RestoreResult(true, "Windows is still working on the restore point.", "elevated-pending", ResultPath: path); }
+        if (text.Length == 0)
+        {
+            if (File.GetLastWriteTimeUtc(path) > DateTime.UtcNow.AddMinutes(-15)) return new RestoreResult(true, "Windows is still working on the restore point.", "elevated-pending", ResultPath: path);
+            TryDelete(path);
+            return new RestoreResult(true, "The administrator request finished without a result.", "elevated-missing");
+        }
+        var result = ParseResult(text);
+        TryDelete(path);
+        return result;
     }
     // Entry point for `--elevated <action> <resultPath> ...args`. Writes exactly one JSON object to the result file.
     public static int RunElevatedChild(string[] argv, Func<object, string> serialize)
@@ -244,9 +318,27 @@ public sealed class WindowsRestoreStore : IRestoreStore
         if (state.Existed) key.SetValue(Frequency, state.Minutes!.Value, RegistryValueKind.DWord);
         else key.DeleteValue(Frequency, false);
     }
+    // Protected volumes are listed as "\\?\Volume{guid}\:(C%3A)" entries. Admin-only; unknown formats give null so creation falls back to WMI's own answer.
+    public bool? SystemDriveProtected()
+    {
+        try
+        {
+            var volume = new StringBuilder(64);
+            if (!GetVolumeNameForVolumeMountPointW(SystemDrive + "\\", volume, (uint)volume.Capacity)) return null;
+            using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SPP\Clients", false);
+            var entries = key?.GetValueNames().SelectMany(name => key.GetValue(name) as string[] ?? []).Where(e => e.StartsWith(@"\\?\Volume{", StringComparison.OrdinalIgnoreCase)).ToArray() ?? [];
+            if (entries.Length == 0) return null;
+            return entries.Any(e => e.StartsWith(volume.ToString(), StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception error) when (error is System.Security.SecurityException or UnauthorizedAccessException or IOException) { return null; }
+    }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetVolumeNameForVolumeMountPointW(string mountPoint, StringBuilder volumeName, uint length);
+    private static readonly ManagementScope Scope = new(@"\\.\root\default", new ConnectionOptions { EnablePrivileges = true });
     public RestorePoint[] List()
     {
-        using var searcher = new ManagementObjectSearcher(@"\\.\root\default", "SELECT SequenceNumber, Description, CreationTime, RestorePointType FROM SystemRestore");
+        using var searcher = new ManagementObjectSearcher(Scope, new ObjectQuery("SELECT SequenceNumber, Description, CreationTime, RestorePointType FROM SystemRestore"));
         using var results = searcher.Get();
         return results.Cast<ManagementObject>().Select(point =>
         {
@@ -260,7 +352,7 @@ public sealed class WindowsRestoreStore : IRestoreStore
     }
     private static uint Invoke(string method, object[] args)
     {
-        using var restore = new ManagementClass(@"\\.\root\default:SystemRestore");
+        using var restore = new ManagementClass(Scope, new ManagementPath("SystemRestore"), null);
         return unchecked((uint)Convert.ToInt64(restore.InvokeMethod(method, args), CultureInfo.InvariantCulture));
     }
     // 12 = MODIFY_SETTINGS, 100 = BEGIN_SYSTEM_CHANGE.
