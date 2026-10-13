@@ -21,6 +21,7 @@ import {
 } from "../components/ui";
 import { desktopOnly, onEvent, request } from "../api";
 import { GameIcon } from "../components/GameIcon";
+import { PowerPlanDialog } from "../components/PowerPlanDialog";
 import {
   modeMechanisms,
   type LaunchPreview,
@@ -35,6 +36,7 @@ import {
   type NetworkCheck,
   type Response,
   type RunningProcess,
+  type TimerStatus,
 } from "../../shared/contracts";
 import type { ViewProps } from "../types";
 const modes: { id: BoostMode; label: string; summary: string }[] = [
@@ -103,6 +105,15 @@ const tones: Record<
   failed: "red",
   pending: "amber",
 };
+// What a session result is called on screen: the state, unless a reason makes it clearer.
+function stateText(m: MechanismResult) {
+  if (m.state === "pending") return "waiting for admin approval";
+  if (m.state === "skipped" && m.code === "policy")
+    return "already off by policy";
+  if (m.state === "skipped" && m.code === "managed")
+    return "managed by an optimization";
+  return m.state;
+}
 const statusTones = {
   preparing: "amber",
   active: "lime",
@@ -132,6 +143,7 @@ function enabled(m: CustomMechanisms): Entry[] {
     m.smartCores && { id: "smartCores" },
     m.coreParking && { id: "coreParking" },
     m.pauseServices && { id: "pauseServices", note: "administrator prompt" },
+    m.standbyPurge && { id: "standbyPurge", note: "administrator prompt" },
   ];
   return list.filter((x): x is Entry => !!x);
 }
@@ -148,7 +160,11 @@ function onThisPc(
   cap: Capability | undefined,
   background: Background,
   // preset: a preset mode card; threadDirector: a hybrid CPU on Windows 11.
-  ctx: { preset: boolean; threadDirector: boolean } = {
+  ctx: {
+    preset: boolean;
+    threadDirector: boolean;
+    timer?: TimerStatus;
+  } = {
     preset: false,
     threadDirector: false,
   },
@@ -169,12 +185,22 @@ function onThisPc(
         };
   }
   if (!cap) return { tone: "neutral", label: "checking", reason: "" };
-  if (!cap.available)
+  if (!cap.available) {
+    // Windows 11 can allow a high timer resolution to reach games, and the app can turn that on for you.
+    if (id === "timerResolution" && ctx.timer?.eligible)
+      return {
+        tone: "amber",
+        label: ctx.timer.restartRequired
+          ? "restart needed"
+          : "needs a Windows setting",
+        reason: cap.detail,
+      };
     return {
       tone: "amber",
       label: unsupportedWhenUnavailable.has(id) ? "unsupported" : "unavailable",
       reason: cap.detail,
     };
+  }
   if (id === "smartCores" && ctx.preset && ctx.threadDirector)
     return {
       tone: "neutral",
@@ -183,14 +209,20 @@ function onThisPc(
         "Windows 11's Thread Director already places games on the performance cores. Turn it on under Custom to force it.",
     };
   if (cap.active)
-    return { tone: "neutral", label: "already on", reason: cap.detail };
+    return {
+      tone: "neutral",
+      // Windows policy already does what this step would do: nothing is missing, so it is not "unavailable".
+      label: cap.code === "policy" ? "already off by policy" : "already on",
+      reason: cap.detail,
+    };
+  const asksAdmin = id === "pauseServices" || id === "standbyPurge";
   return {
     tone: "lime",
-    label: id === "pauseServices" ? "applies (asks for admin)" : "applies",
+    label: asksAdmin ? "applies (asks for admin)" : "applies",
     reason:
       id === "priority"
         ? `${note}; skipped if the game already runs higher.`
-        : id === "pauseServices"
+        : asksAdmin
           ? cap.detail
           : (note ?? cap.detail),
   };
@@ -239,6 +271,9 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
   const [now, setNow] = useState(0);
   const [confirmPlan, setConfirmPlan] = useState(false);
   const [confirmServices, setConfirmServices] = useState(false);
+  const [timerDialog, setTimerDialog] = useState<"enable" | "restore" | null>(
+    null,
+  );
   const [netHost, setNetHost] = useState("");
   const [netBusy, setNetBusy] = useState(false);
   const [netResult, setNetResult] = useState<NetworkCheck | null>(null);
@@ -308,7 +343,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
         const time = new Date().toLocaleTimeString();
         const lines = s.mechanisms
           .slice(from)
-          .map((m) => `${time}  ${labels[m.id]}: ${m.state}. ${m.detail}`);
+          .map((m) => `${time}  ${labels[m.id]}: ${stateText(m)}. ${m.detail}`);
         if (s.status !== seen.status) lines.push(`${time}  ${s.message}`);
         logged.current = {
           id: s.id,
@@ -399,7 +434,10 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
         ? config.custom
         : modeMechanisms[gameMode];
   const willPauseServices =
-    !!gameMechanisms?.pauseServices && cap("pauseServices")?.available === true;
+    (!!gameMechanisms?.pauseServices &&
+      cap("pauseServices")?.available === true) ||
+    (!!gameMechanisms?.standbyPurge && cap("standbyPurge")?.available === true);
+  const timer = status?.timer;
   const startBoost = async () => {
     const result = await run("boostStart", {
       gameId,
@@ -533,7 +571,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
             {session.mechanisms.map((m, i) => (
               <li key={i} title={m.detail}>
                 <Badge tone={tones[m.state]}>
-                  {labels[m.id]}: {m.state}
+                  {labels[m.id]}: {stateText(m)}
                 </Badge>
               </li>
             ))}
@@ -604,8 +642,9 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                 <strong>Pausing services needs administrator approval.</strong>{" "}
                 Frameforge stops (never disables) a short list of background
                 Windows services for the session and starts them again at the
-                end. Windows shows one approval prompt when the boost starts and
-                one when it ends. If you decline the first, the rest of the
+                end. The boost starts right away and Windows then shows one
+                approval prompt (and one when the boost ends). If you decline
+                it, ignore it for 2 minutes, or press Stop, the rest of the
                 boost still runs and no service is touched. Auto-boost never
                 shows the prompt, so services are only paused when you start a
                 boost yourself. Windows, audio, network, input, security,
@@ -628,6 +667,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                 plan: onThisPc(entry, cap(entry.id), config.background, {
                   preset: m.id !== "custom",
                   threadDirector: !!caps?.topology?.threadDirector,
+                  timer,
                 }),
               }));
               const effects = plans.filter((p) => p.plan.tone === "lime");
@@ -740,44 +780,122 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
             )}
           </li>
           <li>
-            <span>{labels.standbyPurge}</span>
-            <Badge tone="amber">unsupported</Badge>
+            <span>{labels.timerResolution} on this PC</span>
+            {timer && timer.enabled && !timer.restartRequired ? (
+              <Badge tone="neutral">
+                {timer.ownedByFrameforge
+                  ? "on (set by Frameforge)"
+                  : "already on in Windows"}
+              </Badge>
+            ) : timer?.restartRequired ? (
+              <Badge tone="amber">restart Windows to finish</Badge>
+            ) : timer?.eligible ? (
+              <Badge tone="amber">off in Windows</Badge>
+            ) : (
+              <Badge
+                tone={cap("timerResolution")?.available ? "lime" : "amber"}
+              >
+                {cap("timerResolution")?.available
+                  ? "available"
+                  : "unsupported"}
+              </Badge>
+            )}
             <small className="muted">
-              {cap("standbyPurge")?.detail ??
-                "Needs administrator rights and SeProfileSingleProcessPrivilege."}
+              {cap("timerResolution")?.detail ?? "Checking…"}
+              {timer &&
+              !timer.eligible &&
+              cap("timerResolution")?.available === false
+                ? " There is nothing Frameforge can change for this on Windows 10: a timer request only reaches the program that made it. Windows 11 can do this."
+                : ""}
+            </small>
+            {!unavailable &&
+              timer?.eligible &&
+              !timer.enabled &&
+              !timer.ownedByFrameforge && (
+                <Button
+                  disabled={pending || !!session}
+                  title={
+                    session
+                      ? "Stop the boost session first."
+                      : "Turn on Windows' system-wide timer setting (administrator approval and a restart)."
+                  }
+                  onClick={() => setTimerDialog("enable")}
+                >
+                  Allow games to keep high timer resolution…
+                </Button>
+              )}
+            {!unavailable && timer?.ownedByFrameforge && (
+              <Button
+                disabled={pending || !!session}
+                title={
+                  session
+                    ? "Stop the boost session first."
+                    : "Put back the value Frameforge saved before it turned the setting on."
+                }
+                onClick={() => setTimerDialog("restore")}
+              >
+                <RotateCcw size={17} /> Turn back off…
+              </Button>
+            )}
+          </li>
+          <li>
+            <span>{labels.standbyPurge}</span>
+            <Badge tone={cap("standbyPurge")?.available ? "neutral" : "amber"}>
+              {cap("standbyPurge")?.available
+                ? config.custom.standbyPurge
+                  ? "on in Custom"
+                  : "off (opt-in under Custom)"
+                : "unavailable"}
+            </Badge>
+            <small className="muted">
+              {cap("standbyPurge")?.detail ?? "Checking…"}
             </small>
           </li>
         </ul>
       </section>
       {confirmPlan && (
-        <Modal
-          title="Create a High performance power plan?"
-          description="Windows has no High performance plan on this PC, so the power-plan step of a boost does nothing."
+        <PowerPlanDialog
+          run={run}
+          pending={pending}
           onClose={() => setConfirmPlan(false)}
+          onDone={() => void refresh()}
+        />
+      )}
+      {timerDialog && (
+        <Modal
+          title={
+            timerDialog === "enable"
+              ? "Allow games to keep high timer resolution?"
+              : "Turn the Windows timer setting back off?"
+          }
+          description={
+            timerDialog === "enable"
+              ? "Windows 11 only lets a program's fine timer request reach other programs when a system setting is on."
+              : "Frameforge will put back the value it saved before it turned the setting on."
+          }
+          onClose={() => setTimerDialog(null)}
         >
           <p className="muted">
-            Frameforge copies Windows' built-in High performance plan into a new
-            plan named “Frameforge High performance”. Your current plan stays
-            active. During a boost Frameforge switches to the new plan and
-            switches back afterwards. High performance uses more power and can
-            run your PC warmer. You can remove the plan here at any time; your
-            other plans are never changed.
+            {timerDialog === "enable"
+              ? "Frameforge sets GlobalTimerResolutionRequests to 1 under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel. That needs one Windows administrator approval, and Windows reads it only at start-up, so you must restart Windows before the High timer resolution step can work. Frameforge saves the current value first and “Turn back off” restores exactly that. A finer timer raises power use while a game runs. Nothing else is changed."
+              : "This needs one Windows administrator approval and, like turning it on, takes effect after a restart of Windows. If the value was changed by something else since, that change is kept."}
           </p>
           <div className="dialog-actions">
-            <Button onClick={() => setConfirmPlan(false)}>Cancel</Button>
+            <Button onClick={() => setTimerDialog(null)}>Cancel</Button>
             <Button
               variant="primary"
               disabled={pending}
               onClick={async () => {
-                const result = await run("boostPowerPlan", {
-                  action: "create",
+                const action = timerDialog;
+                setTimerDialog(null);
+                const result = await run("boostTimerGlobal", {
+                  action,
                   confirmed: true,
                 });
-                setConfirmPlan(false);
                 if (result) setStatus(result);
               }}
             >
-              Create plan
+              {timerDialog === "enable" ? "Allow it" : "Turn back off"}
             </Button>
           </div>
         </Modal>
@@ -924,6 +1042,21 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                 !config.custom.pauseServices)
             }
             onChange={(v) => void setCustom({ pauseServices: v })}
+          />
+          <Toggle
+            label="Clear the standby memory list once (asks for administrator approval)"
+            description={
+              cap("standbyPurge")?.available === false
+                ? `Unavailable: ${cap("standbyPurge")!.detail}`
+                : `Empties Windows' cached memory once, when the boost starts. It cannot be undone and it is harmless: Windows refills the cache as programs need it. Off by default. Auto-boost never does it. ${cap("standbyPurge")?.detail ?? "Checking this PC…"}`
+            }
+            checked={config.custom.standbyPurge}
+            disabled={
+              pending ||
+              (cap("standbyPurge")?.available === false &&
+                !config.custom.standbyPurge)
+            }
+            onChange={(v) => void setCustom({ standbyPurge: v })}
           />
           <Toggle
             label="Limit game to selected CPUs"
@@ -1192,11 +1325,12 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
           onClose={() => setConfirmServices(false)}
         >
           <p className="muted">
-            Windows will show an administrator prompt now, and another one when
-            the boost ends so the services can be restarted. Declining the first
-            prompt only skips this step; everything else in the mode still runs.
-            Frameforge stops these services and never disables them:{" "}
-            {cap("pauseServices")?.detail}
+            The boost starts right away. Windows then shows an administrator
+            prompt, and another one when the boost ends so paused services can
+            be restarted. Declining the prompt, leaving it unanswered for 2
+            minutes, or pressing Stop only skips this step; everything else in
+            the mode still runs. Frameforge stops services and never disables
+            them: {cap("pauseServices")?.detail}
           </p>
           <div className="dialog-actions">
             <Button onClick={() => setConfirmServices(false)}>Cancel</Button>

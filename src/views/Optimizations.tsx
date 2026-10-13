@@ -16,14 +16,8 @@ import {
   type Optimization,
 } from "../../shared/catalogue";
 import type { OperationId } from "../../shared/contracts";
-import {
-  PageTitle,
-  Badge,
-  Button,
-  Modal,
-  Empty,
-  LinkButton,
-} from "../components/ui";
+import { PageTitle, Badge, Button, Modal, Empty } from "../components/ui";
+import { PowerPlanDialog } from "../components/PowerPlanDialog";
 import type { ViewProps } from "../types";
 // The helper runs but a per-PC prerequisite (e.g. the High performance plan) is missing.
 const missingHere = (data: ViewProps["data"]) =>
@@ -45,6 +39,10 @@ export function Optimizations({
   const [category, setCategory] = useState("All");
   const [availability, setAvailability] = useState("All");
   const [detail, setDetail] = useState<Optimization | null>(null);
+  const [planDialog, setPlanDialog] = useState(false);
+  // The High performance plan is the one missing prerequisite the app can create safely, with consent, right here.
+  const planMissing = (id: string) =>
+    id === "power-plan" && missingHere(data) && !data.capabilities.includes(id);
   const list = catalogue.filter(
     (o) =>
       (category === "All" || o.category === category) &&
@@ -130,6 +128,15 @@ export function Optimizations({
                       : "Desktop helper required"
                     : "Unsupported"}
               </Badge>
+              {planMissing(o.id) && (
+                <Button
+                  disabled={pending}
+                  onClick={() => setPlanDialog(true)}
+                  title="Create a copy of Windows' High performance plan, with your consent."
+                >
+                  <Plus size={16} /> Create plan…
+                </Button>
+              )}
               <button
                 className="icon-button"
                 aria-label={`Details for ${o.name}`}
@@ -146,6 +153,13 @@ export function Optimizations({
         <Empty
           title="No matching optimizations"
           description="Try another search or filter."
+        />
+      )}
+      {planDialog && (
+        <PowerPlanDialog
+          run={run}
+          pending={pending}
+          onClose={() => setPlanDialog(false)}
         />
       )}
       {detail && (
@@ -178,11 +192,24 @@ export function Optimizations({
           {!data.capabilities.includes(detail.id) && (
             <div className="notice">
               <ShieldAlert size={18} />
-              {!detail.supported
-                ? "This operation is unsupported. No changes will be made."
-                : missingHere(data)
-                  ? "A prerequisite is not met on this PC. See Prerequisites above."
-                  : "Windows operations require the desktop app and its published helper."}
+              <div>
+                {!detail.supported
+                  ? "This operation is unsupported. No changes will be made."
+                  : missingHere(data)
+                    ? "A prerequisite is not met on this PC. See Prerequisites above."
+                    : "Windows operations require the desktop app and its published helper."}
+                {planMissing(detail.id) && (
+                  <>
+                    {" "}
+                    <Button
+                      disabled={pending}
+                      onClick={() => setPlanDialog(true)}
+                    >
+                      <Plus size={16} /> Create High performance plan…
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           )}
           <div className="dialog-actions">
@@ -231,7 +258,8 @@ export function Optimizations({
     </>
   );
 }
-export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
+export function Presets({ data, preview, run, pending }: ViewProps) {
+  const [planDialog, setPlanDialog] = useState(false);
   // `editing` is the saved preset's id, or "new" for a fresh one; null when the builder is closed.
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(
@@ -334,9 +362,12 @@ export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
                     .{" "}
                     {p.ids.includes("power-plan") &&
                       !data.capabilities.includes("power-plan") && (
-                        <LinkButton onClick={() => navigate("Game Mode")}>
-                          Create a High performance plan
-                        </LinkButton>
+                        <Button
+                          disabled={pending}
+                          onClick={() => setPlanDialog(true)}
+                        >
+                          <Plus size={16} /> Create High performance plan…
+                        </Button>
                       )}
                   </span>
                 )}
@@ -355,6 +386,13 @@ export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
           </article>
         ))}
       </div>
+      {planDialog && (
+        <PowerPlanDialog
+          run={run}
+          pending={pending}
+          onClose={() => setPlanDialog(false)}
+        />
+      )}
       {removing && (
         <Modal
           title={`Delete "${removing.name}"?`}

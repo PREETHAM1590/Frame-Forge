@@ -422,7 +422,7 @@ describe("administrator prompt explanation", () => {
     fireEvent.click(start);
     const dialog = await screen.findByRole("dialog");
     expect(
-      within(dialog).getByText(/administrator prompt now, and another one/),
+      within(dialog).getByText(/The boost starts right away/),
     ).toBeVisible();
     expect(calls.some((c) => c.method === "boostStart")).toBe(false);
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));

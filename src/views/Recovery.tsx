@@ -239,8 +239,9 @@ function WindowsRestore({ data, run, pending, restorePending }: ViewProps) {
         <div className="notice" role="status">
           <Busy label="Waiting for administrator approval…" />
           <span>
-            Approve or decline the Windows prompt. Nothing else in Frameforge is
-            blocked while you decide.
+            Approve or decline the Windows prompt. Changes to Windows settings
+            (applying, rolling back, Game Mode, launch settings) wait until you
+            have answered it; reading and browsing still work.
           </span>
         </div>
       )}

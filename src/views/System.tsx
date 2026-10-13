@@ -65,7 +65,10 @@ export function System({ data, run, pending }: ViewProps) {
           <dt>Logical processors</dt>
           <dd>{h.cores || "Unavailable"}</dd>
           <dt>Live CPU utilization & temperature</dt>
-          <dd>Unsupported in this release</dd>
+          <dd>
+            Not shown. Reading temperatures needs a hardware-monitoring driver,
+            which Frameforge does not install. Task Manager shows live CPU use.
+          </dd>
         </dl>
       </section>
       <section className="system-section">
@@ -81,7 +84,11 @@ export function System({ data, run, pending }: ViewProps) {
           <dt>Displays</dt>
           <dd>{h.displays.join(" / ") || "Unavailable"}</dd>
           <dt>Temperature, live GPU use & FPS</dt>
-          <dd>Unsupported in this release</dd>
+          <dd>
+            Not shown. Frameforge does not install a monitoring driver and does
+            not measure FPS. Task Manager shows GPU use; the game's own counter
+            or Xbox Game Bar shows FPS.
+          </dd>
         </dl>
       </section>
       <section className="system-section">
@@ -162,7 +169,7 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           description={
             data.startupSupported
               ? "Start Frameforge when you sign in to Windows."
-              : "Available in the installed desktop app; unavailable in the browser or development desktop."
+              : "Available in the installed app. This is a development or browser build, so the switch is off here."
           }
           checked={settings.startup}
           disabled={pending || !data.startupSupported}

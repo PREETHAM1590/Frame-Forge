@@ -30,15 +30,9 @@ import type {
   Activity,
 } from "../shared/contracts";
 import type { Page, ViewProps } from "./types";
-import {
-  Button,
-  Modal,
-  Badge,
-  Busy,
-  LinkButton,
-  formatTime,
-} from "./components/ui";
+import { Button, Modal, Badge, Busy, formatTime } from "./components/ui";
 import { clearGameIcons } from "./components/GameIcon";
+import { PowerPlanDialog } from "./components/PowerPlanDialog";
 import { Dashboard } from "./views/Dashboard";
 import { Optimizations, Presets } from "./views/Optimizations";
 import { Games, GameMode } from "./views/Games";
@@ -92,6 +86,8 @@ export default function App() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   // Preset items whose prerequisite is missing on this PC (e.g. no performance power plan); the rest still apply.
   const [skipped, setSkipped] = useState<OperationId[]>([]);
+  // The High performance plan can be created right where it turned out to be missing; afterwards the preview is rebuilt.
+  const [planDialog, setPlanDialog] = useState(false);
   const load = useCallback(async () => {
     try {
       setData(await request("bootstrap", {}));
@@ -222,7 +218,11 @@ export default function App() {
     setMobile(false);
     window.scrollTo({ top: 0 });
   }
-  async function openPreview(ids: OperationId[]) {
+  // `current`: the state to judge capabilities by; a caller that just changed them passes the fresh bootstrap.
+  async function openPreview(
+    ids: OperationId[],
+    current: Bootstrap | null = data,
+  ) {
     setSelection(ids);
     setPreview(null);
     setPreviewError(null);
@@ -230,17 +230,18 @@ export default function App() {
     setConfirmed(false);
     setNoPoint(null);
     setRestoreOffer(false);
-    const canSkip = data?.mode === "desktop" && data.capabilities.length > 0;
+    const canSkip =
+      current?.mode === "desktop" && current.capabilities.length > 0;
     const usable = canSkip
-      ? ids.filter((id) => data.capabilities.includes(id))
+      ? ids.filter((id) => current.capabilities.includes(id))
       : ids;
     setSkipped(usable.length ? ids.filter((id) => !usable.includes(id)) : []);
     if (
-      !data ||
+      !current ||
       !usable.length ||
-      usable.some((id) => !data.capabilities.includes(id))
+      usable.some((id) => !current.capabilities.includes(id))
     ) {
-      if (data?.mode === "desktop" && data.capabilities.length)
+      if (current?.mode === "desktop" && current.capabilities.length)
         setPreviewError(
           "A prerequisite is not met on this PC; see Prerequisites in the optimization details.",
         );
@@ -333,7 +334,7 @@ export default function App() {
         )}
       </div>
     );
-  // Explains the skipped preset items and points at the only in-app fix (Game Mode creates the missing plan).
+  // Explains the skipped preset items and offers the only in-app fix: creating the missing plan, with consent, in place.
   const skippedNotice = skipped.length ? (
     <p className="notice">
       <AlertTriangle size={17} />
@@ -344,14 +345,12 @@ export default function App() {
           .join(", ")}
         . The other items in this selection are not affected.{" "}
         {skipped.includes("power-plan") && (
-          <LinkButton
-            onClick={() => {
-              setSelection(null);
-              navigate("Game Mode");
-            }}
+          <Button
+            disabled={requestsPending > 0}
+            onClick={() => setPlanDialog(true)}
           >
-            Create a High performance plan in Game Mode
-          </LinkButton>
+            Create High performance plan…
+          </Button>
         )}
       </span>
     </p>
@@ -523,6 +522,19 @@ export default function App() {
             <X size={16} />
           </button>
         </div>
+      )}
+      {planDialog && (
+        <PowerPlanDialog
+          run={run}
+          pending={requestsPending > 0}
+          onClose={() => setPlanDialog(false)}
+          onDone={async () => {
+            // The plan exists now: rebuild the preview with the new capability list, no restart needed.
+            if (!selection) return;
+            const fresh = await request("bootstrap", {}).catch(() => null);
+            if (fresh) await openPreview(selection, fresh);
+          }}
+        />
       )}
       {selection && (
         <Modal

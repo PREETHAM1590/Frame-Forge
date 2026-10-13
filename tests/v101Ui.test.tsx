@@ -15,6 +15,8 @@ import {
   defaultState,
   MechanismId,
   type AppEvent,
+  type BoostMode,
+  type BoostSession,
   type FrameforgeApi,
 } from "../shared/contracts";
 const mk = (name: string) => ({
@@ -37,6 +39,7 @@ export function harness(
     games?: ReturnType<typeof mk>[];
     capabilities?: string[];
     launch?: Record<string, Setting>;
+    mode?: BoostMode;
   } = {},
 ) {
   const calls: { method: string; input: unknown }[] = [];
@@ -48,9 +51,22 @@ export function harness(
       gpuPreference: { state: "ready", canRevert: false },
       fullscreenOptimizations: { state: "ready", canRevert: false },
     },
+    booster: { ...defaultState.booster, mode: options.mode ?? "balanced" },
+    caps: {} as Record<
+      string,
+      { available: boolean; detail: string; active: boolean; code?: string }
+    >,
+    timer: {
+      eligible: false,
+      enabled: false,
+      ownedByFrameforge: false,
+      restartRequired: false,
+    },
+    session: null as BoostSession | null,
+    startupSupported: false,
   };
   const bootstrap = () => ({
-    state: { ...defaultState, games: model.games },
+    state: { ...defaultState, games: model.games, booster: model.booster },
     hardware: {
       source: "windows",
       collectedAt: "2026-01-01T00:00:00.000Z",
@@ -68,10 +84,10 @@ export function harness(
     activity: [],
     backups: [],
     capabilities: model.capabilities,
-    startupSupported: false,
+    startupSupported: model.startupSupported,
     version: "test",
     mode: "desktop",
-    boost: { session: null, available: true, watching: false },
+    boost: { session: model.session, available: true, watching: false },
   });
   const answers: Record<string, (input: never) => unknown> = {
     bootstrap: () => bootstrap(),
@@ -88,20 +104,27 @@ export function harness(
       })),
     }),
     boostStatus: () => ({
-      session: null,
+      session: model.session,
       capabilities: {
         logicalCpus: 12,
         topology: null,
         mechanisms: MechanismId.options.map((id) => ({
           id,
-          available: true,
-          detail: "ok",
-          active: false,
+          ...(model.caps[id] ?? {
+            available: true,
+            detail: "ok",
+            active: false,
+          }),
         })),
       },
       watching: false,
       ownedPowerPlan: false,
+      timer: model.timer,
     }),
+    boostConfig: (input: typeof defaultState.booster) => {
+      model.booster = input;
+      return bootstrap().state;
+    },
   };
   const wrap =
     (name: string, fn: (input: never) => unknown) => async (input: never) => {
@@ -229,5 +252,326 @@ describe("I-5: Game Mode follows the library", () => {
     h.model.games = [games[0]!];
     await h.emit({ type: "scan", phase: "finished", auto: false, added: 0 });
     await waitFor(() => expect(select).toHaveValue(games[0]!.id));
+  });
+});
+
+const timerRow = async () =>
+  (await screen.findByText(/High timer resolution on this PC/)).closest("li")!;
+const off = (detail: string) => ({ available: false, detail, active: false });
+describe("timer resolution on Windows 11", () => {
+  const win11Off = (h: ReturnType<typeof harness>) => {
+    h.model.caps.timerResolution = off(
+      "On Windows 11 a program's timer request only reaches the whole system when GlobalTimerResolutionRequests is on.",
+    );
+    h.model.timer = {
+      eligible: true,
+      enabled: false,
+      ownedByFrameforge: false,
+      restartRequired: false,
+    };
+  };
+  it("offers an opt-in with a restart warning, saves nothing until confirmed, then offers Turn back off", async () => {
+    const h = harness();
+    win11Off(h);
+    h.install({
+      boostTimerGlobal: (input: { action: string }) => {
+        h.model.timer =
+          input.action === "enable"
+            ? {
+                eligible: true,
+                enabled: true,
+                ownedByFrameforge: true,
+                restartRequired: true,
+              }
+            : {
+                eligible: true,
+                enabled: false,
+                ownedByFrameforge: false,
+                restartRequired: false,
+              };
+        return {
+          session: null,
+          capabilities: { logicalCpus: 12, mechanisms: [] },
+          watching: false,
+          ownedPowerPlan: false,
+          timer: h.model.timer,
+        };
+      },
+    });
+    await openGameMode();
+    const row = await timerRow();
+    await within(row).findByText("off in Windows");
+    fireEvent.click(
+      within(row).getByRole("button", {
+        name: /Allow games to keep high timer resolution…/,
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/you must restart Windows/)).toBeVisible();
+    expect(
+      within(dialog).getByText(/GlobalTimerResolutionRequests/),
+    ).toBeVisible();
+    expect(h.calls.some((c) => c.method === "boostTimerGlobal")).toBe(false);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Allow it" }));
+    await waitFor(() =>
+      expect(
+        h.calls.find((c) => c.method === "boostTimerGlobal")?.input,
+      ).toEqual({ action: "enable", confirmed: true }),
+    );
+    const after = await timerRow();
+    await within(after).findByText("restart Windows to finish");
+    // The offer is replaced by the way back, not left as a dead button.
+    expect(
+      within(after).queryByRole("button", { name: /Allow games/ }),
+    ).toBeNull();
+    fireEvent.click(
+      within(after).getByRole("button", { name: /Turn back off…/ }),
+    );
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Turn back off",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        h.calls.filter((c) => c.method === "boostTimerGlobal").at(-1)?.input,
+      ).toEqual({ action: "restore", confirmed: true }),
+    );
+    await within(await timerRow()).findByText("off in Windows");
+  });
+  it("stays honestly unsupported on Windows 10 and does not offer a button", async () => {
+    const h = harness();
+    h.model.caps.timerResolution = off(
+      "On Windows 10 version 2004 and later a timer request only affects the requesting process, so it cannot reach the game.",
+    );
+    h.model.timer = {
+      eligible: false,
+      enabled: false,
+      ownedByFrameforge: false,
+      restartRequired: false,
+    };
+    h.install();
+    await openGameMode();
+    const row = await timerRow();
+    await within(row).findByText("unsupported");
+    expect(
+      within(row).getByText(/only affects the requesting process/),
+    ).toBeVisible();
+    expect(
+      within(row).getByText(/nothing Frameforge can change/),
+    ).toBeVisible();
+    expect(within(row).queryByRole("button")).toBeNull();
+  });
+  it("shows an already-on setting as such, without a button", async () => {
+    const h = harness();
+    h.model.timer = {
+      eligible: true,
+      enabled: true,
+      ownedByFrameforge: false,
+      restartRequired: false,
+    };
+    h.install();
+    await openGameMode();
+    const row = await timerRow();
+    await within(row).findByText("already on in Windows");
+    expect(within(row).queryByRole("button")).toBeNull();
+  });
+});
+describe("standby list purge", () => {
+  it("is an opt-in under Custom with an honest description, not a dead 'unsupported' row", async () => {
+    const h = harness({ mode: "custom" });
+    h.model.caps.standbyPurge = {
+      available: true,
+      detail:
+        "Clears Windows' cached (standby) memory once, when the boost starts.",
+      active: false,
+    };
+    h.install();
+    await openGameMode();
+    const row = (await screen.findByText("Standby list purge")).closest("li")!;
+    await within(row).findByText(/off \(opt-in under Custom\)/);
+    expect(within(row).queryByText("unsupported")).toBeNull();
+    const toggle = await screen.findByRole("switch", {
+      name: /Clear the standby memory list once/,
+    });
+    expect(toggle).toBeEnabled();
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(
+        (
+          h.calls.find((c) => c.method === "boostConfig")?.input as {
+            custom: { standbyPurge: boolean };
+          }
+        ).custom.standbyPurge,
+      ).toBe(true),
+    );
+    // No preset lists it.
+    for (const name of ["Balanced", "Performance", "Competitive"])
+      expect(
+        within(
+          screen.getByRole("article", { name: `${name} on this PC` }),
+        ).queryByText("Standby list purge"),
+      ).toBeNull();
+  });
+});
+describe("Game Bar capture blocked by policy", () => {
+  it("reads 'already off by policy', not unavailable, and is not counted as a change", async () => {
+    const h = harness({ mode: "balanced" });
+    h.model.caps.gameBarCapture = {
+      available: true,
+      detail:
+        "Already off by policy (AllowGameDVR=0), and the overlay hook is off; nothing to change.",
+      active: true,
+      code: "policy",
+    };
+    h.install();
+    await openGameMode();
+    const card = await screen.findByRole("article", {
+      name: "Balanced on this PC",
+    });
+    await within(card).findByText("already off by policy");
+    expect(within(card).queryByText("unavailable")).toBeNull();
+    expect(within(card).queryByText("unsupported")).toBeNull();
+    expect(within(card).getByText("Game Bar capture off")).toBeVisible();
+  });
+  it("labels the session result the same way", async () => {
+    const h = harness({ mode: "balanced" });
+    h.model.session = {
+      id: crypto.randomUUID(),
+      gameId: h.model.games[0]!.id,
+      mode: "balanced",
+      target: {
+        pid: 4,
+        startTime: "2026-10-12T10:00:00.0000000Z",
+        executablePath: "C:/Games/Alpha/game.exe",
+        name: "game",
+        priority: "Normal",
+      },
+      startedAt: "2026-10-13T10:00:00.000Z",
+      endedAt: null,
+      status: "active",
+      message: "Balanced mode active.",
+      mechanisms: [
+        {
+          id: "gameBarCapture",
+          state: "skipped",
+          detail: "Already off by policy.",
+          code: "policy",
+        },
+      ],
+      samples: [],
+      failed: false,
+      abnormal: false,
+    };
+    h.install();
+    await openGameMode();
+    expect(
+      await screen.findByText("Game Bar capture off: already off by policy"),
+    ).toBeVisible();
+  });
+});
+describe("a boost that waits for administrator approval", () => {
+  it("shows the waiting row, keeps Stop available and shows the answer in its place", async () => {
+    const h = harness({ mode: "competitive" });
+    const game = h.model.games[0]!;
+    const base = {
+      id: crypto.randomUUID(),
+      gameId: game.id,
+      mode: "competitive" as const,
+      target: {
+        pid: 4,
+        startTime: "2026-10-12T10:00:00.0000000Z",
+        executablePath: "C:/Games/Alpha/game.exe",
+        name: "game",
+        priority: "Normal" as const,
+      },
+      startedAt: "2026-10-13T10:00:00.000Z",
+      endedAt: null,
+      status: "active" as const,
+      samples: [],
+      failed: false,
+      abnormal: false,
+    };
+    const waiting: BoostSession = {
+      ...base,
+      message:
+        "Competitive mode active for Alpha: 2 change(s) applied. Waiting for administrator approval to pause services. The boost works without it, and Stop cancels the request.",
+      mechanisms: [
+        {
+          id: "pauseServices",
+          state: "pending",
+          detail: "Waiting for administrator approval to pause services.",
+        },
+      ],
+    };
+    h.model.session = waiting;
+    h.install({
+      boostStop: () => ({ ...waiting, status: "ended", message: "Stopped." }),
+    });
+    await openGameMode();
+    expect(
+      await screen.findByText(
+        "Pause Windows services: waiting for admin approval",
+      ),
+    ).toBeVisible();
+    const stop = await screen.findByRole("button", {
+      name: /Stop and restore/,
+    });
+    expect(stop).toBeEnabled();
+    const answered: BoostSession = {
+      ...waiting,
+      message: "Paused 2 service(s).",
+      mechanisms: [
+        {
+          id: "pauseServices",
+          state: "applied",
+          detail: "Paused 2 service(s).",
+        },
+      ],
+    };
+    // The event is mirrored in the next status read, as the real service does.
+    h.model.session = answered;
+    await h.emit({ type: "boost", session: answered });
+    expect(
+      await screen.findByText("Pause Windows services: applied"),
+    ).toBeVisible();
+    expect(screen.queryByText(/waiting for admin approval/)).toBeNull();
+    fireEvent.click(stop);
+    await waitFor(() =>
+      expect(h.calls.some((c) => c.method === "boostStop")).toBe(true),
+    );
+  });
+});
+describe("settings and system wording", () => {
+  it("says launch at sign-in is available in the installed app, and gives reasons for the unmeasured readings", async () => {
+    const h = harness();
+    h.install();
+    render(<App />);
+    await screen.findByText("Your setup, in focus.");
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(
+      await screen.findByText(/Available in the installed app\./),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("switch", { name: /Launch at sign-in/ }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "System" }));
+    expect(
+      await screen.findByText(/needs a hardware-monitoring driver/),
+    ).toBeVisible();
+    expect(screen.getByText(/does not\s+measure FPS/)).toBeVisible();
+    expect(screen.queryByText("Unsupported in this release")).toBeNull();
+  });
+  it("keeps launch at sign-in enabled in the installed (packaged) app", async () => {
+    const h = harness();
+    h.model.startupSupported = true;
+    h.install();
+    render(<App />);
+    await screen.findByText("Your setup, in focus.");
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(
+      await screen.findByRole("switch", { name: /Launch at sign-in/ }),
+    ).toBeEnabled();
+    expect(screen.queryByText(/Available in the installed app\./)).toBeNull();
   });
 });

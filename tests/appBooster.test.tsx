@@ -7,6 +7,7 @@ import {
   fireEvent,
   cleanup,
   within,
+  waitFor,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import App from "../src/App";
@@ -107,6 +108,17 @@ function install(capabilities: OperationId[]) {
       watching: false,
       ownedPowerPlan: false,
     }),
+    // Creating the plan makes the power-plan optimization available, as the real service's probe does.
+    boostPowerPlan: async (input: unknown) => {
+      calls.push({ method: "boostPowerPlan", input });
+      bootstrap.capabilities = [...bootstrap.capabilities, "power-plan"];
+      return {
+        session: null,
+        capabilities: { logicalCpus: 4, mechanisms: [] },
+        watching: false,
+        ownedPowerPlan: true,
+      };
+    },
     confirm: async () => ({
       id: crypto.randomUUID(),
       label: "Preset applied",
@@ -209,7 +221,7 @@ describe("booster state across the app", () => {
   });
 });
 describe("presets without a performance power plan", () => {
-  it("applies the rest of the preset, marks the power plan skipped and links to Game Mode", async () => {
+  it("applies the rest of the preset, marks the power plan skipped and creates the plan in place", async () => {
     const { calls } = install(["mouse-precision"]);
     render(<App />);
     await screen.findByText("Your setup, in focus.");
@@ -235,21 +247,71 @@ describe("presets without a performance power plan", () => {
     expect(
       within(dialog).getAllByText(/Skipped — not available on this PC/).length,
     ).toBeGreaterThan(0);
+    // The fix is offered right here, with consent, and nothing is created before the user agrees.
     fireEvent.click(
       within(dialog).getByRole("button", {
-        name: "Create a High performance plan in Game Mode",
-      }),
-    );
-    expect(
-      await screen.findByRole("heading", { name: "Game Mode", level: 1 }),
-    ).toBeVisible();
-    // The link must land where the fix is: the Create button is offered when the plan is missing.
-    expect(
-      await screen.findByRole("button", {
         name: /Create High performance plan…/,
       }),
-    ).toBeEnabled();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    );
+    const consent = await screen.findByRole("dialog", {
+      name: /Create a High performance power plan/,
+    });
+    expect(calls.some((c) => c.method === "boostPowerPlan")).toBe(false);
+    fireEvent.click(
+      within(consent).getByRole("button", { name: "Create plan" }),
+    );
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "boostPowerPlan")?.input).toEqual({
+        action: "create",
+        confirmed: true,
+      }),
+    );
+    // The preview is rebuilt with the plan: no restart, no skipped item.
+    await waitFor(() =>
+      expect(calls.at(-1)).toEqual({
+        method: "preview",
+        input: { ids: ["mouse-precision", "power-plan"] },
+      }),
+    );
+    const rebuilt = await screen.findByRole("dialog", {
+      name: /Review preset/,
+    });
+    await within(rebuilt).findByText("setting-power-plan");
+    expect(within(rebuilt).queryByText(/Skipped — not available/)).toBeNull();
+    // Still on the same page: nothing navigated away.
+    expect(
+      screen.queryByRole("heading", { name: "Game Mode", level: 1 }),
+    ).toBeNull();
+  });
+  it("offers the same one-click fix on Optimizations and Presets", async () => {
+    const { calls } = install(["mouse-precision"]);
+    render(<App />);
+    await screen.findByText("Your setup, in focus.");
+    fireEvent.click(screen.getByRole("button", { name: "Optimizations" }));
+    const card = (
+      await screen.findByRole("heading", {
+        name: "High performance power plan",
+      })
+    ).closest("article")!;
+    expect(within(card).getByText("Not available on this PC")).toBeVisible();
+    fireEvent.click(within(card).getByRole("button", { name: /Create plan…/ }));
+    fireEvent.click(
+      within(
+        await screen.findByRole("dialog", {
+          name: /Create a High performance/,
+        }),
+      ).getByRole("button", { name: "Create plan" }),
+    );
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === "boostPowerPlan")).toBe(true),
+    );
+    // Capabilities refresh: the card now says Available and the offer is gone, without a restart.
+    await waitFor(() =>
+      expect(within(card).getByText("Available")).toBeVisible(),
+    );
+    expect(
+      within(card).queryByRole("button", { name: /Create plan…/ }),
+    ).toBeNull();
   });
   it("still lists the skipped item in the operation result", async () => {
     install(["mouse-precision"]);

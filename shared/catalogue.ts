@@ -140,7 +140,7 @@ export const catalogue: Optimization[] = [
     impact: "System stability",
     description: "Windows service modifications are not supported.",
     reason:
-      "Disabling services can break security and system functionality. This release deliberately provides no service-changing operation.",
+      "Disabling services can break security and system functionality, so Optimizations never change services or their start type. Game Mode can pause a short list of safe services for one session (stop only, restarted afterwards, with your administrator approval).",
     settings: ["Windows services"],
     prerequisites: ["Independent service-specific verification"],
     supported: false,
