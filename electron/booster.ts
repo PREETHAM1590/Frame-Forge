@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import os from "node:os";
 import { isDeepStrictEqual } from "node:util";
 import {
   SessionEventSchema,
@@ -10,8 +11,10 @@ import {
   type Captured,
   type CustomMechanisms,
   type Game,
+  type MechanismId,
   type MechanismResult,
   type ProcessTarget,
+  type TimerStatus,
 } from "../shared/contracts.js";
 import type { Repository } from "./repository.js";
 import {
@@ -23,6 +26,19 @@ const text = (error: unknown) =>
   (error instanceof Error ? error.message : "Unknown error").slice(0, 500);
 const key = (t: ProcessTarget) => `${t.pid}|${t.startTime}`;
 const planKey = "booster.powerPlan";
+// What Frameforge saved before turning on Windows 11's machine-wide timer setting: the exact prior value and when.
+const timerKey = "booster.timerGlobal";
+type TimerRecord = {
+  existed: boolean;
+  value: number | null;
+  appliedAt: string;
+  /** Saved before the change; true until Windows confirmed it. */
+  pending?: boolean;
+};
+const promptSteps = {
+  pauseServices: "pause services",
+  standbyPurge: "clear the standby list",
+} as const;
 // The helper reverts in reverse capture order, one result per capture it holds. `indices` maps each saved capture to its
 // position in the helper's list (`total` entries, which may include captures Frameforge rejected or that were released).
 // Keep only the captures whose revert failed; if the results cannot be aligned, keep everything for a retry.
@@ -65,6 +81,8 @@ type Live = {
   aborted?: boolean;
   abortReason?: string;
   ready?: boolean;
+  // Administrator-prompt steps (services, standby list) the helper has not reported a result for yet.
+  waiting: Set<MechanismId>;
   // Every "captured" line the helper sent (valid or not), and each saved capture's position among them.
   total: number;
   indices: number[];
@@ -106,7 +124,8 @@ export class BoostEngine {
   private stopMs(live: Live) {
     return (
       this.timeouts.stop +
-      (live.captured.some((c) => c.mechanism === "pauseServices")
+      (live.waiting.size > 0 ||
+      live.captured.some((c) => c.mechanism === "pauseServices")
         ? this.elevatedMs
         : 0)
     );
@@ -145,11 +164,30 @@ export class BoostEngine {
     const guid = this.repo.meta(planKey);
     return typeof guid === "string" ? guid : null;
   }
+  private timerRecord(): TimerRecord | null {
+    const value = this.repo.meta(timerKey) as TimerRecord | null;
+    return value && typeof value.appliedAt === "string" ? value : null;
+  }
+  // Windows reads the setting at start-up, so it works only after a restart that happened after Frameforge turned it on.
+  private timerRestartPending() {
+    const record = this.timerRecord();
+    if (!record || record.pending) return false;
+    return Date.parse(record.appliedAt) > Date.now() - os.uptime() * 1000;
+  }
+  private timerStatus(caps: BoostCapabilities): TimerStatus {
+    return {
+      eligible: caps.timerGlobal?.eligible ?? false,
+      enabled: caps.timerGlobal?.enabled ?? false,
+      ownedByFrameforge: this.timerRecord() !== null,
+      restartRequired: this.timerRestartPending(),
+    };
+  }
   async status(): Promise<{
     session: BoostSession | null;
     capabilities: BoostCapabilities;
     watching: boolean;
     ownedPowerPlan: boolean;
+    timer: TimerStatus;
   }> {
     const base = {
       session: this.live?.session ?? this.repo.boostSession(),
@@ -161,18 +199,126 @@ export class BoostEngine {
       try {
         this.capabilities = {
           at: Date.now(),
-          value: await this.platform.boostCapabilities(this.ownedPlan()),
+          value: await this.platform.boostCapabilities(
+            this.ownedPlan(),
+            this.timerRestartPending(),
+          ),
         };
       } catch (error) {
+        const unavailable = capabilitiesUnavailable(
+          `The Windows helper failed: ${text(error)}`,
+        );
         return {
           ...base,
-          capabilities: capabilitiesUnavailable(
-            `The Windows helper failed: ${text(error)}`,
-          ),
+          capabilities: unavailable,
+          timer: this.timerStatus(unavailable),
         };
       }
     }
-    return { ...base, capabilities: this.withManaged(this.capabilities.value) };
+    return {
+      ...base,
+      capabilities: this.withManaged(this.capabilities.value),
+      timer: this.timerStatus(this.capabilities.value),
+    };
+  }
+  // Explicit consent from the UI. Turns Windows 11's machine-wide timer setting on (after a restart it lets a game keep a high
+  // timer resolution) or puts the saved prior value back. One administrator prompt, never while a session exists.
+  timerGlobal(action: "enable" | "restore") {
+    return this.exclusive(async () => {
+      if (!this.platform.boostAvailable)
+        throw new Error(
+          "The Windows helper is missing, so the game booster is unavailable.",
+        );
+      if (this.live || this.repo.boostSession())
+        throw new Error(
+          "Stop the boost session, or finish or dismiss its recovery, before changing the timer setting.",
+        );
+      await this.platform.elevation.with("timer", async () => {
+        const saved = this.timerRecord();
+        if (action === "enable") {
+          if (saved)
+            throw new Error(
+              "Frameforge already turned this on. Turn it back first.",
+            );
+          const read = await this.platform.timerGlobal({ op: "read" });
+          if (read.state === "failed") throw new Error(read.detail);
+          if (read.value === 1)
+            throw new Error(
+              "The setting is already on in Windows, so there is nothing to change.",
+            );
+          // Saved before the change, so a crash during the prompt never loses the prior value.
+          this.repo.setMeta(timerKey, {
+            existed: read.existed,
+            value: read.value,
+            appliedAt: new Date().toISOString(),
+            pending: true,
+          } satisfies TimerRecord);
+          let result;
+          try {
+            result = await this.platform.timerGlobal({
+              op: "enable",
+              existed: read.existed,
+              value: read.value,
+            });
+          } catch (error) {
+            // Unknown how far it got: the saved prior value stays, so Turn back off can still clean up.
+            this.log(
+              `Timer setting: the request did not finish (${text(error)}). The prior value was kept for Turn back off.`,
+              "failed",
+            );
+            throw error;
+          }
+          if (result.state === "applied") {
+            this.repo.setMeta(timerKey, {
+              existed: read.existed,
+              value: read.value,
+              appliedAt: new Date().toISOString(),
+            } satisfies TimerRecord);
+            this.log(result.detail);
+            return;
+          }
+          // Not applied. Unless Windows now says it is on (an unreadable answer), nothing changed: drop the record.
+          const after = await this.platform
+            .timerGlobal({ op: "read" })
+            .catch(() => null);
+          if (after?.value === 1) {
+            this.repo.setMeta(timerKey, {
+              existed: read.existed,
+              value: read.value,
+              appliedAt: new Date().toISOString(),
+            } satisfies TimerRecord);
+            this.log(
+              `Timer setting: ${result.detail} The setting is on, so Frameforge keeps the prior value for Turn back off.`,
+              "failed",
+            );
+          } else {
+            this.repo.setMeta(timerKey, null);
+            this.log(`Timer setting not changed. ${result.detail}`, "failed");
+          }
+          throw new Error(result.detail);
+        }
+        if (!saved)
+          throw new Error("Frameforge has not turned this setting on.");
+        const result = await this.platform.timerGlobal({
+          op: "restore",
+          existed: saved.existed,
+          value: saved.value,
+        });
+        if (result.state === "reverted" || result.state === "conflict") {
+          // A conflict means somebody else changed it since; their value is kept and Frameforge lets go.
+          this.repo.setMeta(timerKey, null);
+          this.log(
+            result.detail,
+            result.state === "reverted" ? "success" : "failed",
+          );
+          return;
+        }
+        this.log(`Timer setting not changed. ${result.detail}`, "failed");
+        throw new Error(result.detail);
+      });
+      this.capabilities = undefined;
+      return this.status();
+    });
   }
   // The optimization owns the capture value while it is applied; show the mode cards the truth.
   private withManaged(value: BoostCapabilities): BoostCapabilities {
@@ -276,6 +422,11 @@ export class BoostEngine {
     reason: "manual" | "auto",
   ): Promise<BoostSession> {
     const captured: Captured[] = [];
+    // Services and the standby list open an administrator prompt: nothing else may open one while it is pending.
+    const prompts = (
+      reason === "manual" ? (["pauseServices", "standbyPurge"] as const) : []
+    ).filter((id) => requested[id]);
+    if (prompts.length) this.platform.elevation.hold("boost");
     // The capture-off optimization writes the same Windows value; applying it twice would let the revert undo it.
     const managed =
       requested.gameBarCapture && this.repo.optimizationApplied("capture-off");
@@ -315,6 +466,7 @@ export class BoostEngine {
     try {
       channel = this.platform.spawnSession();
     } catch (error) {
+      this.platform.elevation.release("boost");
       this.save(
         {
           ...session,
@@ -334,6 +486,7 @@ export class BoostEngine {
       captured,
       game: game.name,
       ended: new Promise((resolve) => (resolveEnded = resolve)),
+      waiting: new Set<MechanismId>(prompts),
       total: 0,
       indices: [],
     };
@@ -347,13 +500,8 @@ export class BoostEngine {
         clearTimeout(stopTimer);
         resolve(result);
       };
-      // Auto-boost never pauses services, so only a manual start waits on the administrator prompt.
-      const prompt =
-        mechanisms.pauseServices && reason === "manual" ? this.elevatedMs : 0;
-      const timer = setTimeout(
-        () => channel.kill(),
-        this.timeouts.start + prompt,
-      );
+      // The helper reports ready before it asks for administrator approval, so the start budget has no prompt in it.
+      const timer = setTimeout(() => channel.kill(), this.timeouts.start);
       let stopTimer: NodeJS.Timeout | undefined;
       channel.on("event", (raw) => {
         if (this.live !== live) return;
@@ -391,6 +539,7 @@ export class BoostEngine {
               live.captured.push(event.prior);
               live.indices.push(live.total - 1);
               this.update(live, {});
+              this.syncGate();
               break;
             case "released": {
               // The change never happened; drop the saved prior so recovery never "undoes" it.
@@ -405,6 +554,7 @@ export class BoostEngine {
                 live.indices.splice(index, 1);
                 this.update(live, {});
               }
+              this.syncGate();
               break;
             }
             case "ready": {
@@ -414,11 +564,16 @@ export class BoostEngine {
               const applied = live.session.mechanisms.filter(
                 (m) => m.state === "applied",
               ).length;
+              const waiting = live.waiting.size
+                ? ` Waiting for administrator approval to ${[...live.waiting].map((id) => promptSteps[id as keyof typeof promptSteps]).join(" and ")}. The boost works without it, and Stop cancels the request.`
+                : "";
               this.update(live, {
                 status: "active",
-                message: applied
-                  ? `${modeLabels[mode]} mode active for ${game.name}: ${applied} change(s) applied.`
-                  : `${modeLabels[mode]} mode active for ${game.name}, but nothing needed changing on this PC.`,
+                message: `${
+                  applied
+                    ? `${modeLabels[mode]} mode active for ${game.name}: ${applied} change(s) applied.`
+                    : `${modeLabels[mode]} mode active for ${game.name}, but nothing needed changing on this PC.`
+                }${waiting}`,
               });
               settle(live.session);
               break;
@@ -441,9 +596,14 @@ export class BoostEngine {
               settle(live.session);
               break;
             default:
+              // A final result replaces the "waiting" row for the same step.
+              if (event.event !== "pending")
+                live.waiting.delete(event.mechanism);
               this.update(live, {
                 mechanisms: [
-                  ...live.session.mechanisms,
+                  ...live.session.mechanisms.filter(
+                    (m) => !(m.state === "pending" && m.id === event.mechanism),
+                  ),
                   {
                     id: event.mechanism,
                     state: event.event,
@@ -453,6 +613,8 @@ export class BoostEngine {
                 ].slice(-400),
                 message: event.detail,
               });
+              this.syncGate();
+              if (event.event === "pending") break;
               this.log(
                 `${game.name}: ${event.mechanism} ${event.event}. ${event.detail}`,
                 event.event === "failed" ? "failed" : "success",
@@ -469,6 +631,7 @@ export class BoostEngine {
         if (this.live !== live) return;
         // The helper stopped without reporting its reverts: restore from the saved captures. The session stays marked failed.
         this.live = null;
+        this.syncGate();
         this.update(live, {
           status: "recovery-needed",
           failed: true,
@@ -499,8 +662,26 @@ export class BoostEngine {
         unattended: reason === "auto",
         // Presets leave smart core targeting off on Windows 11 hybrid CPUs; Custom can force it.
         preset: mode !== "custom",
+        // Turned on by Frameforge but Windows has not restarted since: a timer request cannot reach the game yet.
+        timerRestartPending: this.timerRestartPending(),
       });
     });
+  }
+  // The gate is held while the live session waits for an administrator answer or could ask for one again (paused services
+  // are restarted behind a prompt when the game ends). It is released as soon as neither is true.
+  private syncGate() {
+    const live = this.live;
+    const needed =
+      !!live &&
+      (live.waiting.size > 0 ||
+        live.captured.some((c) => c.mechanism === "pauseServices"));
+    if (needed) {
+      try {
+        this.platform.elevation.hold("boost");
+      } catch {
+        /* Another prompt was open first; the earlier holder keeps it. */
+      }
+    } else this.platform.elevation.release("boost");
   }
   private end(
     live: Live,
@@ -509,6 +690,7 @@ export class BoostEngine {
     detail?: string,
   ) {
     this.live = null;
+    this.platform.elevation.release("boost");
     this.capabilities = undefined;
     const count = (state: MechanismResult["state"]) =>
       reverts.filter((r) => r.state === state).length;
@@ -603,6 +785,9 @@ export class BoostEngine {
       this.log(result.message, "failed");
       return result;
     }
+    const prompts =
+      interactive && captured.some((c) => c.mechanism === "pauseServices");
+    if (prompts) this.platform.elevation.hold("recover");
     try {
       const reverts = captured.length
         ? await this.platform.boostRecover(
@@ -643,6 +828,8 @@ export class BoostEngine {
       });
       this.log(result.message, "failed");
       return result;
+    } finally {
+      if (prompts) this.platform.elevation.release("recover");
     }
   }
   configure() {

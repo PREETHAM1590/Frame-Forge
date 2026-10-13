@@ -16,6 +16,7 @@ import {
   type LaunchSetting,
   type MechanismResult,
   type NetworkCheck,
+  type TimerGlobalResult,
   type OperationId,
   type ProcessTarget,
   type RunningProcess,
@@ -29,6 +30,40 @@ export interface SessionChannel {
   on(event: "exit", listener: () => void): unknown;
 }
 export type RunningGame = { gameId: string; target: ProcessTarget };
+export type ElevationUse = "restore" | "boost" | "recover" | "timer";
+const waitingFor: Record<ElevationUse, string> = {
+  restore: "A System Restore request is waiting for administrator approval.",
+  boost:
+    "Game Mode is waiting for administrator approval, or may ask for it when the game ends (it paused services).",
+  recover: "Game Mode recovery is waiting for administrator approval.",
+  timer: "The timer setting is waiting for administrator approval.",
+};
+/** One Windows administrator prompt at a time: restore points, recovery, the timer setting and the booster's services step never overlap. */
+export class ElevationGate {
+  private holder: ElevationUse | null = null;
+  get current() {
+    return this.holder;
+  }
+  /** Takes the gate or throws; taking it again as the same user is allowed. */
+  hold(use: ElevationUse) {
+    if (this.holder && this.holder !== use)
+      throw new Error(
+        `${waitingFor[this.holder]} Finish or answer it first, so two prompts never open together.`,
+      );
+    this.holder = use;
+  }
+  release(use: ElevationUse) {
+    if (this.holder === use) this.holder = null;
+  }
+  async with<T>(use: ElevationUse, work: () => Promise<T>): Promise<T> {
+    this.hold(use);
+    try {
+      return await work();
+    } finally {
+      this.release(use);
+    }
+  }
+}
 export const capabilitiesUnavailable = (detail: string): BoostCapabilities => ({
   logicalCpus: 0,
   mechanisms: (
@@ -64,8 +99,16 @@ export type LaunchSettingCall = {
   value?: string | null;
   applied?: string;
 };
+export type TimerGlobalCall = {
+  op: "read" | "enable" | "restore";
+  /** For enable and restore: the prior state Frameforge saved. */
+  existed?: boolean;
+  value?: number | null;
+};
 export interface Platform {
   capabilities: OperationId[];
+  /** Shared by every path that can open a Windows administrator prompt. */
+  elevation: ElevationGate;
   hardware(): Promise<Hardware>;
   capture(ids: OperationId[]): Promise<Snapshot>;
   apply(
@@ -93,7 +136,13 @@ export interface Platform {
   runningGames(games: Game[]): Promise<RunningGame[]>;
   backgroundProcesses(): Promise<RunningProcess[]>;
   // ownedPlan: GUID of the plan Frameforge created with consent (from SQLite, never from the renderer).
-  boostCapabilities(ownedPlan: string | null): Promise<BoostCapabilities>;
+  // timerRestartPending: Frameforge turned on the machine-wide timer setting and Windows has not restarted since.
+  boostCapabilities(
+    ownedPlan: string | null,
+    timerRestartPending?: boolean,
+  ): Promise<BoostCapabilities>;
+  // Windows 11's GlobalTimerResolutionRequests: read it, or change it through one administrator prompt.
+  timerGlobal(call: TimerGlobalCall): Promise<TimerGlobalResult>;
   // interactive=false (automatic recovery) never opens an administrator prompt; the services step then stays pending.
   boostRecover(
     captured: Captured[],
@@ -169,6 +218,7 @@ export class WindowsPlatform implements Platform {
   ];
   capabilities: OperationId[] = [...WindowsPlatform.supported];
   boostAvailable = true;
+  readonly elevation = new ElevationGate();
   private ownedPlan: string | null = null;
   constructor(private executable: string) {}
   setOwnedPlan(guid: string | null) {
@@ -331,13 +381,34 @@ export class WindowsPlatform implements Platform {
     );
     return result.backgroundProcesses ?? [];
   }
-  async boostCapabilities(ownedPlan: string | null) {
+  async boostCapabilities(
+    ownedPlan: string | null,
+    timerRestartPending = false,
+  ) {
     const result = await this.call({
       command: "boost-capabilities",
       ownedPlan,
+      timerRestartPending,
     });
     if (!result.capabilities) throw new Error("Missing booster capabilities");
     return result.capabilities;
+  }
+  async timerGlobal(call: TimerGlobalCall) {
+    const result = await this.call(
+      {
+        command: "timer-global",
+        timer: {
+          op: call.op,
+          existed: call.existed ?? false,
+          value: call.value ?? null,
+        },
+      },
+      undefined,
+      // One administrator prompt (2 minutes) plus the child's own work.
+      call.op === "read" ? 20000 : 180000,
+    );
+    if (!result.timerGlobal) throw new Error("Missing timer setting result");
+    return result.timerGlobal;
   }
   async boostRecover(
     captured: Captured[],
@@ -531,6 +602,7 @@ export class MockPlatform implements Platform {
   applied: OperationId[] = [];
   failVerification = false;
   boostAvailable = false;
+  readonly elevation = new ElevationGate();
   constructor(testOperations = false) {
     if (testOperations) this.capabilities = ["mouse-precision", "capture-off"];
   }
@@ -570,6 +642,10 @@ export class MockPlatform implements Platform {
   }
   async boostRecover(captured: Captured[]): Promise<MechanismResult[]> {
     void captured;
+    throw new Error("Game booster requires the Windows helper.");
+  }
+  async timerGlobal(call: TimerGlobalCall): Promise<TimerGlobalResult> {
+    void call;
     throw new Error("Game booster requires the Windows helper.");
   }
   async launchSetting(call: LaunchSettingCall): Promise<LaunchResult> {

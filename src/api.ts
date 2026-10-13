@@ -244,6 +244,7 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "boostRecover":
     case "runningProcesses":
     case "boostPowerPlan":
+    case "boostTimerGlobal":
       throw new Error(desktopOnly);
     case "networkCheck":
       throw new Error("The network check requires the desktop app.");

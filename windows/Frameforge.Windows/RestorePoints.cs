@@ -232,6 +232,8 @@ public static class RestoreCommands
         var draft = Path.Combine(Path.GetTempPath(), $"frameforge-{Guid.NewGuid():N}.json");
         string resultPath;
         using (var file = new FileStream(draft, FileMode.CreateNew, FileAccess.Write, FileShare.Read)) resultPath = FinalPath(file.SafeFileHandle);
+        // The elevated child works only while this request is fresh: an unanswered prompt cannot act after the app gave up (Node waits 330 s).
+        ElevationRequest.Create(resultPath, RequestValidity);
         var keep = false;
         try
         {
@@ -253,16 +255,19 @@ public static class RestoreCommands
                     keep = true;
                     return new RestoreResult(true, "Windows is still working on the administrator request. The result is checked on the next refresh.", "elevated-pending", ResultPath: resultPath);
                 }
-                if (ExitCode(child) == 2) return new RestoreResult(false, "The administrator helper rejected its result file. Nothing was changed.", "elevated-rejected");
+                var exit = ExitCode(child);
+                if (exit == ElevationRequest.NotFreshExitCode) return new RestoreResult(true, "The administrator request expired before it was approved. Nothing was changed.", "elevation-cancelled");
+                if (exit == 2) return new RestoreResult(false, "The administrator helper rejected its result file. Nothing was changed.", "elevated-rejected");
             }
             return ParseResult(File.ReadAllText(resultPath));
         }
         finally
         {
+            ElevationRequest.Withdraw(resultPath);
             if (!keep) TryDelete(resultPath);
         }
     }
-    public static readonly TimeSpan ParentWait = TimeSpan.FromSeconds(150);
+    public static readonly TimeSpan ParentWait = TimeSpan.FromSeconds(150), RequestValidity = TimeSpan.FromSeconds(300);
     internal static int? ExitCode(Process child)
     {
         try { return child.ExitCode; } catch (Exception error) when (error is InvalidOperationException or Win32Exception) { return null; }
@@ -281,8 +286,8 @@ public static class RestoreCommands
     {
         try
         {
-            foreach (var old in Directory.EnumerateFiles(Path.GetTempPath(), "frameforge-*.json"))
-                if (ResultName.IsMatch(Path.GetFileName(old)) && File.GetLastWriteTimeUtc(old) < DateTime.UtcNow.AddDays(-1)) TryDelete(old);
+            foreach (var old in Directory.EnumerateFiles(Path.GetTempPath(), "frameforge-*.json").Concat(Directory.EnumerateFiles(Path.GetTempPath(), "frameforge-*.req")))
+                if (ResultName.IsMatch(Path.ChangeExtension(Path.GetFileName(old), ".json")) && File.GetLastWriteTimeUtc(old) < DateTime.UtcNow.AddDays(-1)) TryDelete(old);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { /* Best effort. */ }
     }
@@ -312,10 +317,9 @@ public static class RestoreCommands
     // Entry point for `--elevated <action> <resultPath> ...args`. Writes exactly one JSON object to the result file.
     public static int RunElevatedChild(string[] argv, Func<object, string> serialize)
     {
-        if (argv.Length < 2 || !ValidResultPath(argv[1])) return 2;
-        using var file = new FileStream(argv[1], FileMode.Open, FileAccess.Write, FileShare.None);
-        // Reject a swapped file or a junction anywhere in the path before an elevated write.
-        if (file.Length != 0 || !string.Equals(FinalPath(file.SafeFileHandle), argv[1], StringComparison.OrdinalIgnoreCase)) return 2;
+        if (argv.Length < 2) return 2;
+        using var file = ElevatedCall.OpenResult(argv[1], out var rejected);
+        if (file is null) return rejected;
         object result;
         try { result = Parse(new(argv[0], argv[2..]))(new RestorePoints(new WindowsRestoreStore())); }
         catch (Exception error) { result = new RestoreResult(false, error is InvalidOperationException ? error.Message : "Windows could not complete the restore point request."); }

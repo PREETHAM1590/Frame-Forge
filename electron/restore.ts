@@ -52,14 +52,17 @@ export class RestorePointService {
     private repo: Repository,
     private platform: Platform,
   ) {}
+  // Every elevated request takes the shared gate too, so two administrator prompts never open together.
   private async exclusive<T>(work: () => Promise<T>): Promise<T> {
     if (this.busy)
       throw new Error("A System Restore request is already running.");
+    this.platform.elevation.hold("restore");
     this.busy = true;
     try {
       return await work();
     } finally {
       this.busy = false;
+      this.platform.elevation.release("restore");
     }
   }
   // A dated past confirmation: shown as "confirmed <time>", dropped by any read that says off or unknown.
@@ -127,7 +130,11 @@ export class RestorePointService {
       false,
     );
   }
-  async list(): Promise<RestorePoints> {
+  // Listing opens an administrator prompt as well, so it is exclusive like the other elevated requests.
+  list(): Promise<RestorePoints> {
+    return this.exclusive(() => this.listNow());
+  }
+  private async listNow(): Promise<RestorePoints> {
     const points = await this.platform.restoreList();
     // A pending creation without a result file is verified against the real list.
     const pending = this.repo.pendingJournal(pendingLabel);

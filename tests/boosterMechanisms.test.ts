@@ -44,7 +44,7 @@ const helperLines = {
   parking: `{"mechanism":"coreParking","prior":"4","applied":"100","scheme":"396783ca-20d2-459f-b042-4722bc020d51","setting":"cpmincores"}`,
 };
 const csharpMechanismKeys =
-  "gameMode,priority,affinity,powerPlan,lowerBackground,suspendBackground,closeBackground,timerResolution,pauseServices,gameBarCapture,smartCores,coreParking,powerThrottling".split(
+  "gameMode,priority,affinity,powerPlan,lowerBackground,suspendBackground,closeBackground,timerResolution,pauseServices,gameBarCapture,smartCores,coreParking,powerThrottling,standbyPurge".split(
     ",",
   );
 describe("second-pass booster contracts", () => {
@@ -418,7 +418,7 @@ function setup(
   return { repo, game, platform, engine };
 }
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-// A helper that journals the services step, waits (the administrator prompt) and then reports ready.
+// A helper that journals the services step, reports ready at once while the administrator prompt is open, and applies it later.
 function promptSession(session: FakeSession, promptMs: number, endMs = 0) {
   session.onSend = ({ command }) => {
     if (command === "start") {
@@ -427,13 +427,18 @@ function promptSession(session: FakeSession, promptMs: number, endMs = 0) {
         mechanism: "pauseServices",
         prior: servicesCapture,
       });
+      session.line({
+        event: "pending",
+        mechanism: "pauseServices",
+        detail: "Waiting for administrator approval to pause services.",
+      });
+      session.line({ event: "ready" });
       setTimeout(() => {
         session.line({
           event: "applied",
           mechanism: "pauseServices",
           detail: "Paused 2 service(s).",
         });
-        session.line({ event: "ready" });
       }, promptMs);
     } else if (command === "stop")
       setTimeout(
@@ -477,20 +482,63 @@ describe("booster engine with services and automatic runs", () => {
     });
     await store.engine.stop();
   });
-  it("waits for the administrator prompt on a manual start but not on auto-boost", async () => {
+  it("goes active while the administrator prompt is still open, and shows it as waiting", async () => {
     const manual = setup();
     manual.platform.onSpawn = (s) => promptSession(s, 150);
     const session = await manual.engine.start(manual.game.id, "manual");
+    // The start budget (50 ms here) is shorter than the prompt: the helper is not killed because it reports ready first.
     expect(session?.status).toBe("active");
     expect(manual.platform.sessions[0]!.killed).toBe(false);
+    expect(session?.message).toMatch(
+      /Waiting for administrator approval to pause services/,
+    );
+    expect(session?.mechanisms.map((m) => [m.id, m.state])).toEqual([
+      ["pauseServices", "pending"],
+    ]);
+    // Stop is possible while it waits, and the answer replaces the waiting row.
+    await delay(200);
+    const later = manual.repo.boostSession();
+    expect(later?.mechanisms.map((m) => [m.id, m.state])).toEqual([
+      ["pauseServices", "applied"],
+    ]);
+    expect(later?.message).toBe("Paused 2 service(s).");
     await manual.engine.stop();
-
-    // Auto-boost has no prompt to wait for: a helper that is silent past the plain start budget is killed.
-    const auto = setup();
-    auto.platform.onSpawn = (s) => promptSession(s, 150);
-    const result = await auto.engine.start(auto.game.id, "auto", target);
-    expect(auto.platform.sessions[0]!.killed).toBe(true);
-    expect(result?.status).not.toBe("active");
+  });
+  it("lets Stop cancel a pending prompt without waiting for it", async () => {
+    const { engine, game, platform, repo } = setup();
+    platform.onSpawn = (s) => {
+      promptSession(s, 5000);
+      const answer = s.onSend;
+      s.onSend = (command) => {
+        if (command.command === "stop") {
+          // The helper withdraws the request and finishes at once.
+          s.line({
+            event: "skipped",
+            mechanism: "pauseServices",
+            detail:
+              "Skipped: the boost was stopped before administrator approval.",
+          });
+          s.line({
+            event: "ended",
+            reason: "stop",
+            reverts: [
+              {
+                id: "pauseServices",
+                state: "reverted",
+                detail: "never applied",
+              },
+            ],
+          });
+        } else answer(command);
+      };
+    };
+    await engine.start(game.id, "manual");
+    const started = Date.now();
+    const ended = await engine.stop();
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(ended?.status).toBe("ended");
+    expect(platform.sessions[0]!.killed).toBe(false);
+    expect(repo.boostSession()).toBeNull();
   });
   it("tells the user up front that Windows will ask for administrator approval", async () => {
     const first = async (

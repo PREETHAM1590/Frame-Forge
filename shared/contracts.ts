@@ -120,6 +120,8 @@ export const CustomMechanismsSchema = z
     smartCores: z.boolean().default(false),
     coreParking: z.boolean().default(false),
     powerThrottling: z.boolean().default(false),
+    // Clears Windows' cached (standby) memory once at the start. Custom only; off in every preset.
+    standbyPurge: z.boolean().default(false),
   })
   .strict();
 export type CustomMechanisms = z.infer<typeof CustomMechanismsSchema>;
@@ -145,6 +147,7 @@ const noMechanisms: CustomMechanisms = {
   smartCores: false,
   coreParking: false,
   powerThrottling: false,
+  standbyPurge: false,
 };
 // What each preset mode applies. Custom uses the saved toggles.
 // Nothing that opens an administrator prompt (pauseServices) is in Balanced or Performance. GPU preference and fullscreen
@@ -356,6 +359,8 @@ export const MechanismResultSchema = z
       "failed",
       "reverted",
       "conflict",
+      // Waiting for the user to answer a Windows administrator prompt; replaced by the final result.
+      "pending",
     ]),
     detail: z.string().max(500),
     /** Stable kebab-case reason for service failures and skips. */
@@ -424,18 +429,44 @@ export const BoostCapabilitiesSchema = z
           detail: z.string().max(500),
           // Already in effect on this PC (Game Mode on, performance plan active).
           active: z.boolean(),
+          /** Stable reason for the display, for example "policy" when Windows policy already does the job. */
+          code: z.string().max(40).optional(),
         })
         .strict(),
     ),
+    /** Windows 11's machine-wide timer setting: whether this Windows has it and whether it is on. */
+    timerGlobal: z
+      .object({ eligible: z.boolean(), enabled: z.boolean() })
+      .strict()
+      .optional(),
   })
   .strict();
 export type BoostCapabilities = z.infer<typeof BoostCapabilitiesSchema>;
+export const TimerStatusSchema = z
+  .object({
+    /** This Windows build (11) can use the setting at all. */
+    eligible: z.boolean(),
+    /** GlobalTimerResolutionRequests is on right now. */
+    enabled: z.boolean(),
+    /** Frameforge turned it on and holds the prior value, so it can turn it back. */
+    ownedByFrameforge: z.boolean(),
+    /** Turned on since the last Windows start; takes effect after a restart. */
+    restartRequired: z.boolean(),
+  })
+  .strict();
+export type TimerStatus = z.infer<typeof TimerStatusSchema>;
 const BoostStatusSchema = z
   .object({
     session: BoostSessionSchema.nullable(),
     capabilities: BoostCapabilitiesSchema,
     watching: z.boolean(),
     ownedPowerPlan: z.boolean(),
+    timer: TimerStatusSchema.default({
+      eligible: false,
+      enabled: false,
+      ownedByFrameforge: false,
+      restartRequired: false,
+    }),
   })
   .strict();
 export const NetworkCheckSchema = z
@@ -741,6 +772,13 @@ export const requests = {
       confirmed: z.literal(true),
     })
     .strict(),
+  // Consent-gated: turn Windows 11's machine-wide timer setting on (needs a restart) or put the saved prior value back.
+  boostTimerGlobal: z
+    .object({
+      action: z.enum(["enable", "restore"]),
+      confirmed: z.literal(true),
+    })
+    .strict(),
   // Server-side allowlist; the renderer never sends a URI or path.
   openSettings: z
     .object({ page: z.enum(["graphics", "startup", "network", "services"]) })
@@ -796,6 +834,7 @@ export const responses = {
   launchSettingPreview: LaunchPreviewSchema,
   launchSettingApply: LaunchStatusSchema,
   boostPowerPlan: BoostStatusSchema,
+  boostTimerGlobal: BoostStatusSchema,
   removeGame: StateSchema,
   gameIcon: GameIconSchema,
   restoreGame: StateSchema,
@@ -898,6 +937,25 @@ export const SnapshotSchema = z
   })
   .strict();
 export type Snapshot = z.infer<typeof SnapshotSchema>;
+export const TimerGlobalResultSchema = z
+  .object({
+    state: z.enum([
+      "ready",
+      "applied",
+      "reverted",
+      "already-set",
+      "conflict",
+      "failed",
+      "declined",
+      "timeout",
+      "expired",
+    ]),
+    detail: z.string().max(500),
+    existed: z.boolean(),
+    value: z.number().int().nullable(),
+  })
+  .strict();
+export type TimerGlobalResult = z.infer<typeof TimerGlobalResultSchema>;
 export const HelperResult = z
   .object({
     ok: z.boolean(),
@@ -922,6 +980,7 @@ export const HelperResult = z
     capabilities: BoostCapabilitiesSchema.optional(),
     network: NetworkCheckSchema.optional(),
     launch: LaunchResultSchema.optional(),
+    timerGlobal: TimerGlobalResultSchema.optional(),
     reverts: z.array(MechanismResultSchema).optional(),
     powerPlan: Id.optional(),
     driveCoverage: z.enum(["confirmed", "off", "unknown"]).optional(),
@@ -992,6 +1051,7 @@ export const SessionEventSchema = z.union([
         "unsupported",
         "unavailable",
         "failed",
+        "pending",
       ]),
       mechanism: MechanismId,
       detail: z.string().max(500),

@@ -101,6 +101,7 @@ const tones: Record<
   unavailable: "amber",
   conflict: "amber",
   failed: "red",
+  pending: "amber",
 };
 const statusTones = {
   preparing: "amber",

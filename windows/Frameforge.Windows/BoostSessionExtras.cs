@@ -54,36 +54,80 @@ public sealed partial class BoostSessionEngine
         serviceCapture = new Captured("pauseServices", Items: plan.Targets);
         Capture(serviceCapture);
     }
-    private void PauseServices()
+    // ---- The administrator step: services and the standby list share one prompt, after every other mechanism ----
+    private bool purgeWanted;
+    private Task? elevatedTask;
+    private CancellationTokenSource? elevatedCancel;
+    public const string AutoSkipPurge = "Auto-boost never opens an administrator prompt. Start the boost yourself to clear the standby list.";
+    private void PlanPurge(SessionCommand command)
     {
-        if (servicePlan is null || serviceCapture is null) return;
-        var plan = servicePlan; var item = serviceCapture;
-        Run("pauseServices", () =>
+        if (extras?.Elevator is null) { Run("standbyPurge", () => Unsupported("standbyPurge", "Administrator approval is not available in this build.")); return; }
+        if (command.Unattended) { emit(new("skipped", "standbyPurge", AutoSkipPurge)); return; }
+        purgeWanted = true;
+    }
+    // deferred: the prompt runs on its own thread, so the session is active (and Stop works) while it is open.
+    private void BeginElevated(bool deferred)
+    {
+        if (servicePlan is null && !purgeWanted) return;
+        if (!deferred) { ElevatedStep(CancellationToken.None); return; }
+        elevatedCancel = new CancellationTokenSource();
+        var token = elevatedCancel.Token;
+        if (servicePlan is not null) emit(new("pending", "pauseServices", "Waiting for administrator approval to pause services. The boost is already active without it."));
+        if (purgeWanted) emit(new("pending", "standbyPurge", "Waiting for administrator approval to clear the standby memory list. The boost is already active without it."));
+        elevatedTask = Task.Run(() => ElevatedStep(token));
+    }
+    // Stop, game exit or Frameforge closing while the prompt is open: withdraw the request and let the step settle.
+    // A child that was already approved finishes first, so what it changed is journaled before the revert.
+    public void CancelElevated()
+    {
+        elevatedCancel?.Cancel();
+        try { elevatedTask?.Wait(); } catch (AggregateException) { /* ElevatedStep reports its own faults. */ }
+    }
+    private void ElevatedStep(CancellationToken cancel)
+    {
+        var plan = servicePlan; var item = serviceCapture; var purge = purgeWanted;
+        ServiceBatch? batch = null; string? failure = null;
+        try { batch = extras!.Elevator!.Run(plan is null ? "purge" : purge ? "stop-purge" : "stop", plan?.Targets ?? [], cancel); }
+        catch (Exception error) { failure = Describe(error); }
+        if (plan is not null && item is not null) Run("pauseServices", () => ServicesResult(plan, item, batch, failure));
+        if (purge) Run("standbyPurge", () => PurgeResult(batch, failure));
+    }
+    private MechanismResult ServicesResult(ServicePlan plan, Captured item, ServiceBatch? batch, string? failure)
+    {
+        if (batch is null)
+            // Unknown how far it got: keep the saved names so the session end starts any that are stopped.
+            return new("pauseServices", "failed", $"The administrator step failed ({failure}). Any service it stopped is restarted when the session ends.", ServiceCodes.ElevationFailed);
+        if (batch.Declined)
         {
-            ServiceBatch batch;
-            try { batch = extras!.Elevator!.Run("stop", plan.Targets); }
-            catch (Exception error)
-            {
-                // Unknown how far it got: keep the saved names so the session end starts any that are stopped.
-                return new("pauseServices", "failed", $"The administrator step failed ({Describe(error)}). Any service it stopped is restarted when the session ends.", ServiceCodes.ElevationFailed);
-            }
-            if (batch.Declined) { Release(item); return new("pauseServices", "skipped", "Skipped (admin declined): Windows asked for administrator approval and it was declined. No service was stopped.", ServiceCodes.ElevationCancelled); }
-            if (batch.Error is not null) return new("pauseServices", "failed", $"{batch.Error} Any service it stopped is restarted when the session ends.", batch.Code ?? ServiceCodes.ElevationFailed);
-            var stopped = batch.Outcomes.Where(o => o.State == "stopped").Select(o => o.Name).ToArray();
-            // A stop that ran out of time can still finish later, so a failed one stays in the journal; only services that were never touched are dropped.
-            var late = batch.Outcomes.Where(o => o.State == "failed").Select(o => o.Name).ToArray();
-            var journaled = plan.Targets.Where(n => stopped.Contains(n, StringComparer.OrdinalIgnoreCase) || late.Contains(n, StringComparer.OrdinalIgnoreCase)).ToArray();
-            var rest = batch.Outcomes.Where(o => o.State != "stopped").Select(o => $"{o.Name}: {o.Detail}").ToArray();
-            if (journaled.Length == 0) { Release(item); return new("pauseServices", "skipped", $"No service was stopped. {Join(rest)}".Trim(), batch.Outcomes.FirstOrDefault()?.Code); }
-            // Journal only what this session stopped (or may have), so a service the user stopped or that was skipped is never started by us.
-            if (!journaled.SequenceEqual(plan.Targets)) { Capture(new Captured("pauseServices", Items: journaled)); Release(item); }
-            // The state is re-read without elevation; Windows can restart trigger-started services on its own.
-            var back = stopped.Where(n => { try { return extras.Services!.Query(n).Running; } catch (Win32Exception) { return false; } }).ToArray();
-            var detail = stopped.Length > 0 ? $"Paused {stopped.Length} service(s): {Join(stopped)}. Start types are unchanged." : "No service confirmed stopping.";
-            if (back.Length > 0) detail += $" Windows restarted {Join(back)} already.";
-            if (rest.Length > 0) detail += $" Not paused: {Join(rest.Take(3))}.";
-            return new("pauseServices", stopped.Length > 0 ? "applied" : "failed", detail, stopped.Length > 0 ? null : late.Length > 0 ? ServiceCodes.StopTimeout : null);
-        });
+            Release(item);
+            var declined = batch.Error?.Contains("declined", StringComparison.Ordinal) != false;
+            return new("pauseServices", "skipped", declined
+                ? "Skipped (admin declined): Windows asked for administrator approval and it was declined. No service was stopped."
+                : $"Skipped: {batch.Error} No service was stopped.", batch.Code ?? ServiceCodes.ElevationCancelled);
+        }
+        if (batch.Error is not null) return new("pauseServices", "failed", $"{batch.Error} Any service it stopped is restarted when the session ends.", batch.Code ?? ServiceCodes.ElevationFailed);
+        var stopped = batch.Outcomes.Where(o => o.State == "stopped").Select(o => o.Name).ToArray();
+        // A stop that ran out of time can still finish later, so a failed one stays in the journal; only services that were never touched are dropped.
+        var late = batch.Outcomes.Where(o => o.State == "failed").Select(o => o.Name).ToArray();
+        var journaled = plan.Targets.Where(n => stopped.Contains(n, StringComparer.OrdinalIgnoreCase) || late.Contains(n, StringComparer.OrdinalIgnoreCase)).ToArray();
+        var rest = batch.Outcomes.Where(o => o.State != "stopped").Select(o => $"{o.Name}: {o.Detail}").ToArray();
+        if (journaled.Length == 0) { Release(item); return new("pauseServices", "skipped", $"No service was stopped. {Join(rest)}".Trim(), batch.Outcomes.FirstOrDefault()?.Code); }
+        // Journal only what this session stopped (or may have), so a service the user stopped or that was skipped is never started by us.
+        if (!journaled.SequenceEqual(plan.Targets)) { Capture(new Captured("pauseServices", Items: journaled)); Release(item); }
+        // The state is re-read without elevation; Windows can restart trigger-started services on its own.
+        var back = stopped.Where(n => { try { return extras!.Services!.Query(n).Running; } catch (Win32Exception) { return false; } }).ToArray();
+        var detail = stopped.Length > 0 ? $"Paused {stopped.Length} service(s): {Join(stopped)}. Start types are unchanged." : "No service confirmed stopping.";
+        if (back.Length > 0) detail += $" Windows restarted {Join(back)} already.";
+        if (rest.Length > 0) detail += $" Not paused: {Join(rest.Take(3))}.";
+        return new("pauseServices", stopped.Length > 0 ? "applied" : "failed", detail, stopped.Length > 0 ? null : late.Length > 0 ? ServiceCodes.StopTimeout : null);
+    }
+    private static MechanismResult PurgeResult(ServiceBatch? batch, string? failure)
+    {
+        if (batch is null) return new("standbyPurge", "failed", $"The administrator step failed ({failure}). Nothing was cleared.", ServiceCodes.ElevationFailed);
+        if (batch.Purge is { State: "purged" }) return new("standbyPurge", "applied", "Cleared the standby memory list once at the start. This cannot be undone, and it is harmless: Windows refills the cache as programs need memory.");
+        if (batch.Purge is { } purge) return new("standbyPurge", "failed", purge.Detail, purge.Code);
+        if (batch.Declined) return new("standbyPurge", "skipped", $"{batch.Error ?? "Administrator approval was not given."} Nothing was cleared.", batch.Code);
+        return new("standbyPurge", "failed", batch.Error ?? "The administrator step did not clear the standby list.", batch.Code ?? ServiceCodes.ElevationFailed);
     }
     private MechanismResult RevertServices(Captured item)
     {
@@ -99,12 +143,18 @@ public sealed partial class BoostSessionEngine
         if (!extras.Elevate)
             return new("pauseServices", "failed", $"Starting {Join(stopped)} needs administrator approval. Use Retry recovery, or restart Windows (start types were never changed).", ServiceCodes.ElevationCancelled);
         var batch = extras.Elevator.Run("start", [.. stopped.Reverse()]);
-        if (batch.Declined) return new("pauseServices", "failed", $"Administrator approval was declined, so {Join(stopped)} stay stopped. Retry recovery, or restart Windows (start types were never changed).", ServiceCodes.ElevationCancelled);
+        if (batch.Declined)
+            return new("pauseServices", "failed", batch.Code == ServiceCodes.ElevationTimeout
+                ? $"Administrator approval was not given in time, so {Join(stopped)} stay stopped. Retry recovery, or restart Windows (start types were never changed)."
+                : $"Administrator approval was declined, so {Join(stopped)} stay stopped. Retry recovery, or restart Windows (start types were never changed).", batch.Code ?? ServiceCodes.ElevationCancelled);
         if (batch.Error is not null) return new("pauseServices", "failed", batch.Error, batch.Code ?? ServiceCodes.ElevationFailed);
-        var still = stopped.Where(n => !extras.Services.Query(n).Running).ToArray();
+        // A start that reported success must also still be running; one that died again (SysMain once did) stays journaled for Retry.
+        var failedStarts = batch.Outcomes.Where(o => o.State == "failed").ToArray();
+        var still = stopped.Where(n => !extras.Services.Query(n).Running || failedStarts.Any(f => string.Equals(f.Name, n, StringComparison.OrdinalIgnoreCase))).ToArray();
         if (still.Length == 0 && stopping.Length == 0) return new("pauseServices", "reverted", $"Restarted {Join(stopped)} and verified.");
-        var code = batch.Outcomes.FirstOrDefault(o => o.State == "failed")?.Code ?? (stopping.Length > 0 ? ServiceCodes.StopPending : ServiceCodes.StartTimeout);
-        return new("pauseServices", "failed", $"{Join(still.Concat(stopping))} did not restart. Retry recovery, or restart Windows (start types were never changed).", code);
+        var code = failedStarts.FirstOrDefault()?.Code ?? (stopping.Length > 0 ? ServiceCodes.StopPending : ServiceCodes.StartTimeout);
+        var why = failedStarts.Length > 0 ? $" ({Join(failedStarts.Take(2).Select(f => $"{f.Name}: {f.Detail}"))})" : "";
+        return new("pauseServices", "failed", $"{Join(still.Concat(stopping))} did not restart{why}. Retry recovery, or restart Windows (start types were never changed).", code);
     }
 
     // ---- Game Bar capture off ----
@@ -114,8 +164,8 @@ public sealed partial class BoostSessionEngine
         var pending = GameBarPending(registry, out var notes, out var policyOff);
         if (pending.Count == 0)
             return new("gameBarCapture", "skipped", policyOff
-                ? $"Capture and background recording are already turned off by policy (AllowGameDVR=0) and the overlay hook is off. Nothing changed. {notes}".Trim()
-                : $"Game Bar capture and the overlay hook are already off. {notes}".Trim());
+                ? $"Already off by policy: capture and background recording are turned off by policy (AllowGameDVR=0) and the overlay hook is off. Nothing changed. {notes}".Trim()
+                : $"Game Bar capture and the overlay hook are already off. {notes}".Trim(), policyOff ? "policy" : null);
         var item = new Captured("gameBarCapture", RegValues: [.. pending.Select(p => new RegCapture(p.Path, p.Name, "DWord", p.Current.Existed, p.Current.Value, 0))]);
         Capture(item);
         foreach (var (path, name, _) in pending) registry.Write(path, name, "DWord", 0);
@@ -297,12 +347,15 @@ public sealed partial class BoostSessionEngine
                 ? new("pauseServices", true, $"{plan.Targets.Length} running service(s) can be paused: {Join(plan.Targets)}. Windows asks for administrator approval once at the start and once at the end of a boost. Games from the Xbox app or Microsoft Store keep their Xbox services.")
                 : new("pauseServices", false, "None of the pausable services are running right now.");
         }));
+        list.Add(Run("standbyPurge", () => extras?.Elevator is null
+            ? new("standbyPurge", false, "Administrator approval is not available in this build.")
+            : new("standbyPurge", true, "Clears Windows' cached (standby) memory once, when the boost starts, so the game can use it straight away. Windows asks for administrator approval (together with the services prompt when both are on). It cannot be undone, and it is harmless: Windows refills the cache as programs need memory. Off by default; turn it on under Custom.")));
         list.Add(Run("gameBarCapture", () =>
         {
             if (extras?.Registry is null) return new("gameBarCapture", false, "Registry access is not available in this build.");
             var pending = GameBarPending(extras.Registry, out var notes, out var policyOff);
             return pending.Count == 0
-                ? new("gameBarCapture", true, policyOff ? "Capture is already turned off by policy (AllowGameDVR=0) and the overlay hook is off; nothing to change." : "Capture and the overlay hook are already off.", true)
+                ? new("gameBarCapture", true, policyOff ? "Already off by policy (AllowGameDVR=0), and the overlay hook is off; nothing to change." : "Capture and the overlay hook are already off.", true, policyOff ? "policy" : null)
                 : new("gameBarCapture", true, $"Turns off {Join(pending.Select(p => p.Name))} for the session. Game Mode stays on and the Game Bar app stays installed.");
         }));
         list.Add(Run("smartCores", () =>

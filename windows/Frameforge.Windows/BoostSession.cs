@@ -13,12 +13,12 @@ using Microsoft.Win32.SafeHandles;
 namespace Frameforge.Windows;
 
 public record Mechanisms(bool GameMode, string Priority, int[]? Affinity, bool PowerPlan, bool LowerBackground, bool SuspendBackground, bool CloseBackground, bool TimerResolution,
-    bool PauseServices = false, bool GameBarCapture = false, bool SmartCores = false, bool CoreParking = false, bool PowerThrottling = false);
+    bool PauseServices = false, bool GameBarCapture = false, bool SmartCores = false, bool CoreParking = false, bool PowerThrottling = false, bool StandbyPurge = false);
 public record BackgroundRule(string Image, string Action);
 // StoreGame: the game comes from the Xbox app or Microsoft Store. Unattended: auto-boost, which must not open an administrator prompt.
 // Preset: a preset mode rather than Custom; smart core targeting stays off in presets on Windows 11 hybrid CPUs.
 public record SessionCommand(string Command, int GamePid = 0, string? GameStartTime = null, string? GamePath = null, Mechanisms? Mechanisms = null, BackgroundRule[]? Background = null, int ParentPid = 0, string? OwnedPlan = null,
-    bool StoreGame = false, bool Unattended = false, bool Preset = false);
+    bool StoreGame = false, bool Unattended = false, bool Preset = false, bool TimerRestartPending = false);
 // Prior state saved before a change. Applied is what Frameforge set, so a revert only happens while it is still in place.
 // Only these optional members omit nulls; registry snapshots keep an explicit `value: null` for absent values.
 public record Captured(string Mechanism, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProcessTarget? Process = null,
@@ -38,8 +38,11 @@ public record Step(string Event, string Mechanism, [property: JsonIgnore(Conditi
 public record Ended(string Event, string Reason, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Detail, MechanismResult[] Reverts);
 public record ProcInfo(ProcessTarget Target, int SessionId, string? Sid, bool Critical);
 // Active: the mechanism's effect is already in place on this PC (for example Game Mode already on).
-public record Capability(string Id, bool Available, string Detail, bool Active = false);
-public record BoostCapabilities(int LogicalCpus, Capability[] Mechanisms, CpuTopology? Topology = null);
+// Code: a stable reason for the display, for example "policy" when Windows policy already does what the mechanism would do.
+public record Capability(string Id, bool Available, string Detail, bool Active = false, string? Code = null);
+// Windows 11 only lets a timer request reach other programs when GlobalTimerResolutionRequests is 1. Eligible: this Windows build has the setting.
+public record TimerGlobal(bool Eligible, bool Enabled);
+public record BoostCapabilities(int LogicalCpus, Capability[] Mechanisms, CpuTopology? Topology = null, TimerGlobal? TimerGlobal = null);
 public record ProcessEntry(string Image, int Pid, bool Protected);
 // Reported as code "plan-not-created": the helper verified no plan copy exists, so the recorded GUID can be dropped.
 public sealed class PlanNotCreatedException(string message) : InvalidOperationException(message);
@@ -56,7 +59,13 @@ public interface IPowerStore
     string? Name(Guid scheme);
     void Delete(Guid scheme);
 }
-public interface ITimerControl { string? Unsupported { get; } bool Request(); void Release(); }
+public interface ITimerControl
+{
+    string? Unsupported { get; }
+    bool Request();
+    void Release();
+    TimerGlobal Global => new(false, false);
+}
 public interface IProcessControl
 {
     int LogicalCpus { get; }
@@ -88,13 +97,13 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
     private static readonly Regex Image = new(@"^[\w .()-]{1,64}\.exe$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private readonly List<Captured> captured = [];
     private readonly RegistryOperations gameBar = new(registry);
-    private bool timerHeld;
+    private bool timerHeld, timerRestartPending;
 
     public static string? TimerSupport(int build, object? globalFlag)
     {
         if (build < 19041) return null;
         if (build < 22000) return "On Windows 10 version 2004 and later a timer request only affects the requesting process, so it cannot reach the game.";
-        return globalFlag is 1 ? null : "Since Windows 10 version 2004 a timer request only affects the requesting process unless GlobalTimerResolutionRequests is enabled. Frameforge does not change that machine-wide setting.";
+        return globalFlag is 1 ? null : "On Windows 11 a program's timer request only reaches the whole system when Windows' GlobalTimerResolutionRequests setting is on. It is off here. Frameforge can turn it on for you (administrator approval, then a restart).";
     }
     public static Guid? PlanTarget(IPowerStore power, Guid? owned) =>
         power.Exists(HighPerformance) ? HighPerformance : power.Exists(Ultimate) ? Ultimate : owned is { } o && power.Exists(o) ? o : null;
@@ -112,9 +121,11 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         try { return read(); }
         catch (Exception error) { return new(id, false, $"Could not be read: {Describe(error)}"); }
     }
-    public static BoostCapabilities Capabilities(IPowerStore power, ITimerControl timer, int cpus, IRegistryStore registry, Guid? ownedPlan, Extras? extras = null)
+    public const string TimerRestartNote = "Turned on in Windows, but Windows reads GlobalTimerResolutionRequests only at start-up. Restart Windows to finish; until then a timer request cannot reach the game.";
+    public static BoostCapabilities Capabilities(IPowerStore power, ITimerControl timer, int cpus, IRegistryStore registry, Guid? ownedPlan, Extras? extras = null, bool timerRestartPending = false)
     {
         var timerReason = timer.Unsupported;
+        if (timerReason is null && timerRestartPending) timerReason = TimerRestartNote;
         return new(cpus, [
             Safe("gameMode", () => GameModeOn(new RegistryOperations(registry).Capture(GameModeIds)) is var on && on
                 ? new("gameMode", true, "Already on in Windows; a session leaves it as it is.", true)
@@ -129,9 +140,8 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
             new("suspendBackground", true, "Selected apps are suspended and resumed afterwards."),
             new("closeBackground", true, "Selected apps are closed and not reopened."),
             new("timerResolution", timerReason is null, timerReason ?? "0.5 ms timer requested for the session."),
-            new("standbyPurge", false, "Needs administrator rights and SeProfileSingleProcessPrivilege. Frameforge runs without elevation."),
             .. ExtraCapabilities(power, extras)
-        ], ReadTopology(extras));
+        ], ReadTopology(extras), timer.Global);
     }
     // Explicit, consent-gated: copies Windows' High performance (or Ultimate) template into a new plan. The active plan is not changed.
     // destination is generated and recorded by Frameforge before this call, so a created plan is never left unrecorded.
@@ -184,8 +194,10 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         return "Frameforge High performance plan removed and verified.";
     }
 
-    public void Start(SessionCommand command)
+    // deferElevated: the administrator prompt (services, standby list) runs on its own thread, so the session reports ready while it is open.
+    public void Start(SessionCommand command, bool deferElevated = false)
     {
+        timerRestartPending = command.TimerRestartPending;
         var mechanisms = command.Mechanisms ?? throw new InvalidOperationException("Missing booster mechanisms.");
         var identity = Valid(new ProcessTarget(command.GamePid, command.GameStartTime ?? "", command.GamePath ?? "", Path.GetFileNameWithoutExtension(command.GamePath ?? ""), "Normal"));
         var rules = command.Background ?? [];
@@ -199,6 +211,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         // The services are planned and journaled first (the oldest entry, so crash recovery sees them), but the administrator
         // prompt itself runs after every other mechanism, so the game is already boosted while the prompt is open.
         if (mechanisms.PauseServices) PlanServices(command);
+        if (mechanisms.StandbyPurge) PlanPurge(command);
         if (mechanisms.GameMode) Run("gameMode", GameMode);
         if (mechanisms.PowerPlan) Run("powerPlan", PowerPlan);
         if (mechanisms.TimerResolution) Run("timerResolution", Timer);
@@ -213,10 +226,11 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         foreach (var rule in rules) Background(rule, mechanisms, info, command.ParentPid, all);
         foreach (var (action, id, on) in new[] { ("lower", "lowerBackground", mechanisms.LowerBackground), ("suspend", "suspendBackground", mechanisms.SuspendBackground), ("close", "closeBackground", mechanisms.CloseBackground) })
             if (on && !rules.Any(r => r.Action == action)) emit(new("skipped", id, "Not configured: no background apps are selected for this action. Pick apps on the Game Mode page."));
-        if (mechanisms.PauseServices) PauseServices();
+        BeginElevated(deferElevated);
     }
     public MechanismResult[] Revert()
     {
+        CancelElevated();
         var results = Recover([.. captured]);
         captured.Clear();
         return results;
@@ -278,6 +292,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
     private MechanismResult Timer()
     {
         if (timer.Unsupported is { } reason) return new("timerResolution", "unsupported", reason);
+        if (timerRestartPending) return new("timerResolution", "unsupported", TimerRestartNote);
         Capture(new("timerResolution"));
         timerHeld = true;
         return timer.Request() ? new("timerResolution", "applied", "0.5 ms timer resolution requested and verified.") : new("timerResolution", "failed", "Windows did not grant the timer resolution.");
@@ -463,7 +478,7 @@ public static class SessionRunner
         string reason; string? detail = null;
         try
         {
-            engine.Start(start);
+            engine.Start(start, deferElevated: true);
             write(new { @event = "ready" });
             var done = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             if (game is not null) Task.Run(() => { game.WaitOne(); done.TrySetResult("game-exited"); });
@@ -761,8 +776,9 @@ public sealed class WindowsPowerStore : IPowerStore
 
 public sealed class WindowsTimerControl : ITimerControl
 {
-    public string? Unsupported => BoostSessionEngine.TimerSupport(Environment.OSVersion.Version.Build,
-        Registry.GetValue(@"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\kernel", "GlobalTimerResolutionRequests", null));
+    public const string KernelKey = @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\kernel", Flag = "GlobalTimerResolutionRequests";
+    public string? Unsupported => BoostSessionEngine.TimerSupport(Environment.OSVersion.Version.Build, Registry.GetValue(KernelKey, Flag, null));
+    public TimerGlobal Global => new(Environment.OSVersion.Version.Build >= 22000, Registry.GetValue(KernelKey, Flag, null) is 1);
     public bool Request() => NtSetTimerResolution(5000, true, out _) == 0 && NtQueryTimerResolution(out _, out var finest, out var current) == 0 && current <= Math.Max(5000u, finest);
     public void Release() => NtSetTimerResolution(5000, false, out _);
     [DllImport("ntdll.dll")] private static extern int NtSetTimerResolution(uint desired, bool set, out uint current);

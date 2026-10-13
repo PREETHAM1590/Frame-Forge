@@ -11,12 +11,14 @@ public record ServiceInfo(bool Exists, bool Running, bool CanStop, string[] Acti
 // State: "stopped", "started", "skipped" or "failed". Code is a stable kebab-case reason (see ServiceCodes).
 public record ServiceOutcome(string Name, string State, string Detail, string? Code = null);
 // Declined: the user refused the administrator prompt. Error and Code: the elevated step did not finish or answered unreadably.
-public record ServiceBatch(bool Declined, ServiceOutcome[] Outcomes, string? Error = null, string? Code = null);
+// Purge: the standby memory list step, when the request asked for it (State "purged" or "failed").
+public record ServiceBatch(bool Declined, ServiceOutcome[] Outcomes, string? Error = null, string? Code = null, ServiceOutcome? Purge = null);
 public record ServicePlan(string[] Targets, ServiceOutcome[] Skipped);
 
 public static class ServiceCodes
 {
-    public const string ElevationCancelled = "elevation-cancelled", ElevationFailed = "elevation-failed", ElevationTimeout = "elevation-timeout", ResultRejected = "result-rejected", ResultUnreadable = "result-unreadable";
+    public const string ElevationCancelled = "elevation-cancelled", ElevationFailed = "elevation-failed", ElevationTimeout = "elevation-timeout", ResultRejected = "result-rejected", ResultUnreadable = "result-unreadable",
+        ElevationExpired = "elevation-expired", StoppedAgain = "stopped-again", PurgeFailed = "purge-failed";
     public const string NotInstalled = "not-installed", NotRunning = "not-running", CannotStop = "cannot-stop", HasDependents = "has-dependents", ControllerConnected = "controller-connected",
         StoreGame = "store-game", Denied = "denied", StopTimeout = "stop-timeout", StartTimeout = "start-timeout", StopPending = "stop-pending", AccessDenied = "access-denied", ServiceError = "service-error";
 }
@@ -27,8 +29,21 @@ public interface IServiceStore
     // Stops and waits up to the timeout; true once the service reports Stopped. Never changes the start type.
     bool Stop(string name, TimeSpan timeout);
     bool Start(string name, TimeSpan timeout);
+    // After a start: true when the service is still running at the end of the window. Otherwise exitCode is what Windows last reported for it.
+    bool StaysRunning(string name, TimeSpan window, out uint exitCode)
+    {
+        exitCode = 0;
+        for (var deadline = DateTime.UtcNow + window; ; Thread.Sleep(100))
+        {
+            if (!Query(name).Running) return false;
+            if (DateTime.UtcNow >= deadline) return true;
+        }
+    }
 }
-public interface IServiceElevator { ServiceBatch Run(string action, string[] names); }
+// cancel: the user stopped the boost while the administrator prompt was still open. Withdraws the request; nothing is changed.
+public interface IServiceElevator { ServiceBatch Run(string action, string[] names, CancellationToken cancel = default); }
+// The standby memory list: cached pages Windows can reuse. Returns null on success or the reason it failed.
+public interface IMemoryPurger { string? Purge(); }
 public interface IControllerProbe { bool XboxControllerConnected(); }
 
 // Stop-only pausing: the start type is never changed, so a service that is never restarted comes back after a reboot.
@@ -126,25 +141,38 @@ public static class ServicePolicy
 
 public static class ServiceCommands
 {
-    public static readonly TimeSpan StopWait = TimeSpan.FromSeconds(5), StartWait = TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan StopWait = TimeSpan.FromSeconds(5), StartWait = TimeSpan.FromSeconds(10), StableWait = TimeSpan.FromSeconds(5);
     public const int MaxServices = 32;
+    public static bool ValidAction(string action) => action is "stop" or "start" or "stop-purge" or "purge";
+    public static bool ValidNames(string action, string[] names) =>
+        (action == "purge" ? names.Length == 0 : names.Length is > 0 and <= MaxServices) && names.All(ServicePolicy.Allowed);
 
     // Runs inside the elevated instance (or inline when the helper is already elevated). Re-checks everything itself.
     // One failing service never discards the outcomes already collected.
-    public static ServiceBatch Execute(string action, string[] names, IServiceStore store, IControllerProbe controllers)
+    public static ServiceBatch Execute(string action, string[] names, IServiceStore store, IControllerProbe controllers, IMemoryPurger? purger = null, TimeSpan? stable = null)
     {
-        if (action is not ("stop" or "start") || names.Length is 0 or > MaxServices || names.Any(n => !ServicePolicy.Allowed(n)) || names.Distinct(StringComparer.OrdinalIgnoreCase).Count() != names.Length)
+        if (!ValidAction(action) || !ValidNames(action, names) || names.Distinct(StringComparer.OrdinalIgnoreCase).Count() != names.Length)
             throw new InvalidOperationException("Unsupported service request.");
         var outcomes = new List<ServiceOutcome>();
-        foreach (var name in action == "stop" ? Resolve(names, store) : names)
+        var verb = action == "stop-purge" ? "stop" : action;
+        foreach (var name in verb == "stop" ? Resolve(names, store) : names)
         {
-            try { outcomes.Add(One(action, name, names, store, controllers)); }
+            try { outcomes.Add(One(verb, name, names, store, controllers, stable ?? StableWait)); }
             catch (Win32Exception error) { outcomes.Add(new(name, "failed", $"Windows refused (error {error.NativeErrorCode}).", error.NativeErrorCode == 5 ? ServiceCodes.AccessDenied : ServiceCodes.ServiceError)); }
             catch (InvalidOperationException error) { outcomes.Add(new(name, "failed", error.Message, ServiceCodes.ServiceError)); }
         }
-        return new(false, [.. outcomes]);
+        // One-shot and not reversible; harmless, because Windows refills the cache as programs need it.
+        ServiceOutcome? purge = null;
+        if (action is "stop-purge" or "purge")
+        {
+            string? failure;
+            try { failure = purger is null ? "Memory control is not available in this build." : purger.Purge(); }
+            catch (Exception error) when (error is Win32Exception or InvalidOperationException or DllNotFoundException or EntryPointNotFoundException) { failure = "Windows refused the request."; }
+            purge = failure is null ? new("standby-list", "purged", "Standby memory list cleared.") : new("standby-list", "failed", failure, ServiceCodes.PurgeFailed);
+        }
+        return new(false, [.. outcomes], Purge: purge);
     }
-    private static ServiceOutcome One(string action, string name, string[] names, IServiceStore store, IControllerProbe controllers)
+    private static ServiceOutcome One(string action, string name, string[] names, IServiceStore store, IControllerProbe controllers, TimeSpan stable)
     {
         var info = store.Query(name);
         if (!info.Exists) return new(name, "skipped", "Not installed.", ServiceCodes.NotInstalled);
@@ -152,7 +180,14 @@ public static class ServiceCommands
         {
             if (info.Running) return new(name, "skipped", "Already running.");
             if (info.StopPending) return new(name, "failed", "It is still shutting down. Retry in a moment.", ServiceCodes.StopPending);
-            return store.Start(name, StartWait) ? new(name, "started", "Started.") : new(name, "failed", "Windows did not report it running in time.", ServiceCodes.StartTimeout);
+            // Running is not enough: a service can start and die a moment later (SysMain did once). Watch it, and try once more.
+            uint exitCode = 0;
+            for (var attempt = 1; attempt <= 2; attempt++)
+            {
+                if (!store.Start(name, StartWait)) return new(name, "failed", "Windows did not report it running in time.", ServiceCodes.StartTimeout);
+                if (store.StaysRunning(name, stable, out exitCode)) return new(name, "started", "Started and still running.");
+            }
+            return new(name, "failed", $"It started but stopped again, twice (Windows error {exitCode}).", ServiceCodes.StoppedAgain);
         }
         if (!info.Running) return new(name, "skipped", "Not running.", ServiceCodes.NotRunning);
         if (!info.CanStop) return new(name, "skipped", "Windows does not allow stopping it right now.", ServiceCodes.CannotStop);
@@ -166,13 +201,13 @@ public static class ServiceCommands
     private static string[] Resolve(string[] names, IServiceStore store) => ServicePolicy.StopOrder(names, name => { try { return store.Query(name).ActiveDependents; } catch (Win32Exception) { return []; } });
 
     // Entry point for `--elevated-services <action> <resultPath> <name>...`. Writes exactly one JSON object to the result file.
-    public static int RunElevatedChild(string[] argv, Func<object, string> serialize)
+    public static int RunElevatedChild(string[] argv, Func<object, string> serialize, IServiceStore? store = null, IControllerProbe? controllers = null, IMemoryPurger? purger = null)
     {
-        if (argv.Length < 3 || !RestoreCommands.ValidResultPath(argv[1])) return 2;
-        using var file = new FileStream(argv[1], FileMode.Open, FileAccess.Write, FileShare.None);
-        if (file.Length != 0 || !string.Equals(RestoreCommands.FinalPath(file.SafeFileHandle), argv[1], StringComparison.OrdinalIgnoreCase)) return 2;
+        if (argv.Length < 2) return 2;
+        using var file = ElevatedCall.OpenResult(argv[1], out var rejected);
+        if (file is null) return rejected;
         object result;
-        try { result = Execute(argv[0], argv[2..], new WindowsServiceStore(), new WindowsControllerProbe()); }
+        try { result = Execute(argv[0], argv[2..], store ?? new WindowsServiceStore(), controllers ?? new WindowsControllerProbe(), purger ?? new WindowsMemoryPurger()); }
         catch (Exception error) { result = new ServiceBatch(false, [], error is InvalidOperationException ? error.Message : "Windows could not complete the service request.", ServiceCodes.ServiceError); }
         file.Write(Encoding.UTF8.GetBytes(serialize(result)));
         return 0;
@@ -181,9 +216,12 @@ public static class ServiceCommands
 
 // GC-7 for services: the helper starts itself with the runas verb and reads a validated result file. No argument string is built.
 // The result file lifecycle (canonical path from the created handle, stale sweep, kept while the child may still write) is
-// the restore points' own, shared through RestoreCommands.
-public sealed class WindowsServiceElevator(TimeSpan? childWait = null) : IServiceElevator
+// the restore points' own, shared through RestoreCommands. A request file next to it (see ElevationRequest) is withdrawn when the
+// boost is stopped or nobody answers the prompt, so a late approval changes nothing.
+public sealed class WindowsServiceElevator(TimeSpan? childWait = null, IElevatedLauncher? launcher = null, TimeSpan? approvalBudget = null, TimeSpan? grace = null, bool? elevated = null) : IServiceElevator
 {
+    // How long the administrator prompt may stay unanswered.
+    public static readonly TimeSpan ApprovalBudget = TimeSpan.FromSeconds(120);
     // One stop pass waits at most 5 s per service, 32 services; the wait starts after the administrator approved.
     private readonly TimeSpan wait = childWait ?? TimeSpan.FromSeconds(200);
     // Creates the empty result file the elevated child will fill and returns its canonical path. The child compares that exact string
@@ -195,45 +233,68 @@ public sealed class WindowsServiceElevator(TimeSpan? childWait = null) : IServic
         using var file = new FileStream(draft, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
         return RestoreCommands.FinalPath(file.SafeFileHandle);
     }
-    public ServiceBatch Run(string action, string[] names)
+    public ServiceBatch Run(string action, string[] names, CancellationToken cancel = default)
     {
-        if (action is not ("stop" or "start") || names.Length is 0 or > ServiceCommands.MaxServices || names.Any(n => !ServicePolicy.Allowed(n)))
+        if (!ServiceCommands.ValidAction(action) || !ServiceCommands.ValidNames(action, names))
             throw new InvalidOperationException("Unsupported service request.");
-        if (RestoreCommands.IsElevated()) return ServiceCommands.Execute(action, names, new WindowsServiceStore(), new WindowsControllerProbe());
-        var resultPath = NewResultPath();
-        var keep = false;
+        if (elevated ?? RestoreCommands.IsElevated()) return ServiceCommands.Execute(action, names, new WindowsServiceStore(), new WindowsControllerProbe(), new WindowsMemoryPurger());
+        var budget = approvalBudget ?? ApprovalBudget;
+        if (cancel.IsCancellationRequested) return Withdrawn(ElevationStatus.Cancelled, budget);
+        var outcome = ElevatedCall.Run(launcher ?? new WindowsElevatedLauncher(), "--elevated-services", action, names, budget, wait, cancel, grace);
+        return outcome.Status switch
+        {
+            ElevationStatus.Declined => new(true, [], "Administrator approval was declined.", ServiceCodes.ElevationCancelled),
+            ElevationStatus.NotApproved or ElevationStatus.Cancelled => Withdrawn(outcome.Status, budget),
+            ElevationStatus.Expired => new(true, [], "The administrator request expired before it was approved. Nothing was changed.", ServiceCodes.ElevationExpired),
+            ElevationStatus.NoChild => new(false, [], "The administrator request could not start.", ServiceCodes.ElevationFailed),
+            ElevationStatus.ChildTimeout => new(false, [], "The administrator step did not finish in time.", ServiceCodes.ElevationTimeout),
+            ElevationStatus.Rejected => new(false, [], "The administrator step rejected its result file. Nothing was changed.", ServiceCodes.ResultRejected),
+            _ => Read(outcome.Text)
+        };
+    }
+    // Nothing was approved, so nothing was changed: the journal can be released.
+    private static ServiceBatch Withdrawn(ElevationStatus status, TimeSpan budget) => status == ElevationStatus.Cancelled
+        ? new(true, [], "The boost was stopped before administrator approval, so nothing was changed.", ServiceCodes.ElevationCancelled)
+        : new(true, [], $"Administrator approval was not given within {budget.TotalMinutes:0.#} minutes, so nothing was changed. A prompt that is still open does nothing now.", ServiceCodes.ElevationTimeout);
+    private static ServiceBatch Read(string? text)
+    {
+        if (text is null || text.Length is 0 or > 1024 * 1024) return new(false, [], "The administrator step returned no result.", ServiceCodes.ResultUnreadable);
+        ServiceBatch? batch;
+        try { batch = JsonSerializer.Deserialize<ServiceBatch>(text, HelperJson.Options); }
+        catch (JsonException) { batch = null; }
+        return batch is null || batch.Outcomes is null || batch.Outcomes.Length > ServiceCommands.MaxServices
+            ? new(false, [], "Unreadable administrator result.", ServiceCodes.ResultUnreadable)
+            : batch;
+    }
+}
+
+// NtSetSystemInformation(SystemMemoryListInformation = 0x50) with MemoryPurgeStandbyList (4); needs SeProfileSingleProcessPrivilege.
+public sealed class WindowsMemoryPurger : IMemoryPurger
+{
+    private const int SystemMemoryListInformation = 0x50, MemoryPurgeStandbyList = 4;
+    [StructLayout(LayoutKind.Sequential, Pack = 4)] private struct TokenPrivileges { public uint Count; public long Luid; public uint Attributes; }
+    public string? Purge()
+    {
+        if (!OpenProcessToken(GetCurrentProcess(), 0x28, out var token)) return $"Windows refused the request (error {Marshal.GetLastWin32Error()}).";
         try
         {
-            var info = new ProcessStartInfo { FileName = Environment.ProcessPath!, UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
-            foreach (var argument in new[] { "--elevated-services", action, resultPath }.Concat(names)) info.ArgumentList.Add(argument);
-            Process? child;
-            try { child = Process.Start(info); }
-            catch (Win32Exception error) when (error.NativeErrorCode == 1223) { return new(true, [], "Administrator approval was declined.", ServiceCodes.ElevationCancelled); }
-            using (child)
-            {
-                if (child is null) return new(false, [], "The administrator request could not start.", ServiceCodes.ElevationFailed);
-                if (!child.WaitForExit(wait))
-                {
-                    // The child may still write its result; the file stays and is swept later.
-                    keep = true;
-                    return new(false, [], "The administrator step did not finish in time.", ServiceCodes.ElevationTimeout);
-                }
-                if (RestoreCommands.ExitCode(child) == 2) return new(false, [], "The administrator step rejected its result file. Nothing was changed.", ServiceCodes.ResultRejected);
-            }
-            var text = File.ReadAllText(resultPath);
-            if (text.Length is 0 or > 1024 * 1024) return new(false, [], "The administrator step returned no result.", ServiceCodes.ResultUnreadable);
-            ServiceBatch? batch;
-            try { batch = JsonSerializer.Deserialize<ServiceBatch>(text, HelperJson.Options); }
-            catch (JsonException) { batch = null; }
-            return batch is null || batch.Outcomes is null || batch.Outcomes.Length > ServiceCommands.MaxServices
-                ? new(false, [], "Unreadable administrator result.", ServiceCodes.ResultUnreadable)
-                : batch;
+            if (!LookupPrivilegeValueW(null, "SeProfileSingleProcessPrivilege", out var luid)) return $"Windows refused the request (error {Marshal.GetLastWin32Error()}).";
+            var privileges = new TokenPrivileges { Count = 1, Luid = luid, Attributes = 2 };
+            // AdjustTokenPrivileges succeeds even when the privilege was not granted; only the last error tells.
+            if (!AdjustTokenPrivileges(token, false, ref privileges, 0, IntPtr.Zero, IntPtr.Zero) || Marshal.GetLastWin32Error() != 0)
+                return "Windows did not grant the memory privilege, so the standby list was not cleared.";
         }
-        finally
-        {
-            if (!keep) RestoreCommands.TryDelete(resultPath);
-        }
+        finally { CloseHandle(token); }
+        var command = MemoryPurgeStandbyList;
+        var status = NtSetSystemInformation(SystemMemoryListInformation, ref command, sizeof(int));
+        return status == 0 ? null : $"Windows refused to clear the standby list (status 0x{status:X8}).";
     }
+    [DllImport("advapi32.dll", SetLastError = true)] private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool LookupPrivilegeValueW(string? system, string name, out long luid);
+    [DllImport("advapi32.dll", SetLastError = true)] private static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll, ref TokenPrivileges state, uint length, IntPtr previous, IntPtr returnLength);
+    [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
+    [DllImport("ntdll.dll")] private static extern int NtSetSystemInformation(int informationClass, ref int information, int length);
 }
 
 public sealed class WindowsControllerProbe : IControllerProbe
@@ -267,15 +328,39 @@ public sealed class WindowsServiceStore : IServiceStore
         var error = Marshal.GetLastWin32Error();
         return error == 1060 ? IntPtr.Zero : throw new Win32Exception(error);
     }
-    private static (uint State, uint Accepted) Status(IntPtr service)
+    private static (uint State, uint Accepted) Status(IntPtr service) => Status(service, out _);
+    // SERVICE_STATUS_PROCESS: state at 4, accepted controls at 8, Win32 exit code at 12, service-specific exit code at 16.
+    private static (uint State, uint Accepted) Status(IntPtr service, out uint exitCode)
     {
         var buffer = Marshal.AllocHGlobal(36);
         try
         {
             if (!QueryServiceStatusEx(service, 0, buffer, 36, out _)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            var win32 = (uint)Marshal.ReadInt32(buffer, 12);
+            exitCode = win32 == 1066 ? (uint)Marshal.ReadInt32(buffer, 16) : win32;
             return ((uint)Marshal.ReadInt32(buffer, 4), (uint)Marshal.ReadInt32(buffer, 8));
         }
         finally { Marshal.FreeHGlobal(buffer); }
+    }
+    public bool StaysRunning(string name, TimeSpan window, out uint exitCode)
+    {
+        exitCode = 0;
+        var manager = Manager();
+        try
+        {
+            var service = Open(manager, name, QueryStatus);
+            if (service == IntPtr.Zero) return false;
+            try
+            {
+                for (var deadline = DateTime.UtcNow + window; ; Thread.Sleep(200))
+                {
+                    if (Status(service, out exitCode).State != Running) return false;
+                    if (DateTime.UtcNow >= deadline) { exitCode = 0; return true; }
+                }
+            }
+            finally { CloseServiceHandle(service); }
+        }
+        finally { CloseServiceHandle(manager); }
     }
     public ServiceInfo Query(string name)
     {

@@ -93,6 +93,16 @@ public class BoosterMechanismTests
         public ServiceInfo Query(string name) => Items.GetValueOrDefault(name, new(false, false, false, []));
         public bool Stop(string name, TimeSpan timeout) { Calls.Add($"stop {name}"); Items[name] = Items[name] with { Running = false }; return true; }
         public bool Start(string name, TimeSpan timeout) { Calls.Add($"start {name}"); Items[name] = Items[name] with { Running = true }; return true; }
+        // Tests do not wait out the real stay-running window.
+        public Func<string, (bool Stays, uint Code)>? Stays { get; set; }
+        public int Starts(string name) => Calls.Count(c => c == $"start {name}");
+        public bool StaysRunning(string name, TimeSpan window, out uint exitCode)
+        {
+            var (stays, code) = Stays?.Invoke(name) ?? (true, 0u);
+            exitCode = stays ? 0 : code;
+            if (!stays) Items[name] = Items[name] with { Running = false };
+            return stays;
+        }
     }
     private sealed class Elevator(Services services, List<Step>? steps = null) : IServiceElevator
     {
@@ -103,7 +113,7 @@ public class BoosterMechanismTests
         public int StepsAtFirstCall { get; private set; } = -1;
         // Lets a test look at the PC at the moment the prompt would open.
         public Action<string>? Hook { get; set; }
-        public ServiceBatch Run(string action, string[] names)
+        public ServiceBatch Run(string action, string[] names, CancellationToken cancel = default)
         {
             CapturedBefore = steps?.Count(s => s.Event == "captured") ?? -1;
             if (StepsAtFirstCall < 0) StepsAtFirstCall = steps?.Count ?? 0;
@@ -621,7 +631,7 @@ public class BoosterMechanismTests
     }
     private sealed class SlowStop(Services services, string slow) : IServiceElevator
     {
-        public ServiceBatch Run(string action, string[] names)
+        public ServiceBatch Run(string action, string[] names, CancellationToken cancel = default)
         {
             if (action != "stop") return ServiceCommands.Execute(action, names, services, new Controllers(false));
             // The slow one reports a timeout without stopping yet.
@@ -739,6 +749,7 @@ public class BoosterMechanismTests
         public ServiceInfo Query(string name) => inner.Query(name);
         public bool Stop(string name, TimeSpan timeout) => name == faulty ? throw new InvalidOperationException($"{name} is not installed.") : inner.Stop(name, timeout);
         public bool Start(string name, TimeSpan timeout) => inner.Start(name, timeout);
+        public bool StaysRunning(string name, TimeSpan window, out uint exitCode) => inner.StaysRunning(name, window, out exitCode);
     }
     [Fact]
     public void AMidBatchFailureKeepsTheOutcomesAlreadyCollected()

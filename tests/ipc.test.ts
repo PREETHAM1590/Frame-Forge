@@ -81,6 +81,7 @@ const inputs: { [M in Method]: () => Request<M> } = {
     confirmed: true,
   }),
   boostPowerPlan: () => ({ action: "create", confirmed: true }),
+  boostTimerGlobal: () => ({ action: "enable", confirmed: true }),
   removeGame: () => ({ id: id() }),
   gameIcon: () => ({ id: id() }),
   restoreGame: () => ({ path: "C:\\Games\\Removed" }),
@@ -125,6 +126,7 @@ describe("IPC surface", () => {
       "launchSettingPreview",
       "launchSettingApply",
       "boostPowerPlan",
+      "boostTimerGlobal",
     ];
     localStorage.clear();
     for (const method of Object.keys(requests) as Method[]) {

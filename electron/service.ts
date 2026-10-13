@@ -99,6 +99,13 @@ export class AppService {
           "Wait for the System Restore request to finish before changing Windows settings.",
         );
     };
+    // The other direction: a restore request must not start while Game Mode or a launch setting is changing Windows.
+    const noBoostInFlight = () => {
+      if (this.booster.isBusy || this.launch.isBusy)
+        throw new Error(
+          "Wait for Game Mode or the launch setting change to finish before starting a System Restore request.",
+        );
+    };
     this.handlers = {
       bootstrap: async () => this.bootstrap(),
       refresh: async () => this.refresh(),
@@ -260,17 +267,23 @@ export class AppService {
         return next;
       },
       restoreStatus: async () => this.restorePoints.status(),
-      restorePoints: async () => this.restorePoints.list(),
+      restorePoints: async () => {
+        noBoostInFlight();
+        return this.restorePoints.list();
+      },
       createRestorePoint: async ({ name, bypassThrottle }) => {
         guard();
+        noBoostInFlight();
         return this.restorePoints.create(name, bypassThrottle);
       },
       enableSystemProtection: async () => {
         guard();
+        noBoostInFlight();
         return this.restorePoints.enable();
       },
       recoverRestoreFrequency: async () => {
         guard();
+        noBoostInFlight();
         return this.restorePoints.recoverFrequency();
       },
       openSystemRestore: async () =>
@@ -293,6 +306,7 @@ export class AppService {
       },
       boostStart: async ({ gameId }) => {
         guard();
+        noRestoreInFlight();
         const session = await this.booster.start(gameId, "manual");
         if (!session) throw new Error("Booster mode is Off for this game.");
         return session;
@@ -303,6 +317,7 @@ export class AppService {
       },
       boostRecover: async ({ dismiss }) => {
         guard();
+        noRestoreInFlight();
         return this.booster.recover(dismiss ?? false);
       },
       runningProcesses: async () => this.platform.backgroundProcesses(),
@@ -341,7 +356,13 @@ export class AppService {
       },
       boostPowerPlan: async ({ action }) => {
         guard();
+        noRestoreInFlight();
         return this.booster.powerPlan(action);
+      },
+      boostTimerGlobal: async ({ action }) => {
+        guard();
+        noRestoreInFlight();
+        return this.booster.timerGlobal(action);
       },
       removeGame: async ({ id }) => {
         guard();
