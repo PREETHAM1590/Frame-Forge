@@ -88,6 +88,7 @@ const inputs: { [M in Method]: () => Request<M> } = {
   savePreset: () => ({ name: "Mine", ids: ["mouse-precision"] }),
   removePreset: () => ({ id: id() }),
   clearActivity: () => ({ confirmed: true }),
+  restartExplorer: () => ({ confirmed: true }),
 };
 describe("IPC surface", () => {
   it("has identical request, response and handler sets", () => {
@@ -168,7 +169,14 @@ describe("IPC surface", () => {
     const platform = new WindowsPlatform("unused.exe");
     let failure: string | null = "High performance plan not present.";
     Object.assign(platform, {
-      call: async () => {
+      call: async (request: { command: string }) => {
+        // The Windows compatibility check is independent of the power plan.
+        if (request.command === "supported")
+          return {
+            ok: true,
+            message: "ok",
+            supported: ["mouse-precision", "capture-off", "power-plan"],
+          };
         if (failure) throw new Error(failure);
         return { ok: true, message: "ok", snapshot: { values: [] } };
       },

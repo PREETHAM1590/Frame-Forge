@@ -8,11 +8,16 @@ import {
   Plus,
   Trash2,
   Pencil,
+  RotateCw,
 } from "lucide-react";
 import {
   catalogue,
+  categories,
   presetNameTaken,
   presets,
+  restartText,
+  unavailable,
+  type Category,
   type Optimization,
 } from "../../shared/catalogue";
 import type { OperationId } from "../../shared/contracts";
@@ -33,6 +38,7 @@ const settingsLabels = {
   startup: "Startup apps",
   network: "Network status",
   services: "Services",
+  defender: "Windows Security (Tamper Protection)",
 } as const;
 export function Optimizations({
   data,
@@ -42,23 +48,92 @@ export function Optimizations({
   pending,
 }: ViewProps) {
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All");
+  const [category, setCategory] = useState<"All" | Category>("All");
   const [availability, setAvailability] = useState("All");
+  const [risk, setRisk] = useState("All");
+  const [tier, setTier] = useState("All");
   const [detail, setDetail] = useState<Optimization | null>(null);
+  const [restarting, setRestarting] = useState(false);
+  const needle = search.toLowerCase();
   const list = catalogue.filter(
     (o) =>
       (category === "All" || o.category === category) &&
+      (risk === "All" || o.risk === risk) &&
+      (tier === "All" || o.tier === tier) &&
       (availability === "All" ||
         (availability === "Available"
           ? data.capabilities.includes(o.id)
           : !data.capabilities.includes(o.id))) &&
-      `${o.name} ${o.description}`.toLowerCase().includes(search.toLowerCase()),
+      `${o.name} ${o.description} ${o.impact}`.toLowerCase().includes(needle),
+  );
+  const notOffered = unavailable.filter(
+    (u) =>
+      (category === "All" || u.group === category) &&
+      `${u.name} ${u.reason}`.toLowerCase().includes(needle),
+  );
+  const shown = categories.filter((c) => list.some((o) => o.category === c));
+  const card = (o: Optimization) => (
+    <article className="optimization" key={o.id}>
+      <div className="card-top">
+        <span className={`action-icon ${o.supported ? "lime" : "neutral"}`}>
+          <SlidersHorizontal size={21} />
+        </span>
+        <Badge
+          tone={o.risk === "Low" ? "lime" : o.risk === "High" ? "red" : "amber"}
+        >
+          {o.risk} risk
+        </Badge>
+      </div>
+      <span className="muted category">
+        {o.category} / {o.impact}
+      </span>
+      <h2>{o.name}</h2>
+      <p className="muted">{o.description}</p>
+      <div className="card-bottom">
+        <span className="badge-row">
+          <Badge tone={data.capabilities.includes(o.id) ? "cyan" : "neutral"}>
+            {data.capabilities.includes(o.id)
+              ? "Available"
+              : o.supported
+                ? missingHere(data)
+                  ? "Not available on this PC"
+                  : "Desktop helper required"
+                : "Unsupported"}
+          </Badge>
+          {o.tier === "advanced" && <Badge tone="amber">Advanced</Badge>}
+          {o.tier === "security" && <Badge tone="red">Lowers security</Badge>}
+          {o.admin && <Badge tone="neutral">Administrator</Badge>}
+        </span>
+        <button
+          className="icon-button"
+          aria-label={`Details for ${o.name}`}
+          title={`Details for ${o.name}`}
+          onClick={() => setDetail(o)}
+        >
+          <ArrowUpRight size={21} />
+        </button>
+      </div>
+    </article>
   );
   return (
     <>
       <PageTitle
         title="Optimizations"
         subtitle="Understand the setting before you change it."
+        action={
+          <Button
+            disabled={pending || data.mode === "demo"}
+            title={
+              data.mode === "demo"
+                ? "Restarting Explorer requires the desktop app."
+                : "Use after changes marked 'Restart Windows Explorer'."
+            }
+            onClick={() => setRestarting(true)}
+          >
+            <RotateCw size={17} />
+            Restart Explorer
+          </Button>
+        }
       />
       <div className="toolbar">
         <div className="search">
@@ -79,74 +154,106 @@ export function Optimizations({
           <option>Available</option>
           <option>Unavailable</option>
         </select>
+        <select
+          aria-label="Risk"
+          value={risk}
+          onChange={(e) => setRisk(e.target.value)}
+        >
+          <option value="All">All risks</option>
+          <option value="Low">Low risk</option>
+          <option value="Moderate">Moderate risk</option>
+          <option value="High">High risk</option>
+        </select>
+        <select
+          aria-label="Level"
+          value={tier}
+          onChange={(e) => setTier(e.target.value)}
+        >
+          <option value="All">All levels</option>
+          <option value="standard">Standard</option>
+          <option value="advanced">Advanced</option>
+          <option value="security">Security trade-offs</option>
+        </select>
       </div>
       <div className="tabs" aria-label="Optimization categories">
-        {["All", "Input", "Capture", "System", "Network"].map((c) => (
+        {["All", ...categories].map((c) => (
           <button
             key={c}
             aria-pressed={category === c}
             className={category === c ? "active" : ""}
-            onClick={() => setCategory(c)}
+            onClick={() => setCategory(c as "All" | Category)}
           >
             {c}
           </button>
         ))}
       </div>
-      <div className="catalogue-grid">
-        {list.map((o) => (
-          <article className="optimization" key={o.id}>
-            <div className="card-top">
-              <span
-                className={`action-icon ${o.supported ? "lime" : "neutral"}`}
-              >
-                <SlidersHorizontal size={21} />
-              </span>
-              <Badge
-                tone={
-                  o.risk === "Low"
-                    ? "lime"
-                    : o.risk === "High"
-                      ? "red"
-                      : "amber"
-                }
-              >
-                {o.risk} risk
-              </Badge>
-            </div>
-            <span className="muted category">
-              {o.category} / {o.impact}
-            </span>
-            <h2>{o.name}</h2>
-            <p className="muted">{o.description}</p>
-            <div className="card-bottom">
-              <Badge
-                tone={data.capabilities.includes(o.id) ? "cyan" : "neutral"}
-              >
-                {data.capabilities.includes(o.id)
-                  ? "Available"
-                  : o.supported
-                    ? missingHere(data)
-                      ? "Not available on this PC"
-                      : "Desktop helper required"
-                    : "Unsupported"}
-              </Badge>
-              <button
-                className="icon-button"
-                aria-label={`Details for ${o.name}`}
-                title={`Details for ${o.name}`}
-                onClick={() => setDetail(o)}
-              >
-                <ArrowUpRight size={21} />
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
+      {shown.map((c) => (
+        <section key={c} aria-label={c}>
+          {category === "All" && <h2 className="group-title">{c}</h2>}
+          {c === "Security trade-offs" && (
+            <p className="notice">
+              <ShieldAlert size={18} />
+              These lower your PC&apos;s security. They are off by default, are
+              never part of a preset, and each one needs a typed confirmation.
+            </p>
+          )}
+          <div className="catalogue-grid">
+            {list.filter((o) => o.category === c).map(card)}
+          </div>
+        </section>
+      ))}
       {!list.length && (
         <Empty
           title="No matching optimizations"
           description="Try another search or filter."
         />
+      )}
+      {notOffered.length > 0 && (
+        <details className="not-offered">
+          <summary>
+            Not offered or information only ({notOffered.length})
+          </summary>
+          <ul>
+            {notOffered.map((u) => (
+              <li key={u.name}>
+                <strong>{u.name}</strong>{" "}
+                <Badge tone="neutral">
+                  {u.status === "info-only"
+                    ? "Information only"
+                    : "Not offered"}
+                </Badge>
+                <span className="muted"> {u.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {restarting && (
+        <Modal
+          title="Restart Windows Explorer?"
+          description="The taskbar and open File Explorer windows close for a moment and Windows starts them again. Unsaved file operations in Explorer may be interrupted."
+          onClose={() => setRestarting(false)}
+        >
+          <div className="dialog-actions">
+            <Button onClick={() => setRestarting(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={pending}
+              onClick={async () => {
+                if (
+                  await run(
+                    "restartExplorer",
+                    { confirmed: true },
+                    "Windows Explorer restarted.",
+                  )
+                )
+                  setRestarting(false);
+              }}
+            >
+              Restart Explorer
+            </Button>
+          </div>
+        </Modal>
       )}
       {detail && (
         <Modal
@@ -155,9 +262,30 @@ export function Optimizations({
           onClose={() => setDetail(null)}
         >
           <div className="dialog-section">
-            <Badge tone={detail.risk === "Low" ? "lime" : "amber"}>
+            <Badge
+              tone={
+                detail.risk === "Low"
+                  ? "lime"
+                  : detail.risk === "High"
+                    ? "red"
+                    : "amber"
+              }
+            >
               {detail.risk} risk
             </Badge>
+            {detail.tier === "advanced" && <Badge tone="amber">Advanced</Badge>}
+            {detail.admin && (
+              <p className="muted">
+                Needs a Windows administrator prompt. Frameforge asks only for
+                the machine settings listed below.
+              </p>
+            )}
+            {detail.consequence && (
+              <p className="notice" role="note">
+                <ShieldAlert size={18} />
+                {detail.consequence}
+              </p>
+            )}
             <h3>Why review this?</h3>
             <p>{detail.reason}</p>
             <h3>Affected settings</h3>
@@ -172,6 +300,8 @@ export function Optimizations({
                 <li key={p}>{p}</li>
               ))}
             </ul>
+            <h3>After applying</h3>
+            <p>{restartText[detail.restart]}</p>
             <h3>Recovery</h3>
             <p>{detail.rollback}</p>
           </div>
@@ -215,14 +345,16 @@ export function Optimizations({
               </Button>
             )}
             <Button
-              variant="primary"
+              variant={detail.tier === "security" ? "danger" : "primary"}
               disabled={!data.capabilities.includes(detail.id)}
               onClick={() => {
                 setDetail(null);
                 preview([detail.id]);
               }}
             >
-              Preview changes
+              {detail.tier === "security"
+                ? "Review security trade-off"
+                : "Preview changes"}
               <ArrowUpRight size={17} />
             </Button>
           </div>
@@ -429,7 +561,7 @@ export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
             )}
             <div className="check-list">
               {catalogue
-                .filter((o) => o.supported)
+                .filter((o) => o.supported && o.tier !== "security")
                 .map((o) => (
                   <label key={o.id}>
                     <input

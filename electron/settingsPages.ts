@@ -13,6 +13,8 @@ export function settingsTarget(
       return { uri: "ms-settings:startupapps" };
     case "network":
       return { uri: "ms-settings:network-status" };
+    case "defender":
+      return { uri: "windowsdefender://threatsettings" };
     case "services":
       return { file: path.win32.join(systemRoot, "System32", "services.msc") };
   }

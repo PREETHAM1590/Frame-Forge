@@ -92,6 +92,7 @@ function bootstrap(): Bootstrap {
     hardware,
     version: "1.0.0",
     capabilities: [],
+    bootedAt: "",
     mode: "demo",
     startupSupported: false,
     boost: { session: null, available: false, watching: false },
@@ -239,6 +240,8 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
       throw new Error("Windows System Restore requires the desktop app.");
     case "openSettings":
       throw new Error("Opening Windows Settings requires the desktop app.");
+    case "restartExplorer":
+      throw new Error("Restarting Explorer requires the desktop app.");
     case "boostStart":
     case "boostStop":
     case "boostRecover":

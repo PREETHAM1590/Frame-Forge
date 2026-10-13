@@ -21,6 +21,7 @@ import {
   type RunningProcess,
   type Snapshot,
 } from "../shared/contracts.js";
+import { adminIds, applicableIds, bootStoreIds } from "../shared/catalogue.js";
 // A live `Frameforge.Windows.exe --session` process: emits "event" (one parsed JSON line) and "exit".
 export interface SessionChannel {
   send(command: unknown): void;
@@ -67,7 +68,8 @@ export type LaunchSettingCall = {
 export interface Platform {
   capabilities: OperationId[];
   hardware(): Promise<Hardware>;
-  capture(ids: OperationId[]): Promise<Snapshot>;
+  /** reuse: the confirm step may reuse the preview's capture of the boot store instead of asking for administrator approval again. */
+  capture(ids: OperationId[], reuse?: boolean): Promise<Snapshot>;
   apply(
     ids: OperationId[],
     signal: AbortSignal,
@@ -76,6 +78,8 @@ export interface Platform {
   verify(ids: OperationId[]): Promise<boolean>;
   restore(snapshot: Snapshot, force: boolean): Promise<void>;
   boostAvailable: boolean;
+  /** Ends this user's explorer.exe (Windows restarts it). Only ever called after an explicit click. */
+  restartExplorer(): Promise<string>;
   restoreStatus(): Promise<PlatformRestoreStatus>;
   restoreList(): Promise<RestorePoints>;
   restoreCreate(
@@ -162,11 +166,7 @@ const frequencyArgs = (f: Frequency) => [
   String(f.minutes ?? -1),
 ];
 export class WindowsPlatform implements Platform {
-  static readonly supported: OperationId[] = [
-    "mouse-precision",
-    "capture-off",
-    "power-plan",
-  ];
+  static readonly supported: OperationId[] = applicableIds;
   capabilities: OperationId[] = [...WindowsPlatform.supported];
   boostAvailable = true;
   private ownedPlan: string | null = null;
@@ -269,8 +269,18 @@ export class WindowsPlatform implements Platform {
       if (!absent)
         warning = `The power plan check failed (${message}). Retry Refresh.`;
     }
+    // Windows version, GPU driver and similar facts decide which of the remaining optimizations exist on this PC.
+    let here: Set<string> | null = null;
+    try {
+      const result = await this.call({ command: "supported" });
+      here = new Set(result.supported ?? []);
+    } catch {
+      warning ??= "The Windows compatibility check failed. Retry Refresh.";
+    }
     this.capabilities = WindowsPlatform.supported.filter(
-      (id) => !absent || id !== "power-plan",
+      (id) =>
+        (!absent || id !== "power-plan") &&
+        (!here || id === "power-plan" || here.has(id)),
     );
     return warning;
   }
@@ -279,34 +289,75 @@ export class WindowsPlatform implements Platform {
     if (!result.hardware) throw new Error("Missing hardware response");
     return result.hardware;
   }
-  async capture(ids: OperationId[]) {
-    const result = await this.call({
-      command: "capture",
-      ids,
-      ownedPlan: this.ownedPlan,
-    });
+  // Reading the boot store needs one administrator prompt; the confirm step reuses the preview's answer for a few minutes.
+  private bootCapture = new Map<string, { at: number; snapshot: Snapshot }>();
+  // The elevated apply step re-reads what it wrote, so verify does not ask for approval a second time.
+  private appliedCheck: { key: string; verified: boolean } | null = null;
+  private static key(ids: OperationId[]) {
+    return [...ids].sort().join(",");
+  }
+  private static elevatedTimeout = 330000;
+  async capture(ids: OperationId[], reuse = false) {
+    const needsAdmin = ids.some((id) => bootStoreIds.includes(id));
+    const key = WindowsPlatform.key(ids);
+    const hit = this.bootCapture.get(key);
+    this.bootCapture.delete(key);
+    if (reuse && needsAdmin && hit && Date.now() - hit.at < 300000)
+      return hit.snapshot;
+    const result = await this.call(
+      { command: "capture", ids, ownedPlan: this.ownedPlan },
+      undefined,
+      needsAdmin ? WindowsPlatform.elevatedTimeout : 20000,
+    );
     if (!result.snapshot) throw new Error("Missing Windows snapshot");
+    if (needsAdmin)
+      this.bootCapture.set(key, { at: Date.now(), snapshot: result.snapshot });
     return result.snapshot;
   }
   async apply(ids: OperationId[], signal: AbortSignal, snapshot: Snapshot) {
-    await this.call(
+    const machine = ids.some((id) => adminIds.includes(id));
+    this.appliedCheck = null;
+    const result = await this.call(
       { command: "apply", ids, snapshot, ownedPlan: this.ownedPlan },
       signal,
+      machine ? WindowsPlatform.elevatedTimeout : 20000,
     );
+    if (typeof result.verified === "boolean")
+      this.appliedCheck = {
+        key: WindowsPlatform.key(ids),
+        verified: result.verified,
+      };
   }
   async verify(ids: OperationId[]) {
+    const check = this.appliedCheck;
+    this.appliedCheck = null;
+    let rest = ids;
+    if (check && check.key === WindowsPlatform.key(ids)) {
+      if (!check.verified) return false;
+      rest = ids.filter((id) => !adminIds.includes(id));
+      if (!rest.length) return true;
+    }
     return (
-      (await this.call({ command: "verify", ids, ownedPlan: this.ownedPlan }))
-        .verified === true
+      (
+        await this.call({
+          command: "verify",
+          ids: rest,
+          ownedPlan: this.ownedPlan,
+        })
+      ).verified === true
     );
   }
   async restore(snapshot: Snapshot, force: boolean) {
-    await this.call({
-      command: "restore",
-      snapshot,
-      force,
-      ownedPlan: this.ownedPlan,
-    });
+    this.bootCapture.clear();
+    const machine = snapshot.values.some((v) => adminIds.includes(v.operation));
+    await this.call(
+      { command: "restore", snapshot, force, ownedPlan: this.ownedPlan },
+      undefined,
+      machine ? WindowsPlatform.elevatedTimeout : 20000,
+    );
+  }
+  async restartExplorer() {
+    return (await this.call({ command: "restart-explorer" })).message;
   }
   async runningGames(games: Game[]) {
     const result = await this.call(
@@ -591,6 +642,9 @@ export class MockPlatform implements Platform {
   }
   spawnSession(): SessionChannel {
     throw new Error("Game booster requires the Windows helper.");
+  }
+  async restartExplorer(): Promise<string> {
+    throw new Error("Restarting Explorer requires the Windows helper.");
   }
   async restoreStatus(): Promise<PlatformRestoreStatus> {
     return {

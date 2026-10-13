@@ -7,6 +7,7 @@ import {
   Monitor,
   ArrowUpRight,
   ShieldCheck,
+  ShieldAlert,
   SlidersHorizontal,
   Gamepad2,
   Archive,
@@ -28,6 +29,7 @@ import { GameIcon } from "../components/GameIcon";
 import { useScan } from "../useScan";
 import { protectionChip } from "./Recovery";
 import type { RestoreStatus } from "../../shared/contracts";
+import { catalogue, securityIds } from "../../shared/catalogue";
 import type { ViewProps } from "../types";
 export function Dashboard({
   data,
@@ -88,8 +90,65 @@ export function Dashboard({
       icon: HardDrive,
     },
   ];
+  // Applied and not rolled back: still lowering security, or still waiting for a restart.
+  const live = data.activity.filter(
+    (a) => a.status === "success" && a.rollback,
+  );
+  const lowered = live.filter((a) =>
+    a.ids.some((id) => securityIds.includes(id)),
+  );
+  const bootedAt = Date.parse(data.bootedAt);
+  const awaitingRestart = live.flatMap((a) =>
+    Date.parse(a.at) > bootedAt || !bootedAt
+      ? a.ids
+          .map((id) => catalogue.find((o) => o.id === id))
+          .filter((o) => o?.restart === "reboot")
+          .map((o) => o!.name)
+      : [],
+  );
+  const [restoring, setRestoring] = useState(false);
+  async function restoreSecurity() {
+    setRestoring(true);
+    try {
+      // Newest first, one administrator prompt per item; stop at the first failure so nothing is skipped silently.
+      for (const row of lowered)
+        if (!(await run("rollback", { id: row.id, confirmed: true }))) break;
+    } finally {
+      setRestoring(false);
+    }
+  }
   return (
     <>
+      {lowered.length > 0 && (
+        <div className="notice security-banner" role="alert">
+          <ShieldAlert size={18} />
+          <div>
+            <strong>Security settings are lowered on this PC.</strong>
+            <p>
+              {lowered
+                .flatMap((a) => a.ids)
+                .filter((id) => securityIds.includes(id))
+                .map((id) => catalogue.find((o) => o.id === id)?.name)
+                .join(", ")}
+              .
+            </p>
+            <Button
+              variant="danger"
+              disabled={pending || restoring}
+              onClick={() => void restoreSecurity()}
+            >
+              Restore all security settings
+            </Button>
+          </div>
+        </div>
+      )}
+      {awaitingRestart.length > 0 && (
+        <p className="notice" role="status">
+          <ActivityIcon size={17} />
+          Pending restart: {[...new Set(awaitingRestart)].join(", ")}. Windows
+          reads these after the PC restarts.
+        </p>
+      )}
       <PageTitle
         title="Your setup, in focus."
         subtitle="A clear view of your PC. Every change stays in your hands."

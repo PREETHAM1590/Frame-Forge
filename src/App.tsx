@@ -19,7 +19,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { onEvent, request } from "./api";
-import { catalogue } from "../shared/catalogue";
+import { catalogue, restartText, securityIds } from "../shared/catalogue";
 import type {
   Bootstrap,
   Method,
@@ -84,6 +84,9 @@ export default function App() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  // Security trade-offs: the person must tick the acknowledgement and type the item name.
+  const [understood, setUnderstood] = useState(false);
+  const [typedName, setTypedName] = useState("");
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState<Activity | null>(null);
   const [restoreOffer, setRestoreOffer] = useState(false);
@@ -228,8 +231,16 @@ export default function App() {
     setPreviewError(null);
     setResult(null);
     setConfirmed(false);
+    setUnderstood(false);
+    setTypedName("");
     setNoPoint(null);
     setRestoreOffer(false);
+    if (ids.length > 1 && ids.some((id) => securityIds.includes(id))) {
+      setPreviewError(
+        "Security trade-offs are applied one at a time, never together with other items.",
+      );
+      return;
+    }
     const canSkip = data?.mode === "desktop" && data.capabilities.length > 0;
     const usable = canSkip
       ? ids.filter((id) => data.capabilities.includes(id))
@@ -300,7 +311,11 @@ export default function App() {
         }
         token = fresh.token;
       }
-      const output = await run("confirm", { token, confirmed: true });
+      const output = await run("confirm", {
+        token,
+        confirmed: true,
+        acknowledged: preview.security,
+      });
       if (output) setResult(output);
       else {
         setPreview(null);
@@ -615,8 +630,12 @@ export default function App() {
                   <p className="muted">
                     Preview expires {formatTime(preview.expiresAt)}.{" "}
                     {restoreOffer && createPoint
-                      ? "Creating the restore point shows a Windows administrator prompt."
-                      : "No elevation or restart required."}
+                      ? "Creating the restore point shows a Windows administrator prompt. "
+                      : ""}
+                    {preview.admin
+                      ? "Applying shows a Windows administrator prompt for the machine settings above. "
+                      : "No administrator prompt for these settings. "}
+                    {restartText[preview.restart]}
                   </p>
                   {restoreOffer && (
                     <label className="confirm-check">
@@ -645,6 +664,40 @@ export default function App() {
                     />
                     I reviewed the changes and confirm applying them.
                   </label>
+                  {preview.security.length > 0 && (
+                    <div className="security-confirm" role="group">
+                      <p className="notice" role="alert">
+                        <AlertTriangle size={17} />
+                        {preview.security
+                          .map((id) => catalogue.find((o) => o.id === id)!)
+                          .map((o) => o.consequence)
+                          .join(" ")}
+                      </p>
+                      <label className="confirm-check">
+                        <input
+                          type="checkbox"
+                          checked={understood}
+                          disabled={applying}
+                          onChange={(e) => setUnderstood(e.target.checked)}
+                        />
+                        I understand this lowers my PC&apos;s security.
+                      </label>
+                      <label className="field">
+                        Type &quot;
+                        {
+                          catalogue.find((o) => o.id === preview.security[0])!
+                            .name
+                        }
+                        &quot; to confirm
+                        <input
+                          value={typedName}
+                          disabled={applying}
+                          autoComplete="off"
+                          onChange={(e) => setTypedName(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div
@@ -692,6 +745,12 @@ export default function App() {
                   disabled={
                     !preview ||
                     !confirmed ||
+                    (preview.security.length > 0 &&
+                      (!understood ||
+                        typedName.trim().toLowerCase() !==
+                          catalogue
+                            .find((o) => o.id === preview.security[0])!
+                            .name.toLowerCase())) ||
                     applying ||
                     previewLoading ||
                     (restoreOffer && createPoint && restoreRequests > 0) ||

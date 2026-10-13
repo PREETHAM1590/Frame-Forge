@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import {
   requests,
@@ -128,9 +129,9 @@ export class AppService {
         return state;
       },
       preview: async ({ ids }) => this.engine.preview(ids),
-      confirm: async ({ token }) => {
+      confirm: async ({ token, acknowledged }) => {
         noRestoreInFlight();
-        return this.engine.confirm(token);
+        return this.engine.confirm(token, acknowledged);
       },
       cancel: async () => this.engine.cancel(),
       rollback: async ({ id }) => {
@@ -269,6 +270,14 @@ export class AppService {
       openSettings: async ({ page }) => {
         if (!(await this.desktop.openSettings?.(page)))
           throw new Error("Windows could not open that settings page.");
+        return true;
+      },
+      // Fixed action, only after a click: the helper ends this user's explorer.exe and Windows starts it again.
+      restartExplorer: async () => {
+        guard();
+        noRestoreInFlight();
+        const message = await this.platform.restartExplorer();
+        this.log("Windows Explorer restarted", message);
         return true;
       },
       boostStatus: async () => this.booster.status(),
@@ -603,6 +612,7 @@ export class AppService {
       activity: this.repo.activity(),
       backups: this.repo.backups(),
       capabilities: this.platform.capabilities,
+      bootedAt: new Date(Date.now() - os.uptime() * 1000).toISOString(),
       startupSupported: this.desktop.startupSupported ?? false,
       version: this.desktop.version,
       mode: "desktop",
