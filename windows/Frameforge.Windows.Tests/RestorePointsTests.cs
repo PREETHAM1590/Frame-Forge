@@ -10,6 +10,11 @@ public class RestorePointsTests
         public List<FrequencyState> FrequencyDuringCreate { get; } = [];
         public uint CreateCode { get; set; }
         public bool AddsPoint { get; set; } = true;
+        // Models Windows committing asynchronously: the point (and the registry bump) exist, but List() omits it for this many calls.
+        public int ListLag { get; set; }
+        public bool ListNeverShows { get; set; }
+        public bool AddsPointDespiteError { get; set; }
+
         public bool Throws { get; set; }
         public bool Policy { get; set; }
         public bool PolicyDisabled() => Policy;
@@ -21,17 +26,76 @@ public class RestorePointsTests
         public int? SessionInterval() => 1;
         public FrequencyState ReadFrequency() => Frequency;
         public void WriteFrequency(FrequencyState state) => Frequency = state;
-        public RestorePoint[] List() => [.. Points];
+        private long? lagging;
+        private int listsSinceCreate;
+        public RestorePoint[] List()
+        {
+            if (lagging is not null) listsSinceCreate++;
+            var hidden = ListNeverShows || listsSinceCreate <= ListLag;
+            return [.. Points.Where(p => !(hidden && p.Sequence == lagging))];
+        }
+        public long? LastIndex() => Points.Count == 0 ? null : Points.Max(p => p.Sequence);
         public uint Create(string description)
         {
             FrequencyDuringCreate.Add(Frequency);
             if (Throws) throw new InvalidOperationException("WMI failed");
-            if (CreateCode == 0 && AddsPoint) Points.Add(new(Points.Count + 1, ForeignDescription ?? description, DateTime.UtcNow));
+            if ((CreateCode == 0 && AddsPoint) || AddsPointDespiteError)
+            {
+                Points.Add(new(Points.Count + 1, ForeignDescription ?? description, DateTime.UtcNow));
+                if (ListLag > 0 || ListNeverShows) lagging = Points.Count;
+            }
             return CreateCode;
         }
         public uint Enable(string driveRoot) => 0;
         public bool Elevated => true;
         public string SystemDrive => "C:";
+    }
+
+    private static RestorePoints Quick(IRestoreStore store) => new(store, null, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(1));
+
+    // QA 2026-10-13: Windows created seq 61 but the immediate list did not show it yet; the app reported "not created".
+    [Fact]
+    public void PointThatAppearsAfterSeveralPollsIsCreated()
+    {
+        var store = new FakeRestoreStore { ListLag = 5 };
+        var result = new RestorePoints(store, null, TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(1)).Create("Frameforge QA test", false, store.Frequency);
+        Assert.Equal("created", result.Outcome);
+        Assert.Equal(1, result.Point!.Sequence);
+    }
+
+    [Fact]
+    public void RegistryBumpWithListStillEmptyIsCreatedUnverified()
+    {
+        var store = new FakeRestoreStore { ListNeverShows = true };
+        var result = Quick(store).Create("Frameforge QA test", false, store.Frequency);
+        Assert.Equal("created", result.Outcome);
+        Assert.Equal(1, result.CreatedSequence);
+        Assert.Null(result.Point);
+    }
+
+    [Fact]
+    public void DescriptionMatchIgnoresCaseAndSpacing()
+    {
+        var store = new FakeRestoreStore { ForeignDescription = " frameforge  QA test " };
+        Assert.Equal("created", Quick(store).Create("Frameforge QA test", false, store.Frequency).Outcome);
+    }
+
+    [Fact]
+    public void ErrorCodeWithNewPointStillCountsAsCreated()
+    {
+        var store = new FakeRestoreStore { CreateCode = 5, AddsPointDespiteError = true };
+        Assert.Equal("created", Quick(store).Create("Name", false, store.Frequency).Outcome);
+    }
+
+    [Fact]
+    public void ErrorCodeWithNoChangeIsFailedAndReportsTheCode()
+    {
+        var store = new FakeRestoreStore { CreateCode = 0x80042308u };
+        var result = Quick(store).Create("Name", false, store.Frequency);
+        Assert.Equal("restore-failed", result.Code);
+        Assert.Contains("0x80042308", result.Message);
+        var small = Quick(new FakeRestoreStore { CreateCode = 5 }).Create("Name", false, new(false, null));
+        Assert.Contains("error 5)", small.Message);
     }
 
     [Fact]
@@ -83,7 +147,7 @@ public class RestorePointsTests
     public void AnotherAppsNewPointIsNotOurs()
     {
         var store = new FakeRestoreStore { ForeignDescription = "Windows Update" };
-        var result = new RestorePoints(store).Create("Frameforge", false, store.Frequency);
+        var result = Quick(store).Create("Frameforge", false, store.Frequency);
         Assert.NotEqual("created", result.Outcome);
     }
 
@@ -144,7 +208,7 @@ public class RestorePointsTests
     {
         var store = new FakeRestoreStore { AddsPoint = false };
         store.Points.Add(new(7, "Old", DateTime.UtcNow.AddDays(-3)));
-        var result = new RestorePoints(store).Create("Again", false, store.Frequency);
+        var result = Quick(store).Create("Again", false, store.Frequency);
         Assert.Equal("failed", result.Outcome);
         Assert.Equal("restore-not-created", result.Code);
     }
@@ -215,6 +279,7 @@ public class RestorePointsTests
         public FrequencyState ReadFrequency() => new(false, null);
         public void WriteFrequency(FrequencyState state) { }
         public RestorePoint[] List() => [];
+        public long? LastIndex() => null;
         public uint Create(string description) { Thread.Sleep(2000); return 0; }
         public uint Enable(string driveRoot) => 0;
         public bool Elevated => true;

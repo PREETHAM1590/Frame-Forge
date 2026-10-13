@@ -22,6 +22,7 @@ class RestorePlatform extends MockPlatform {
   outcomes: PlatformCreateResult["outcome"][] = [];
   calls: { bypass: boolean; original: Frequency }[] = [];
   leaveBypass = false;
+  createOverride?: PlatformCreateResult;
   duringCreate?: () => void;
   gate?: Promise<void>;
   async restoreStatus(): Promise<PlatformRestoreStatus> {
@@ -37,6 +38,7 @@ class RestorePlatform extends MockPlatform {
   }
   async restoreCreate(_name: string, bypass: boolean, original: Frequency) {
     await this.gate;
+    if (this.createOverride) return this.createOverride;
     this.calls.push({ bypass, original });
     if (bypass) this.frequency = { existed: true, minutes: 0 };
     this.duringCreate?.();
@@ -161,6 +163,27 @@ describe("Windows restore points", () => {
     await expect(restore.create("Frameforge", true)).rejects.toThrow(
       "Retry the normal creation first",
     );
+    repo.close();
+  });
+  it("logs a created point the Windows list has not shown yet as a success", async () => {
+    const { repo, platform, restore } = setup();
+    platform.createOverride = {
+      outcome: "created",
+      point: null,
+      lastPoint: null,
+      message:
+        "Windows created restore point #61. It has not appeared in the Windows list yet.",
+      frequencyRestored: null,
+      resultPath: null,
+    };
+    const result = await restore.create("Frameforge QA test", false);
+    expect(result.outcome).toBe("created");
+    expect(result.message).toContain("#61");
+    expect(labels(repo)).toContainEqual([
+      "Windows restore point created",
+      "success",
+    ]);
+    expect((await restore.status()).lastAppCreatedAt).not.toBeNull();
     repo.close();
   });
   it("keeps a creation that outlives the helper and verifies it later", async () => {

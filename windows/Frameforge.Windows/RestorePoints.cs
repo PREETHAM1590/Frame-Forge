@@ -44,18 +44,22 @@ public interface IRestoreStore
     FrequencyState ReadFrequency();
     void WriteFrequency(FrequencyState state);
     RestorePoint[] List();
+    /// <summary>The SystemRestore registry LastIndex: Windows bumps it when a point is committed, independent of the WMI list.</summary>
+    long? LastIndex();
     uint Create(string description);
     uint Enable(string driveRoot);
     bool Elevated { get; }
     string SystemDrive { get; }
 }
 
-public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout = null)
+public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout = null, TimeSpan? verifyLimit = null, TimeSpan? pollInterval = null)
 {
     private static readonly Regex Drive = new(@"\A[A-Z]:\z");
     private static readonly FrequencyState Bypass = new(true, 0);
-    // Nested budgets: child create 120 s < parent wait 150 s after UAC approval < Node 330 s including the prompt.
+    // Nested budgets: child create 120 s + verify 15 s < parent wait 150 s after UAC approval < Node 330 s including the prompt.
     public static readonly TimeSpan CreateLimit = TimeSpan.FromSeconds(120);
+    // Windows commits the point after CreateRestorePoint returns, so the list can lag; poll this long before concluding it is missing.
+    public static readonly TimeSpan VerifyLimit = TimeSpan.FromSeconds(15);
     public RestoreStatus Status()
     {
         var drive = store.SystemDrive;
@@ -88,7 +92,7 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
         // The SPP/Clients reading is admin-only and its format is unverified, so a "false" here is a warning, not a block:
         // Windows' own answer (below) and the new-sequence check decide, and coverage is reported after creating.
         if (bypass && store.ReadFrequency() != original) throw new InvalidOperationException("The restore point frequency changed. Retry the normal creation first.");
-        var before = Sorted().FirstOrDefault()?.Sequence ?? 0;
+        var before = Baseline();
         if (!bypass) return CreateCore(description, before, null);
         RestoreResult result;
         store.WriteFrequency(Bypass);
@@ -96,6 +100,12 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
         finally { store.WriteFrequency(original); }
         return result with { FrequencyRestored = store.ReadFrequency() == original };
     }
+    // The highest sequence seen in either signal; the list alone misses pruned points, the registry alone misses a lagging bump.
+    private long Baseline() => Math.Max(Sorted().FirstOrDefault()?.Sequence ?? 0, store.LastIndex() ?? 0);
+    // Windows may prefix, re-case or re-space the description; compare the readable text only.
+    private static string Normalize(string text) => Regex.Replace(text, @"\s+", " ").Trim();
+    private static bool SameDescription(string a, string b) => string.Equals(Normalize(a), Normalize(b), StringComparison.OrdinalIgnoreCase);
+    private static string CodeText(uint code) => code > 0xFFFF ? $"0x{code:X8}" : code.ToString(CultureInfo.InvariantCulture);
     private RestoreResult CreateCore(string description, long before, int? window)
     {
         var task = Task.Run(() => store.Create(description));
@@ -103,11 +113,27 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
             return new(true, $"Windows did not finish creating the restore point within {CreateLimit.TotalSeconds:0} seconds. It may still be created; check Load restore points.", "restore-timeout", "failed");
         var code = task.GetAwaiter().GetResult();
         if (code is 1058 or 0x80070422) return new(true, $"System Protection is off for {store.SystemDrive}.", Outcome: "protection-disabled", DriveCoverage: "off");
-        if (code != 0) return new(true, $"Windows could not create the restore point (error {code}).", "restore-failed", "failed");
+        // A return code alone is not the verdict: Windows commits the point asynchronously, so check both signals even after an error code.
         var points = Sorted();
+        var created = Match(points, description, before);
+        // Windows returns 0 but silently skips creation inside the frequency window, so 0 alone is not success.
         var newest = points.FirstOrDefault();
-        // Only a new point carrying our description counts; another app may create one at the same time.
-        var created = points.FirstOrDefault(p => p.Sequence > before && p.Description == description);
+        var minutes = window ?? store.ReadFrequency().Minutes ?? 1440;
+        if (created is null && code == 0 && newest is not null && minutes > 0 && newest.CreatedAt > DateTime.UtcNow.AddMinutes(-minutes))
+            return new(true, "Windows skipped the restore point because one was created recently.", Outcome: "throttled", LastPoint: newest);
+        var deadline = DateTime.UtcNow + (verifyLimit ?? VerifyLimit);
+        long? index = null;
+        while (created is null)
+        {
+            index = store.LastIndex();
+            if (DateTime.UtcNow >= deadline) break;
+            Thread.Sleep(pollInterval ?? TimeSpan.FromMilliseconds(500));
+            points = Sorted();
+            created = Match(points, description, before);
+        }
+        // Registry bumped but the list never showed a new point: ours was committed, only the listing lags. Another app's listed point is not ours.
+        if (created is null && index > before && !points.Any(p => p.Sequence > before))
+            return new(true, $"Windows created restore point #{index}. It has not appeared in the Windows list yet, so Frameforge could not match its name.", Outcome: "created", CreatedSequence: index, DriveCoverage: "unknown");
         if (created is not null)
             return store.SystemDriveProtected() switch
             {
@@ -115,12 +141,12 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
                 null => new(true, $"Windows restore point created and verified. {store.SystemDrive} coverage could not be confirmed.", Outcome: "created", Point: created, CreatedSequence: created.Sequence, DriveCoverage: "unknown"),
                 true => new(true, "Windows restore point created and verified.", Outcome: "created", Point: created, CreatedSequence: created.Sequence, DriveCoverage: "confirmed")
             };
-        // Windows returns 0 but silently skips creation inside the frequency window, so 0 alone is not success.
-        var minutes = window ?? store.ReadFrequency().Minutes ?? 1440;
-        if (newest is not null && minutes > 0 && newest.CreatedAt > DateTime.UtcNow.AddMinutes(-minutes))
-            return new(true, "Windows skipped the restore point because one was created recently.", Outcome: "throttled", LastPoint: newest);
-        return new(true, "Windows did not create a restore point; System Protection may be off for the system drive", "restore-not-created", "failed");
+        if (code != 0) return new(true, $"Windows could not create the restore point (error {CodeText(code)}).", "restore-failed", "failed");
+        return new(true, "Windows accepted the request but no new restore point appeared; System Protection may be off for the system drive", "restore-not-created", "failed");
     }
+    // Only a new point carrying our description counts; another app may create one at the same time.
+    private static RestorePoint? Match(RestorePoint[] points, string description, long before) =>
+        points.FirstOrDefault(p => p.Sequence > before && SameDescription(p.Description, description));
     public RestoreResult Enable(string drive)
     {
         if (drive != store.SystemDrive || !Drive.IsMatch(drive)) throw new InvalidOperationException("Only the system drive is supported.");
@@ -373,6 +399,11 @@ public sealed class WindowsRestoreStore : IRestoreStore
     // 12 = MODIFY_SETTINGS, 100 = BEGIN_SYSTEM_CHANGE.
     public uint Create(string description) => Invoke("CreateRestorePoint", [description, 12, 100]);
     public uint Enable(string driveRoot) => Invoke("Enable", [driveRoot]);
+    public long? LastIndex()
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(Key, false);
+        return key?.GetValue("LastIndex") is int index ? (uint)index : null;
+    }
     public bool Elevated => RestoreCommands.IsElevated();
     public string SystemDrive => Environment.GetEnvironmentVariable("SystemDrive") ?? "";
 }
