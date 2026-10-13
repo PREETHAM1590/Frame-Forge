@@ -23,6 +23,7 @@ import {
   statusTone,
 } from "../components/ui";
 import { request } from "../api";
+import { protectionChip } from "./Recovery";
 import type { RestoreStatus } from "../../shared/contracts";
 import type { ViewProps } from "../types";
 export function Dashboard({ data, navigate, preview }: ViewProps) {
@@ -181,25 +182,8 @@ export function Dashboard({ data, navigate, preview }: ViewProps) {
                   {data.backups.length === 1 ? "" : "s"}
                 </p>
               </div>
-              <Badge
-                tone={
-                  restore?.protection === "enabled"
-                    ? "lime"
-                    : restore?.protection === "disabled" ||
-                        restore?.policyDisabled
-                      ? "red"
-                      : "neutral"
-                }
-              >
-                {!restore
-                  ? data.mode === "demo"
-                    ? "Restore points: desktop app"
-                    : "Restore points: checking"
-                  : restore.policyDisabled
-                    ? "Restore blocked by policy"
-                    : restore.protection === "enabled"
-                      ? "Protection on for a drive"
-                      : `Protection ${restore.protection}`}
+              <Badge tone={protectionChip(restore, data.mode).tone}>
+                {protectionChip(restore, data.mode).text}
               </Badge>
             </button>
             <button onClick={() => navigate("Game Mode")}>

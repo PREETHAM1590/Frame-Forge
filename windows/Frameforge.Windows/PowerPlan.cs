@@ -43,7 +43,8 @@ public sealed class Optimizations(RegistryOperations registry, IPowerStore power
         if (ids.Contains(PowerPlan) != prior.HasValue || (registryIds.Length == 0) != (expected.Values.Length == 0)) throw new InvalidOperationException("Snapshot selection mismatch.");
         if (prior is { } before && power.Active() != before) throw new InvalidOperationException("Settings changed after preview. Create a new preview.");
         if (registryIds.Length > 0) registry.Apply(registryIds, new Snapshot(expected.Values));
-        if (prior.HasValue) power.SetActive(HighPerformance);
+        // Already High performance: nothing to write, and rollback has nothing to undo.
+        if (prior is { } plan && plan != HighPerformance) power.SetActive(HighPerformance);
     }
     public bool Verify(string[] ids)
     {

@@ -63,7 +63,13 @@ export class RestorePointService {
   private withAppState(status: PlatformRestoreStatus): RestoreStatus {
     const meta = this.repo.meta(metaKey) as { lastAppCreatedAt?: unknown };
     return {
-      ...status,
+      protection: status.protection,
+      policyDisabled: status.policyDisabled,
+      frequency: status.frequency,
+      elevated: status.elevated,
+      systemDrive: status.systemDrive,
+      message: status.message,
+      systemDriveConfirmed: status.systemDriveConfirmed ?? false,
       lastAppCreatedAt:
         typeof meta?.lastAppCreatedAt === "string"
           ? meta.lastAppCreatedAt
@@ -272,6 +278,8 @@ export class RestorePointService {
         this.repo.log("System Protection unchanged", declined, "cancelled");
         return this.withAppState({ ...before, message: declined });
       }
+      // Still running: no outcome to record yet; the next status refresh shows it.
+      if (after.pending) return this.withAppState(after);
       const on = after.protection === "enabled";
       this.repo.log(
         on ? "System Protection turned on" : "System Protection not confirmed",

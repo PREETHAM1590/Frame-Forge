@@ -276,8 +276,9 @@ describe("Windows restore points", () => {
   });
   it("treats an elevated request that is still running as pending, not a crash", async () => {
     const platform = new WindowsPlatform("unused.exe");
+    // The any-drive hint says "enabled"; a pending request must not inherit it.
     const status = {
-      protection: "unknown",
+      protection: "enabled",
       policyDisabled: false,
       frequency: { existed: false, minutes: null },
       elevated: false,
@@ -289,10 +290,23 @@ describe("Windows restore points", () => {
           ? { ok: true, message: "Still working.", code: "elevated-pending" }
           : { ok: true, message: "Status read.", restoreStatus: status },
     });
-    expect(await platform.restoreEnable("C:")).toMatchObject({
+    const pending = await platform.restoreEnable("C:");
+    expect(pending).toMatchObject({
       protection: "unknown",
       message: "Still working.",
+      pending: true,
     });
+    expect(pending?.systemDriveConfirmed).toBeUndefined();
+    const repo = new Repository(":memory:");
+    const service = new RestorePointService(repo, platform);
+    const shown = await service.enable();
+    expect(shown.protection).toBe("unknown");
+    expect(shown.systemDriveConfirmed).toBe(false);
+    expect(labels(repo)).not.toContainEqual([
+      "System Protection turned on",
+      "success",
+    ]);
+    repo.close();
     expect(
       (await platform.restoreFrequencySet({ existed: false, minutes: null }))
         ?.message,

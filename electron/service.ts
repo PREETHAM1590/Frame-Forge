@@ -25,6 +25,8 @@ export interface DesktopServices {
   /** Opens the native folder dialog and scans the chosen folder; null when cancelled. */
   scanFolder: () => Promise<DetectionResult | null>;
   setStartup: (enabled: boolean) => void;
+  /** Windows' real launch-at-sign-in state; absent where it cannot be read. */
+  startupEnabled?: () => boolean;
   version: string;
   startupSupported?: boolean;
   openSystemRestore?: () => Promise<boolean>;
@@ -60,8 +62,15 @@ export class AppService {
       settings: async (settings: Settings) => {
         guard();
         const previous = this.repo.state();
-        if (settings.startup !== previous.settings.startup)
+        if (settings.startup !== previous.settings.startup) {
           this.desktop.setStartup(settings.startup);
+          if (
+            this.desktop.startupSupported &&
+            this.desktop.startupEnabled &&
+            this.desktop.startupEnabled() !== settings.startup
+          )
+            throw new Error("Windows did not accept the sign-in change.");
+        }
         const state = (() => {
           try {
             return this.repo.updateState({ ...previous, settings });
@@ -290,19 +299,23 @@ export class AppService {
       this.loggingFailed = true;
     }
   }
+  private probeWarning: string | null = null;
   private currentHardware(): Hardware {
-    return this.loggingFailed
-      ? {
-          ...this.hardware,
-          warnings: [
-            ...this.hardware.warnings,
+    const extra = [
+      ...(this.probeWarning ? [this.probeWarning] : []),
+      ...(this.loggingFailed
+        ? [
             "Activity logging failed. Recent actions may be missing from history.",
-          ],
-        }
+          ]
+        : []),
+    ];
+    return extra.length
+      ? { ...this.hardware, warnings: [...this.hardware.warnings, ...extra] }
       : this.hardware;
   }
   async refresh(): Promise<Hardware> {
-    await this.platform.probe?.().catch(() => undefined);
+    this.probeWarning =
+      (await this.platform.probe?.().catch(() => null)) ?? null;
     try {
       this.hardware = await this.platform.hardware();
     } catch {
@@ -313,8 +326,14 @@ export class AppService {
     return this.currentHardware();
   }
   bootstrap(): Bootstrap {
+    const state = this.repo.state();
+    // Show Windows' real sign-in state; the next settings save stores it.
+    const startup =
+      this.desktop.startupSupported && this.desktop.startupEnabled
+        ? this.desktop.startupEnabled()
+        : state.settings.startup;
     return {
-      state: this.repo.state(),
+      state: { ...state, settings: { ...state.settings, startup } },
       hardware: this.currentHardware(),
       activity: this.repo.activity(),
       backups: this.repo.backups(),

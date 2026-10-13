@@ -40,6 +40,18 @@ public class PowerPlanTests
     }
 
     [Fact]
+    public void AlreadyActivePlanIsANoOp()
+    {
+        var power = new FakePower(Balanced, Optimizations.HighPerformance) { Current = Optimizations.HighPerformance };
+        var engine = Engine(power);
+        var snapshot = engine.Capture(["power-plan"]);
+        engine.Apply(["power-plan"], snapshot);
+        Assert.True(engine.Verify(["power-plan"]));
+        engine.Restore(snapshot);
+        Assert.Equal(0, power.Sets);
+    }
+
+    [Fact]
     public void AbsentHighPerformancePlanIsRefusedWithoutChanges()
     {
         var power = new FakePower(Balanced);

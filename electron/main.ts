@@ -12,6 +12,7 @@ import {
   scanGameFolder,
 } from "./games.js";
 import { EventSchema } from "../shared/contracts.js";
+import { settingsTarget } from "./settingsPages.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = !app.isPackaged && process.argv.includes("--dev");
 const rendererFile = path.join(here, "../../dist/index.html");
@@ -30,6 +31,9 @@ function trustedUrl(value: string) {
 let window: BrowserWindow | null = null;
 let repo: Repository;
 let activeService: AppService | undefined;
+// Isolated profile for tests and smoke runs; must be set before the single-instance lock.
+if (process.env.FRAMEFORGE_USER_DATA)
+  app.setPath("userData", path.resolve(process.env.FRAMEFORGE_USER_DATA));
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -64,6 +68,9 @@ if (!app.requestSingleInstanceLock()) {
           }
           app.setLoginItemSettings({ openAtLogin: enabled });
         },
+        // Read back so the toggle follows changes made in Task Manager > Startup.
+        startupEnabled: () =>
+          app.isPackaged && app.getLoginItemSettings().openAtLogin,
         // Fixed path, no renderer input; ShellExecute handles rstrui's own elevation.
         openSystemRestore: async () =>
           process.platform === "win32" &&
@@ -74,25 +81,12 @@ if (!app.requestSingleInstanceLock()) {
               "rstrui.exe",
             ),
           )) === "",
-        // Fixed targets selected by an enum; renderer text never becomes a URI or path.
         openSettings: async (page) => {
           if (process.platform !== "win32") return false;
-          if (page === "services")
-            return (
-              (await shell.openPath(
-                path.join(
-                  process.env.SystemRoot ?? "C:\\Windows",
-                  "System32",
-                  "services.msc",
-                ),
-              )) === ""
-            );
-          const uri = {
-            graphics: "ms-settings:display-advancedgraphics",
-            startup: "ms-settings:startupapps",
-            network: "ms-settings:network-status",
-          }[page];
-          await shell.openExternal(uri);
+          const target = settingsTarget(page, process.env.SystemRoot);
+          if ("file" in target)
+            return (await shell.openPath(target.file)) === "";
+          await shell.openExternal(target.uri);
           return true;
         },
         detectGames: () =>

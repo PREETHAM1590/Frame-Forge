@@ -63,7 +63,7 @@ export const catalogue: Optimization[] = [
     impact: "Power policy",
     description: "Switch the active Windows power plan to High performance.",
     reason:
-      "Lets the processor stay at higher clock states. It raises heat, fan noise and energy use, and shortens laptop battery life. No FPS improvement is claimed. Game Mode can switch plans for a single session instead; this switch stays until you roll it back.",
+      "Lets the processor stay at higher clock states. It raises heat, fan noise and energy use, and shortens laptop battery life. No FPS improvement is claimed. Game Mode can switch plans for a single session instead; this switch stays until you roll it back. If Ultimate performance is active, this switches it down to High performance; if High performance is already active, nothing changes.",
     settings: ["Active Windows power plan (powrprof PowerSetActiveScheme)"],
     prerequisites: [
       "Windows desktop helper available",

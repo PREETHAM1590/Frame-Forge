@@ -17,6 +17,9 @@ const plans: Record<string, string> = {
 };
 const planName = (scheme: string) =>
   plans[scheme.toLowerCase()] ?? `Custom plan ${scheme}`;
+const highPerformance = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+const alreadyHigh = (snapshot: Snapshot) =>
+  snapshot.scheme?.toLowerCase() === highPerformance;
 export class OperationEngine {
   private previews = new Map<
     string,
@@ -75,12 +78,21 @@ export class OperationEngine {
                 id: "power-plan" as const,
                 setting: "Active Windows power plan",
                 before: planName(snapshot.scheme),
-                after: "High performance",
+                after: alreadyHigh(snapshot)
+                  ? "High performance (already active; no change)"
+                  : "High performance",
               },
             ]
           : []),
       ],
-      warnings: ids.map((id) => catalogue.find((o) => o.id === id)!.rollback),
+      warnings: [
+        ...(alreadyHigh(snapshot)
+          ? [
+              "High performance is already the active plan. Applying leaves the power plan unchanged.",
+            ]
+          : []),
+        ...ids.map((id) => catalogue.find((o) => o.id === id)!.rollback),
+      ],
     };
   }
   cancel() {
@@ -117,7 +129,9 @@ export class OperationEngine {
       return this.repo.finish(
         record.id,
         "success",
-        "Windows settings re-read and verified. See the operation details for when Windows reloads them.",
+        alreadyHigh(current)
+          ? "Windows settings re-read and verified. High performance was already active, so the power plan was not changed."
+          : "Windows settings re-read and verified. See the operation details for when Windows reloads them.",
       );
     } catch (e) {
       if (!record) throw e;

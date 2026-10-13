@@ -46,6 +46,13 @@ describe("confirmed reversible operations", () => {
         after: "High performance",
       },
     ]);
+    platform.capture = async () => ({
+      values: [],
+      scheme: "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+    });
+    const same = await engine.preview(["power-plan"]);
+    expect(same.changes[0].after).toMatch(/already active/);
+    expect(same.warnings[0]).toMatch(/already the active plan/);
     repo.saveBoostSession({
       id: crypto.randomUUID(),
       gameId: crypto.randomUUID(),

@@ -11,6 +11,7 @@ import { request } from "../src/api";
 import { Repository } from "../electron/repository";
 import { MockPlatform, WindowsPlatform } from "../electron/platform";
 import { AppService, type DesktopServices } from "../electron/service";
+import { settingsTarget } from "../electron/settingsPages";
 const desktop = (extra: Partial<DesktopServices> = {}): DesktopServices => ({
   pickGame: async () => null,
   detectGames: async () => ({
@@ -89,16 +90,37 @@ describe("IPC surface", () => {
     expect(Object.keys(handlers).sort()).toEqual(keys);
   });
   it("demo mode answers every method honestly or says the desktop app is required", async () => {
+    // Methods that read or change Windows: the demo must refuse, never fake a result.
+    const windowsOnly: Method[] = [
+      "preview",
+      "confirm",
+      "rollback",
+      "addGame",
+      "detectGames",
+      "scanFolder",
+      "restorePoints",
+      "createRestorePoint",
+      "enableSystemProtection",
+      "recoverRestoreFrequency",
+      "openSystemRestore",
+      "openSettings",
+      "boostTargets",
+      "boostStart",
+      "boostStop",
+    ];
     localStorage.clear();
     for (const method of Object.keys(requests) as Method[]) {
       const input = (inputs[method] as () => unknown)();
+      let answered = false;
       try {
         // request() validates the demo answer against the response schema.
         const output = await request(method, input as Request<typeof method>);
+        answered = true;
         if (method === "backup") backupId = (output as { id: string }).id;
       } catch (error) {
         expect((error as Error).message, method).toMatch(/desktop/i);
       }
+      if (windowsOnly.includes(method)) expect(answered, method).toBe(false);
     }
   });
   it("opens only allowlisted Windows pages and reports failure", async () => {
@@ -126,19 +148,62 @@ describe("IPC surface", () => {
   });
   it("drops power-plan when this PC lacks the plan and restores it later", async () => {
     const platform = new WindowsPlatform("unused.exe");
-    let present = false;
+    let failure: string | null = "High performance plan not present.";
     Object.assign(platform, {
       call: async () => {
-        if (!present) throw new Error("High performance plan not present.");
+        if (failure) throw new Error(failure);
         return { ok: true, message: "ok", snapshot: { values: [] } };
       },
     });
-    await platform.probe();
+    expect(await platform.probe()).toBeNull();
     expect(platform.capabilities).not.toContain("power-plan");
     expect(platform.capabilities).toContain("mouse-precision");
-    present = true;
-    await platform.probe();
+    failure = null;
+    expect(await platform.probe()).toBeNull();
     expect(platform.capabilities).toContain("power-plan");
+    // A helper failure is an error state, not "not available on this PC".
+    failure = "Windows helper timed out.";
+    expect(await platform.probe()).toMatch(/timed out/);
+    expect(platform.capabilities).toContain("power-plan");
+  });
+  it("maps each settings page to one fixed target", () => {
+    expect(settingsTarget("graphics")).toEqual({
+      uri: "ms-settings:display-advancedgraphics",
+    });
+    expect(settingsTarget("startup")).toEqual({
+      uri: "ms-settings:startupapps",
+    });
+    expect(settingsTarget("network")).toEqual({
+      uri: "ms-settings:network-status",
+    });
+    expect(settingsTarget("services", "D:\\Win")).toEqual({
+      file: "D:\\Win\\System32\\services.msc",
+    });
+  });
+  it("shows and verifies Windows' real launch-at-sign-in state", async () => {
+    let windows = false;
+    const service = new AppService(
+      new Repository(":memory:"),
+      new MockPlatform(),
+      desktop({
+        startupSupported: true,
+        startupEnabled: () => windows,
+        setStartup: () => {},
+      }),
+    );
+    windows = true;
+    expect(service.bootstrap().state.settings.startup).toBe(true);
+    windows = false;
+    // Windows ignored the write: no stored success.
+    await expect(
+      service.dispatch("settings", {
+        theme: "dark",
+        startup: true,
+        notifications: true,
+        diagnostics: false,
+      }),
+    ).rejects.toThrow("did not accept");
+    expect(service.bootstrap().state.settings.startup).toBe(false);
   });
   it("built-in presets only use operations the Windows helper supports", () => {
     const supported = WindowsPlatform.supported;

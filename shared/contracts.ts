@@ -239,6 +239,8 @@ export const RestoreStatusSchema = HelperRestoreStatusSchema.extend({
   pendingFrequencyRecovery: z.boolean(),
   pendingCreation: z.boolean(),
   message: z.string().max(1000),
+  // True only when the per-drive check confirmed the system drive (after Enable).
+  systemDriveConfirmed: z.boolean().default(false),
 }).strict();
 export type RestoreStatus = z.infer<typeof RestoreStatusSchema>;
 export const RestoreOutcome = z.enum([

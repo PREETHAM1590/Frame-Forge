@@ -30,6 +30,26 @@ import {
 import { request } from "../api";
 import type { ViewProps } from "../types";
 const dayMs = 24 * 60 * 60 * 1000;
+/** One honest wording for System Protection, shared by Dashboard and Restore & backups. */
+export function protectionChip(
+  status: RestoreStatus | null,
+  mode: ViewProps["data"]["mode"],
+): { text: string; tone: "lime" | "red" | "neutral" | "amber" } {
+  if (mode === "demo") return { text: "Desktop app only", tone: "neutral" };
+  if (!status) return { text: "Checking protection", tone: "neutral" };
+  if (status.policyDisabled) return { text: "Blocked by policy", tone: "red" };
+  const drive = status.systemDrive;
+  if (status.protection === "enabled")
+    return status.systemDriveConfirmed
+      ? { text: `Protection on for ${drive}`, tone: "lime" }
+      : {
+          text: `Protection on for a drive (${drive} unconfirmed)`,
+          tone: "amber",
+        };
+  if (status.protection === "disabled")
+    return { text: "Protection off", tone: "red" };
+  return { text: "Protection state unknown", tone: "neutral" };
+}
 function WindowsRestore({ data, run, pending }: ViewProps) {
   const [status, setStatus] = useState<RestoreStatus | null>(null);
   const [statusError, setStatusError] = useState("");
@@ -99,22 +119,9 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
       <div className="restore-status">
         {status ? (
           <>
-            <Badge
-              tone={
-                status.protection === "enabled"
-                  ? "lime"
-                  : status.protection === "disabled"
-                    ? "red"
-                    : "neutral"
-              }
-            >
-              {status.protection === "enabled"
-                ? `Protection on for a drive (${drive} unconfirmed)`
-                : `Protection ${status.protection}`}
+            <Badge tone={protectionChip(status, data.mode).tone}>
+              {protectionChip(status, data.mode).text}
             </Badge>
-            {status.policyDisabled && (
-              <Badge tone="red">Blocked by policy</Badge>
-            )}
             <span className="muted">{status.message}</span>
           </>
         ) : (

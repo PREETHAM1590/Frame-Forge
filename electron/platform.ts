@@ -41,10 +41,16 @@ export interface Platform {
   ): Promise<PlatformRestoreStatus | null>;
   /** Result of an elevated creation that outlived the helper's wait; null while still running. */
   restoreResult(resultPath: string): Promise<PlatformCreateResult | null>;
-  /** Re-checks per-machine prerequisites and updates `capabilities`. */
-  probe?(): Promise<void>;
+  /** Re-checks per-machine prerequisites and updates `capabilities`; returns a warning when the check itself failed. */
+  probe?(): Promise<string | null>;
 }
-export type PlatformRestoreStatus = HelperRestoreStatus & { message: string };
+export type PlatformRestoreStatus = HelperRestoreStatus & {
+  message: string;
+  /** The per-drive check confirmed protection on the system drive. */
+  systemDriveConfirmed?: boolean;
+  /** The elevated request is still running; nothing is confirmed yet. */
+  pending?: boolean;
+};
 export type PlatformCreateResult = CreateRestorePointResult & {
   frequencyRestored: boolean | null;
   resultPath: string | null;
@@ -172,16 +178,22 @@ export class WindowsPlatform implements Platform {
     });
   }
   // power-plan needs the built-in High performance plan; a read-only capture tells.
-  async probe() {
-    let power = true;
+  async probe(): Promise<string | null> {
+    let absent = false;
+    let warning: string | null = null;
     try {
       await this.capture(["power-plan"]);
-    } catch {
-      power = false;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      // Only the helper's own refusal means the plan is missing; anything else is a failed check.
+      absent = /not present/i.test(message);
+      if (!absent)
+        warning = `The power plan check failed (${message}). Retry Refresh.`;
     }
     this.capabilities = WindowsPlatform.supported.filter(
-      (id) => power || id !== "power-plan",
+      (id) => !absent || id !== "power-plan",
     );
+    return warning;
   }
   async hardware() {
     const result = await this.call({ command: "hardware" });
@@ -286,12 +298,24 @@ export class WindowsPlatform implements Platform {
   // An elevated request still running carries no status; re-read it unelevated instead.
   private async elevatedStatus(result: HelperOutput) {
     if (cancelled(result)) return null;
+    // The unelevated re-read only has the any-drive hint, so it proves nothing about this request.
     if (result.code === "elevated-pending")
-      return { ...(await this.restoreStatus()), message: result.message };
+      return {
+        ...(await this.restoreStatus()),
+        protection: "unknown" as const,
+        message: result.message,
+        pending: true,
+      };
     return restoreStatusOf(result);
   }
   async restoreEnable(drive: string) {
-    return this.elevatedStatus(await this.elevated("restore-enable", [drive]));
+    const status = await this.elevatedStatus(
+      await this.elevated("restore-enable", [drive]),
+    );
+    // The helper reports "enabled" after Enable only from the per-drive check.
+    return status && !status.pending
+      ? { ...status, systemDriveConfirmed: status.protection === "enabled" }
+      : status;
   }
   async restoreFrequencySet(original: Frequency) {
     return this.elevatedStatus(

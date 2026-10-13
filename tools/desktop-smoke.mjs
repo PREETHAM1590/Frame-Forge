@@ -1,15 +1,23 @@
 import { _electron as electron } from "@playwright/test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 const executable = process.env.FRAMEFORGE_EXECUTABLE;
+// Never touch the real %APPDATA% profile: the app honours FRAMEFORGE_USER_DATA.
+const userData = await mkdtemp(path.join(os.tmpdir(), "frameforge-smoke-"));
 const app = await electron.launch({
   executablePath:
     executable ?? path.resolve("node_modules/electron/dist/electron.exe"),
   args: executable ? [] : ["."],
+  env: { ...process.env, FRAMEFORGE_USER_DATA: userData },
   timeout: 30000,
 });
 try {
+  assert.equal(
+    await app.evaluate(({ app }) => app.getPath("userData")),
+    userData,
+  );
   const page = await app.firstWindow();
   await page.getByText("Your setup, in focus.").waitFor();
   const info = await page.evaluate(async () => window.frameforge.bootstrap({}));
@@ -63,4 +71,5 @@ try {
   );
 } finally {
   await app.close();
+  await rm(userData, { recursive: true, force: true });
 }
