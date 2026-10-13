@@ -22,6 +22,9 @@ import {
 import { desktopOnly, onEvent, request } from "../api";
 import {
   modeMechanisms,
+  type LaunchPreview,
+  type LaunchSetting,
+  type LaunchStatus,
   type BoostMode,
   type BoostSession,
   type BoosterConfig,
@@ -39,19 +42,19 @@ const modes: { id: BoostMode; label: string; summary: string }[] = [
     id: "balanced",
     label: "Balanced",
     summary:
-      "Windows Game Mode, Above normal game priority, Game Bar capture off for the session, power-throttling opt-out for the game and, on PCs with two GPUs, the high-performance GPU preference.",
+      "Windows Game Mode, Above normal game priority, Game Bar capture off for the session and a power-throttling opt-out for the game.",
   },
   {
     id: "performance",
     label: "Performance",
     summary:
-      "Adds High priority, a performance power plan, lowering selected background apps and, on hybrid CPUs, steering the game to the performance cores.",
+      "Adds High priority, a performance power plan, lowering selected background apps and, on Windows 10 hybrid CPUs, steering the game to the performance cores. On Windows 11 the CPU scheduler already does that, so it stays off.",
   },
   {
     id: "competitive",
     label: "Competitive",
     summary:
-      "Adds suspending selected background apps, a finer timer where Windows supports it, plugged-in core unparking and pausing a short list of safe Windows services (Windows asks for administrator approval at the start and at the end).",
+      "Adds suspending selected background apps, a finer timer where Windows supports it, plugged-in core unparking (on hybrid CPUs including the performance-core setting) and pausing a short list of safe Windows services (Windows asks for administrator approval at the start and at the end).",
   },
   {
     id: "custom",
@@ -74,21 +77,17 @@ const labels: Record<MechanismId, string> = {
   smartCores: "Smart core targeting",
   coreParking: "Disable core parking",
   powerThrottling: "Power throttling opt-out",
-  gpuPreference: "High-performance GPU preference",
-  fullscreenOptimizations: "Fullscreen optimizations off",
 };
+const launchLabels = {
+  gpuPreference: "High-performance GPU preference",
+  fullscreenOptimizations: "Fullscreen optimizations off (advanced)",
+} as const;
 // Mechanisms whose "can't do it here" state is a property of this PC or Windows build, not a missing prerequisite.
 const unsupportedWhenUnavailable = new Set<MechanismId>([
   "timerResolution",
   "smartCores",
   "coreParking",
   "powerThrottling",
-  "gpuPreference",
-]);
-// Windows reads these when the game starts, so a game that is already running keeps its current setting.
-const nextLaunch = new Set<MechanismId>([
-  "gpuPreference",
-  "fullscreenOptimizations",
 ]);
 const tones: Record<
   MechanismResult["state"],
@@ -130,8 +129,6 @@ function enabled(m: CustomMechanisms): Entry[] {
     m.gameBarCapture && { id: "gameBarCapture" },
     m.smartCores && { id: "smartCores" },
     m.coreParking && { id: "coreParking" },
-    m.gpuPreference && { id: "gpuPreference" },
-    m.fullscreenOptimizations && { id: "fullscreenOptimizations" },
     m.pauseServices && { id: "pauseServices", note: "administrator prompt" },
   ];
   return list.filter((x): x is Entry => !!x);
@@ -148,6 +145,11 @@ function onThisPc(
   { id, note }: Entry,
   cap: Capability | undefined,
   background: Background,
+  // preset: a preset mode card; threadDirector: a hybrid CPU on Windows 11.
+  ctx: { preset: boolean; threadDirector: boolean } = {
+    preset: false,
+    threadDirector: false,
+  },
 ): { tone: "lime" | "amber" | "neutral"; label: string; reason: string } {
   const action = actionOf[id];
   if (action) {
@@ -171,15 +173,18 @@ function onThisPc(
       label: unsupportedWhenUnavailable.has(id) ? "unsupported" : "unavailable",
       reason: cap.detail,
     };
+  if (id === "smartCores" && ctx.preset && ctx.threadDirector)
+    return {
+      tone: "neutral",
+      label: "off by default here",
+      reason:
+        "Windows 11's Thread Director already places games on the performance cores. Turn it on under Custom to force it.",
+    };
   if (cap.active)
     return { tone: "neutral", label: "already on", reason: cap.detail };
   return {
     tone: "lime",
-    label: nextLaunch.has(id)
-      ? "applies (next launch)"
-      : id === "pauseServices"
-        ? "applies (asks for admin)"
-        : "applies",
+    label: id === "pauseServices" ? "applies (asks for admin)" : "applies",
     reason:
       id === "priority"
         ? `${note}; skipped if the game already runs higher.`
@@ -232,6 +237,13 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
   const [netBusy, setNetBusy] = useState(false);
   const [netResult, setNetResult] = useState<NetworkCheck | null>(null);
   const [netError, setNetError] = useState("");
+  const [launch, setLaunch] = useState<LaunchStatus | null>(null);
+  const [launchError, setLaunchError] = useState("");
+  const [launchDialog, setLaunchDialog] = useState<{
+    setting: LaunchSetting;
+    action: "apply" | "revert" | "forget";
+    preview: LaunchPreview | null;
+  } | null>(null);
   // Mechanism results already logged for the current session (events carry the whole session).
   const logged = useRef({ id: "", last: "", status: "" });
   const refresh = useCallback(
@@ -244,6 +256,27 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
   useEffect(() => {
     void refresh();
   }, [refresh, data]);
+  const launchGameId = gameId;
+  useEffect(() => {
+    if (!launchGameId || data.mode === "demo") return;
+    let current = true;
+    request("launchSettings", { gameId: launchGameId })
+      .then((status) => {
+        if (!current) return;
+        setLaunch(status);
+        setLaunchError("");
+      })
+      .catch((error: unknown) => {
+        if (!current) return;
+        setLaunch(null);
+        setLaunchError(
+          error instanceof Error ? error.message : "Launch settings failed.",
+        );
+      });
+    return () => {
+      current = false;
+    };
+  }, [launchGameId, data]);
   useEffect(
     () =>
       onEvent((event) => {
@@ -578,11 +611,18 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
               );
               const plans = list.map((entry) => ({
                 entry,
-                plan: onThisPc(entry, cap(entry.id), config.background),
+                plan: onThisPc(entry, cap(entry.id), config.background, {
+                  preset: m.id !== "custom",
+                  threadDirector: !!caps?.topology?.threadDirector,
+                }),
               }));
-              const applies = plans.filter(
-                (p) => p.plan.tone === "lime",
-              ).length;
+              const effects = plans.filter((p) => p.plan.tone === "lime");
+              const applies = effects.length;
+              // Until this PC has been checked everything is "checking"; afterwards only real effects are listed as effects.
+              const shown = caps ? effects : plans;
+              const notApplied = caps
+                ? plans.filter((p) => p.plan.tone !== "lime")
+                : [];
               return (
                 <article
                   key={m.id}
@@ -601,7 +641,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                       : "Checking this PC…"}
                   </p>
                   <ul className="mechanism-list">
-                    {plans.map(({ entry, plan }) => (
+                    {shown.map(({ entry, plan }) => (
                       <li key={entry.id}>
                         <span>{labels[entry.id]}</span>
                         <Badge tone={plan.tone}>{plan.label}</Badge>
@@ -614,6 +654,25 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                       <li className="muted">Nothing selected yet.</li>
                     )}
                   </ul>
+                  {notApplied.length > 0 && (
+                    <>
+                      <p className="muted">Not applied on this PC:</p>
+                      <ul
+                        className="mechanism-list"
+                        aria-label={`${m.label}: not applied on this PC`}
+                      >
+                        {notApplied.map(({ entry, plan }) => (
+                          <li key={entry.id}>
+                            <span>{labels[entry.id]}</span>
+                            <Badge tone={plan.tone}>{plan.label}</Badge>
+                            {plan.reason && (
+                              <small className="muted">{plan.reason}</small>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
                 </article>
               );
             })}
@@ -812,7 +871,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
             description={
               cap("smartCores")?.available === false
                 ? `Unsupported: ${cap("smartCores")!.detail}`
-                : `Steers the game to the performance cores of a hybrid CPU with CPU sets. ${cap("smartCores")?.detail ?? "Checking this PC…"}`
+                : `Steers the game to the performance cores of a hybrid CPU with CPU sets. Off in the presets on Windows 11, where the CPU scheduler already does this; here you can force it. ${cap("smartCores")?.detail ?? "Checking this PC…"}`
             }
             checked={config.custom.smartCores}
             disabled={
@@ -827,7 +886,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
             description={
               cap("coreParking")?.available === false
                 ? `Unsupported: ${cap("coreParking")!.detail}`
-                : `Raises the plugged-in minimum of unparked cores to 100% for the session and restores your value. Battery settings are not changed. ${cap("coreParking")?.detail ?? "Checking this PC…"}`
+                : `Raises the plugged-in minimum of unparked cores to 100% for the session and restores your value. On hybrid CPUs this also raises the performance-core setting (CPMINCORES1) and restores it too. Battery settings are not changed. ${cap("coreParking")?.detail ?? "Checking this PC…"}`
             }
             checked={config.custom.coreParking}
             disabled={
@@ -836,21 +895,6 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                 !config.custom.coreParking)
             }
             onChange={(v) => void setCustom({ coreParking: v })}
-          />
-          <Toggle
-            label="High-performance GPU preference"
-            description={
-              cap("gpuPreference")?.available === false
-                ? `Unsupported: ${cap("gpuPreference")!.detail}`
-                : "Sets the game's GPU preference (for PCs with two GPUs). Windows reads it when the game starts its graphics, so it affects a game that starts during the session; it is removed when the session ends."
-            }
-            checked={config.custom.gpuPreference}
-            disabled={
-              pending ||
-              (cap("gpuPreference")?.available === false &&
-                !config.custom.gpuPreference)
-            }
-            onChange={(v) => void setCustom({ gpuPreference: v })}
           />
           <Toggle
             label="Pause Windows services (asks for administrator approval)"
@@ -866,13 +910,6 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                 !config.custom.pauseServices)
             }
             onChange={(v) => void setCustom({ pauseServices: v })}
-          />
-          <Toggle
-            label="Fullscreen optimizations off (advanced, opt-in)"
-            description="Turns off Windows' fullscreen optimizations for the game's executable for the session. Windows reads it when the game starts. Some games lose Auto HDR, variable refresh rate or windowed-game latency improvements. Not part of any preset mode."
-            checked={config.custom.fullscreenOptimizations}
-            disabled={pending}
-            onChange={(v) => void setCustom({ fullscreenOptimizations: v })}
           />
           <Toggle
             label="Limit game to selected CPUs"
@@ -1154,6 +1191,187 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
               }}
             >
               Continue
+            </Button>
+          </div>
+        </Modal>
+      )}
+      <section className="booster-section" aria-label="Launch settings">
+        <h2>Launch settings for {game?.name ?? "a game"}</h2>
+        <p className="muted">
+          Windows reads these two per-game settings when the game starts, so
+          they are not part of a boost session. You apply each one yourself,
+          Frameforge saves the exact value from before, and it stays until you
+          press Revert. Every change is listed in Activity.
+        </p>
+        {launchError && (
+          <p className="notice" role="alert" data-error="true">
+            {launchError}
+          </p>
+        )}
+        {!game && <p className="muted">Add a game first.</p>}
+        {data.mode === "demo" && (
+          <p className="muted">Launch settings require the desktop app.</p>
+        )}
+        {launch && launch.gameId === gameId && (
+          <ul className="mechanism-list">
+            {launch.settings.map((s) => (
+              <li key={s.setting}>
+                <span>{launchLabels[s.setting]}</span>
+                <Badge
+                  tone={
+                    s.state === "applied"
+                      ? "lime"
+                      : s.state === "ready" || s.state === "already-set"
+                        ? "neutral"
+                        : "amber"
+                  }
+                >
+                  {s.state === "applied"
+                    ? "set by Frameforge"
+                    : s.state === "ready"
+                      ? "not set"
+                      : s.state === "already-set"
+                        ? "already set"
+                        : s.state}
+                </Badge>
+                <small className="muted">{s.detail}</small>
+                {s.current !== null && (
+                  <small className="muted">Current value: {s.current}</small>
+                )}
+                {s.state === "ready" && (
+                  <Button
+                    disabled={pending}
+                    title="Review the change before it is made."
+                    onClick={async () => {
+                      try {
+                        const preview = await request("launchSettingPreview", {
+                          gameId,
+                          setting: s.setting,
+                          action: "apply",
+                        });
+                        setLaunchDialog({
+                          setting: s.setting,
+                          action: "apply",
+                          preview,
+                        });
+                      } catch (error) {
+                        setLaunchError(
+                          error instanceof Error
+                            ? error.message
+                            : "The preview failed.",
+                        );
+                      }
+                    }}
+                  >
+                    Review and apply…
+                  </Button>
+                )}
+                {s.canRevert && (
+                  <Button
+                    disabled={pending}
+                    title="Restore the value from before Frameforge changed it."
+                    onClick={async () => {
+                      try {
+                        const preview = await request("launchSettingPreview", {
+                          gameId,
+                          setting: s.setting,
+                          action: "revert",
+                        });
+                        setLaunchDialog({
+                          setting: s.setting,
+                          action: "revert",
+                          preview,
+                        });
+                      } catch (error) {
+                        setLaunchError(
+                          error instanceof Error
+                            ? error.message
+                            : "The preview failed.",
+                        );
+                      }
+                    }}
+                  >
+                    <RotateCcw size={17} /> Revert
+                  </Button>
+                )}
+                {s.state === "conflict" && (
+                  <Button
+                    disabled={pending}
+                    title="Drop Frameforge's saved value without changing Windows."
+                    onClick={() =>
+                      setLaunchDialog({
+                        setting: s.setting,
+                        action: "forget",
+                        preview: null,
+                      })
+                    }
+                  >
+                    Forget saved value
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      {launchDialog && (
+        <Modal
+          title={
+            launchDialog.action === "apply"
+              ? `Apply: ${launchLabels[launchDialog.setting]}?`
+              : launchDialog.action === "revert"
+                ? `Revert: ${launchLabels[launchDialog.setting]}?`
+                : "Forget the saved value?"
+          }
+          description={
+            launchDialog.preview?.exe ??
+            "Frameforge will stop tracking this change."
+          }
+          onClose={() => setLaunchDialog(null)}
+        >
+          {launchDialog.preview ? (
+            <>
+              <p className="muted">{launchDialog.preview.warning}</p>
+              <ul className="mechanism-list">
+                <li>
+                  <span>Now</span>
+                  <code>{launchDialog.preview.before ?? "(not set)"}</code>
+                </li>
+                <li>
+                  <span>After</span>
+                  <code>{launchDialog.preview.after ?? "(not set)"}</code>
+                </li>
+              </ul>
+            </>
+          ) : (
+            <p className="muted">
+              Windows is not changed. Frameforge drops the saved prior value, so
+              it can no longer restore it. Use this when the value was changed
+              outside Frameforge and you want to keep that change.
+            </p>
+          )}
+          <div className="dialog-actions">
+            <Button onClick={() => setLaunchDialog(null)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={pending}
+              onClick={async () => {
+                const dialog = launchDialog;
+                setLaunchDialog(null);
+                const status = await run("launchSettingApply", {
+                  gameId,
+                  setting: dialog.setting,
+                  action: dialog.action,
+                  confirmed: true,
+                });
+                if (status) setLaunch(status);
+              }}
+            >
+              {launchDialog.action === "apply"
+                ? "Apply"
+                : launchDialog.action === "revert"
+                  ? "Revert"
+                  : "Forget"}
             </Button>
           </div>
         </Modal>

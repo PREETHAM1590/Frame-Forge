@@ -49,11 +49,33 @@ function install(
     efficiencyCores: 4,
     efficiencyThreads: 4,
     dualCcdX3d: false,
+    threadDirector: false,
     summary:
       "4 performance cores (8 threads) + 4 efficiency cores (4 threads).",
   },
 ) {
   const calls: { method: string; input: unknown }[] = [];
+  // Per-game launch settings behind the fake helper: "ready", "applied" or "conflict".
+  const launch: Record<string, string> = {
+    gpuPreference: "ready",
+    fullscreenOptimizations: "ready",
+  };
+  const launchStatus = (gameId: string) => ({
+    gameId,
+    executable: "C:\\Games\\Test\\game.exe",
+    settings: Object.keys(launch).map((setting) => ({
+      setting,
+      state: launch[setting],
+      detail:
+        launch[setting] === "ready"
+          ? "Can be applied."
+          : "Set by Frameforge. Revert restores the value from before.",
+      current: launch[setting] === "ready" ? null : "GpuPreference=2;",
+      canRevert: launch[setting] !== "ready",
+      appliedAt:
+        launch[setting] === "ready" ? null : "2026-10-13T10:00:00.000Z",
+    })),
+  });
   const results: Record<string, unknown> = {};
   let booster: BoosterConfig = { ...defaultState.booster, mode };
   const bootstrap = () => ({
@@ -88,8 +110,6 @@ function install(
     smartCores: lime("4 performance cores. The game is steered to 8 threads."),
     coreParking: lime("Plugged-in minimum unparked cores is 4%."),
     powerThrottling: lime("Asks Windows not to throttle."),
-    gpuPreference: lime("2 graphics adapters found."),
-    fullscreenOptimizations: lime("Opt-in advanced."),
   };
   const method = (name: string, answer: (input: never) => unknown) => [
     name,
@@ -101,6 +121,28 @@ function install(
   window.frameforge = {
     ...Object.fromEntries([
       method("bootstrap", () => bootstrap()),
+      method("launchSettings", (input: { gameId: string }) =>
+        launchStatus(input.gameId),
+      ),
+      method(
+        "launchSettingPreview",
+        (input: { setting: string; action: string }) => ({
+          setting: input.setting,
+          action: input.action,
+          exe: "C:\\Games\\Test\\game.exe",
+          before: input.action === "apply" ? null : "GpuPreference=2;",
+          after: input.action === "apply" ? "GpuPreference=2;" : null,
+          warning: "Windows reads this the next time the game starts.",
+        }),
+      ),
+      method(
+        "launchSettingApply",
+        (input: { gameId: string; setting: string; action: string }) => {
+          launch[input.setting] =
+            input.action === "apply" ? "applied" : "ready";
+          return launchStatus(input.gameId);
+        },
+      ),
       method("boostConfig", (input: BoosterConfig) => {
         booster = input;
         return bootstrap().state;
@@ -193,10 +235,11 @@ describe("new mechanisms on the mode cards", () => {
     ).toBeVisible();
     expect(within(competitive).getByText("Smart core targeting")).toBeVisible();
     expect(within(competitive).getByText("Disable core parking")).toBeVisible();
-    // Next-launch settings say so on the card.
+    // GPU preference and fullscreen optimizations are launch settings, not mode effects.
     expect(
-      within(card("Balanced on this PC")).getByText("applies (next launch)"),
-    ).toBeVisible();
+      within(card("Balanced on this PC")).queryByText(/GPU preference/),
+    ).toBeNull();
+    expect(screen.queryByText(/next launch/)).toBeNull();
     // Balanced and Performance never list the administrator step.
     expect(
       within(card("Performance on this PC")).queryByText(
@@ -215,7 +258,6 @@ describe("new mechanisms on the mode cards", () => {
           "This CPU is not hybrid (all cores are the same type).",
         ),
         coreParking: bad("Dual-CCD Ryzen X3D parts rely on core parking."),
-        gpuPreference: bad("Only one graphics adapter is installed."),
         pauseServices: bad(
           "None of the pausable services are running right now.",
         ),
@@ -227,6 +269,7 @@ describe("new mechanisms on the mode cards", () => {
         efficiencyCores: 0,
         efficiencyThreads: 0,
         dualCcdX3d: true,
+        threadDirector: false,
         summary:
           "16 cores, 32 threads; all cores are the same type (not a hybrid CPU).",
       },
@@ -234,7 +277,7 @@ describe("new mechanisms on the mode cards", () => {
     await openGameMode();
     const competitive = await waitFor(() => {
       const c = card("Competitive on this PC");
-      expect(within(c).getAllByText("unsupported").length).toBeGreaterThan(2);
+      expect(within(c).getAllByText("unsupported").length).toBeGreaterThan(1);
       return c;
     });
     expect(within(competitive).getByText("unavailable")).toBeVisible();
@@ -245,15 +288,71 @@ describe("new mechanisms on the mode cards", () => {
       "leaves your game's cores and core parking alone",
     );
     expect(
-      within(competitive).getByText(/Changes \d+ of 12 on this PC/),
+      within(competitive).getByText(/Changes \d+ of 11 on this PC/),
     ).toBeVisible();
+  });
+});
+describe("smart core targeting and Windows 11", () => {
+  const win11 = {
+    hybrid: true,
+    performanceCores: 4,
+    performanceThreads: 8,
+    efficiencyCores: 4,
+    efficiencyThreads: 4,
+    dualCcdX3d: false,
+    threadDirector: true,
+    summary:
+      "4 performance cores (8 threads) + 4 efficiency cores (4 threads).",
+  };
+  it("keeps it out of the effects of preset cards on Windows 11 hybrid CPUs and says why", async () => {
+    install("performance", {}, win11);
+    await openGameMode();
+    const performance = await waitFor(() => {
+      const c = card("Performance on this PC");
+      expect(
+        within(c).getByLabelText("Performance: not applied on this PC"),
+      ).toBeVisible();
+      return c;
+    });
+    const notApplied = within(performance).getByLabelText(
+      "Performance: not applied on this PC",
+    );
+    expect(within(notApplied).getByText("Smart core targeting")).toBeVisible();
+    expect(within(notApplied).getByText("off by default here")).toBeVisible();
+    expect(within(notApplied).getByText(/Thread Director/)).toBeVisible();
+    // The effects list holds only what applies.
+    const effects = performance.querySelectorAll("ul")[0]!;
+    expect(
+      within(effects as HTMLElement).queryByText("Smart core targeting"),
+    ).toBeNull();
+  });
+  it("lists it as an effect on a Windows 10 hybrid CPU and always offers it in Custom", async () => {
+    install("performance");
+    await openGameMode();
+    const effects = await waitFor(() => {
+      const c = card("Performance on this PC");
+      const list = c.querySelectorAll("ul")[0] as HTMLElement;
+      expect(within(list).getByText("Smart core targeting")).toBeVisible();
+      return list;
+    });
+    expect(within(effects).getAllByText("applies").length).toBeGreaterThan(0);
+    cleanup();
+    install("custom", {}, win11);
+    await openGameMode();
+    const section = await screen.findByRole("region", {
+      name: "Custom mechanisms",
+    });
+    await waitFor(() =>
+      expect(
+        within(section).getByRole("switch", { name: /Smart core targeting/ }),
+      ).toBeEnabled(),
+    );
   });
 });
 describe("custom toggles for the new mechanisms", () => {
   it("offers each toggle, disables the unsupported ones and explains the advanced one", async () => {
     install("custom", {
       smartCores: bad("This CPU is not hybrid."),
-      gpuPreference: bad("Only one graphics adapter is installed."),
     });
     await openGameMode();
     const section = await screen.findByRole("region", {
@@ -264,9 +363,7 @@ describe("custom toggles for the new mechanisms", () => {
       /Power throttling opt-out/,
       /Smart core targeting/,
       /Disable core parking/,
-      /High-performance GPU preference/,
       /Pause Windows services/,
-      /Fullscreen optimizations off/,
     ])
       expect(within(section).getByRole("switch", { name })).toBeVisible();
     await waitFor(() =>
@@ -274,13 +371,18 @@ describe("custom toggles for the new mechanisms", () => {
         within(section).getByRole("switch", { name: /Smart core targeting/ }),
       ).toBeDisabled(),
     );
+    // The two launch settings are not session toggles any more.
     expect(
-      within(section).getByRole("switch", { name: /High-performance GPU/ }),
-    ).toBeDisabled();
+      within(section).queryByRole("switch", { name: /GPU preference/ }),
+    ).toBeNull();
     expect(
-      within(section).getByRole("switch", { name: /Fullscreen optimizations/ }),
-    ).toBeEnabled();
-    expect(within(section).getByText(/lose Auto HDR/)).toBeVisible();
+      within(section).queryByRole("switch", {
+        name: /Fullscreen optimizations/,
+      }),
+    ).toBeNull();
+    expect(
+      within(section).getByText(/also raises the performance-core setting/),
+    ).toBeVisible();
     expect(
       within(section).getByText(/Unsupported: This CPU is not hybrid/),
     ).toBeVisible();
@@ -359,6 +461,68 @@ describe("administrator prompt explanation", () => {
       expect(calls.some((c) => c.method === "boostStart")).toBe(true),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+describe("per-game launch settings", () => {
+  it("previews before applying, confirms, shows the saved state and reverts", async () => {
+    const { calls } = install("balanced");
+    await openGameMode();
+    const section = await screen.findByRole("region", {
+      name: "Launch settings",
+    });
+    const gpu = (
+      await within(section).findByText("High-performance GPU preference")
+    ).closest("li")!;
+    fireEvent.click(
+      within(gpu).getByRole("button", { name: /Review and apply/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(
+        /Windows reads this the next time the game starts/,
+      ),
+    ).toBeVisible();
+    expect(within(dialog).getAllByText("(not set)").length).toBe(1);
+    expect(calls.some((c) => c.method === "launchSettingApply")).toBe(false);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(calls.some((c) => c.method === "launchSettingApply")).toBe(false);
+    fireEvent.click(
+      within(gpu).getByRole("button", { name: /Review and apply/ }),
+    );
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Apply",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === "launchSettingApply")?.input,
+      ).toMatchObject({
+        setting: "gpuPreference",
+        action: "apply",
+        confirmed: true,
+      }),
+    );
+    const row = (await within(section).findByText("set by Frameforge")).closest(
+      "li",
+    )!;
+    expect(
+      within(row).getByText(/Current value: GpuPreference=2;/),
+    ).toBeVisible();
+    fireEvent.click(within(row).getByRole("button", { name: /Revert/ }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Revert",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c.method === "launchSettingApply").at(-1)?.input,
+      ).toMatchObject({ action: "revert" }),
+    );
+    await waitFor(() =>
+      expect(within(section).queryByText("set by Frameforge")).toBeNull(),
+    );
   });
 });
 describe("network check", () => {
