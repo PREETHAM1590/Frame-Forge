@@ -18,6 +18,9 @@ class FakeHelper extends MockPlatform {
   calls: LaunchSettingCall[] = [];
   gpus = 2;
   failApply = false;
+  failRevert = false;
+  // After a failed apply, did the value reach the registry (a write that outlived the helper's reply)?
+  writeThenFail = false;
   private key = (c: LaunchSettingCall) => `${c.setting}|${c.exe}`;
   private next(setting: LaunchSetting, prior: string | undefined) {
     if (setting === "gpuPreference")
@@ -48,6 +51,7 @@ class FakeHelper extends MockPlatform {
     const result = (r: Partial<LaunchResult> & Pick<LaunchResult, "state">) =>
       LaunchResultSchema.parse({ ...base, detail: r.state, ...r });
     if (call.op === "revert") {
+      if (this.failRevert) throw new Error("Windows helper timed out.");
       const current = this.values.get(k);
       const existed = call.existed ?? false;
       if (current === (existed ? (call.value ?? undefined) : undefined))
@@ -76,7 +80,10 @@ class FakeHelper extends MockPlatform {
         after,
         existed: prior !== undefined,
       });
-    if (this.failApply) throw new Error("Windows refused.");
+    if (this.failApply) {
+      if (this.writeThenFail) this.values.set(k, after);
+      throw new Error("Windows refused.");
+    }
     this.values.set(k, after);
     return result({
       state: "applied",
@@ -230,6 +237,89 @@ describe("per-game launch settings", () => {
     await expect(
       service.apply(game.id, "gpuPreference", "apply"),
     ).rejects.toThrow(/already changed/);
+  });
+  it("keeps the saved prior and offers Revert when a failed apply cannot be undone", async () => {
+    const { repo, game, platform, service } = setup();
+    platform.failApply = true;
+    platform.writeThenFail = true;
+    platform.failRevert = true;
+    await expect(
+      service.apply(game.id, "gpuPreference", "apply"),
+    ).rejects.toThrow(/could not be undone; Revert is available/);
+    // The value reached Windows and the cleanup failed, so the prior is still saved.
+    expect(platform.values.get(`gpuPreference|${exe}`)).toBe(
+      "GpuPreference=2;",
+    );
+    expect(service.hasRecords(game.id)).toBe(true);
+    expect(
+      repo
+        .activity()
+        .some(
+          (a) =>
+            a.label === "Launch settings" &&
+            a.status === "failed" &&
+            a.message.includes("saved prior value was kept"),
+        ),
+    ).toBe(true);
+    const status = await service.status(game.id);
+    expect(status.settings[0]).toMatchObject({
+      state: "recovery-needed",
+      canRevert: true,
+    });
+    // Revert (after the helper recovers) restores the prior and clears the record.
+    platform.failRevert = false;
+    platform.failApply = false;
+    const after = await service.apply(game.id, "gpuPreference", "revert");
+    expect(platform.values.has(`gpuPreference|${exe}`)).toBe(false);
+    expect(after.settings[0]).toMatchObject({
+      state: "ready",
+      canRevert: false,
+    });
+    expect(service.hasRecords(game.id)).toBe(false);
+  });
+  it("compares against the executable saved with the prior, not the game's current path", async () => {
+    const { repo, game, platform, service } = setup();
+    await service.apply(game.id, "gpuPreference", "apply");
+    // The library entry now points somewhere else (a moved or re-detected game).
+    const moved = "D:\\Moved\\game.exe";
+    repo.updateState({
+      ...repo.state(),
+      games: repo.state().games.map((g) => ({ ...g, executablePath: moved })),
+    });
+    platform.calls.length = 0;
+    const status = await service.status(game.id);
+    expect(status.settings[0]).toMatchObject({
+      setting: "gpuPreference",
+      state: "applied",
+      canRevert: true,
+    });
+    // The other setting has no saved prior, so it follows the current path.
+    expect(status.settings[1]).toMatchObject({ state: "ready" });
+    expect(
+      platform.calls
+        .filter((c) => c.setting === "gpuPreference")
+        .map((c) => c.exe),
+    ).toEqual([exe]);
+    expect(
+      platform.calls
+        .filter((c) => c.setting === "fullscreenOptimizations")
+        .map((c) => c.exe),
+    ).toEqual([moved]);
+    const preview = await service.preview(game.id, "gpuPreference", "revert");
+    expect(preview.exe).toBe(exe);
+    // Revert acts on the saved path, and with no executable known at all the saved prior is still revertable.
+    repo.updateState({
+      ...repo.state(),
+      games: repo.state().games.map((g) => ({ ...g, executablePath: null })),
+    });
+    const unknown = await service.status(game.id);
+    expect(unknown.settings[0]).toMatchObject({
+      state: "applied",
+      canRevert: true,
+    });
+    expect(unknown.settings[1]!.state).toBe("unsupported");
+    await service.apply(game.id, "gpuPreference", "revert");
+    expect(platform.values.has(`gpuPreference|${exe}`)).toBe(false);
   });
   it("validates requests and refuses to remove a game that still has a saved prior value", async () => {
     expect(

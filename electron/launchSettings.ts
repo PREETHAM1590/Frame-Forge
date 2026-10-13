@@ -27,6 +27,8 @@ type Record_ = {
   value: string | null;
   applied: string;
   at: string;
+  // Set until the apply is confirmed: a record that is still pending means Windows may hold a half-applied value.
+  pending?: boolean;
 };
 const key = (gameId: string, setting: LaunchSetting) =>
   `launch:${gameId}:${setting}`;
@@ -73,73 +75,82 @@ export class LaunchSettingsService {
   }
   async status(gameId: string): Promise<LaunchStatus> {
     const game = this.game(gameId);
-    const exe = game.executablePath;
-    const unsupported = (detail: string) => ({
-      gameId,
-      executable: exe,
-      settings: launchSettings.map((setting) => ({
-        setting,
-        state: "unsupported" as const,
-        detail,
-        current: null,
-        canRevert: false,
-        appliedAt: null,
-      })),
-    });
-    if (!this.platform.boostAvailable)
-      return unsupported("Launch settings need the Windows helper.");
-    if (!exe)
-      return unsupported(
-        "Frameforge does not know this game's executable. Add the game by its .exe file to use launch settings.",
-      );
+    const gameExe = game.executablePath;
     const settings: LaunchStatus["settings"] = [];
     for (const setting of launchSettings) {
       const saved = this.record(gameId, setting);
+      // A saved prior belongs to the executable it was written for, not to whatever path the game has now.
+      const exe = saved?.exe ?? gameExe;
+      const row = (
+        state: LaunchStatus["settings"][number]["state"],
+        detail: string,
+        current: string | null = null,
+      ) => ({
+        setting,
+        state,
+        detail,
+        current,
+        canRevert: !!saved && this.platform.boostAvailable,
+        appliedAt: saved?.at ?? null,
+      });
+      if (!this.platform.boostAvailable) {
+        settings.push(
+          row("unsupported", "Launch settings need the Windows helper."),
+        );
+        continue;
+      }
+      if (!exe) {
+        settings.push(
+          row(
+            "unsupported",
+            "Frameforge does not know this game's executable. Add the game by its .exe file to use launch settings.",
+          ),
+        );
+        continue;
+      }
       try {
         const read = await this.call(setting, exe, "read");
-        if (saved) {
+        if (saved?.pending)
+          settings.push(
+            row(
+              "recovery-needed",
+              "A change to this value may be half applied and could not be undone. Revert restores the value from before; use Forget to keep what Windows has now.",
+              read.current,
+            ),
+          );
+        else if (saved) {
           // Frameforge's own change: still in place, or changed outside since.
           const inPlace =
             read.state === "already-set" && read.current === saved.applied;
-          settings.push({
-            setting,
-            state: inPlace ? "applied" : "conflict",
-            detail: inPlace
-              ? "Set by Frameforge. Revert restores the value from before."
-              : "The value was changed outside Frameforge since it was set. Revert keeps that change; use Forget to drop Frameforge's saved value.",
-            current: read.current,
-            canRevert: true,
-            appliedAt: saved.at,
-          });
+          settings.push(
+            row(
+              inPlace ? "applied" : "conflict",
+              inPlace
+                ? "Set by Frameforge. Revert restores the value from before."
+                : "The value was changed outside Frameforge since it was set. Revert keeps that change; use Forget to drop Frameforge's saved value.",
+              read.current,
+            ),
+          );
         } else
           settings.push({
-            setting,
-            state:
+            ...row(
               read.state === "ready" ||
-              read.state === "already-set" ||
-              read.state === "unsupported"
+                read.state === "already-set" ||
+                read.state === "unsupported"
                 ? read.state
                 : "failed",
-            detail:
               read.state === "already-set"
                 ? `${read.detail} It was not set by Frameforge, so there is nothing to revert.`
                 : read.detail,
-            current: read.current,
+              read.current,
+            ),
             canRevert: false,
-            appliedAt: null,
           });
       } catch (error) {
-        settings.push({
-          setting,
-          state: "failed",
-          detail: `Could not be read: ${text(error)}`,
-          current: null,
-          canRevert: !!saved,
-          appliedAt: saved?.at ?? null,
-        });
+        settings.push(row("failed", `Could not be read: ${text(error)}`));
       }
     }
-    return { gameId, executable: exe, settings };
+    return { gameId, executable: gameExe, settings };
   }
   async preview(
     gameId: string,
@@ -148,9 +159,10 @@ export class LaunchSettingsService {
   ): Promise<LaunchPreview> {
     const game = this.game(gameId);
     const exe = game.executablePath;
-    if (!exe)
-      throw new Error("Frameforge does not know this game's executable.");
     if (action === "apply") {
+      // Only an apply needs the game's current executable; a revert uses the one saved with the prior.
+      if (!exe)
+        throw new Error("Frameforge does not know this game's executable.");
       const read = await this.call(setting, exe, "read");
       if (read.state !== "ready") throw new Error(read.detail);
       return {
@@ -164,11 +176,11 @@ export class LaunchSettingsService {
     }
     const saved = this.record(gameId, setting);
     if (!saved) throw new Error("Frameforge has not changed this setting.");
-    const read = await this.call(setting, exe, "read");
+    const read = await this.call(setting, saved.exe, "read");
     return {
       setting,
       action,
-      exe,
+      exe: saved.exe,
       before: read.current,
       after: saved.value,
       warning:
@@ -196,11 +208,11 @@ export class LaunchSettingsService {
         );
         return this.status(gameId);
       }
-      if (!exe)
-        throw new Error("Frameforge does not know this game's executable.");
       if (!this.platform.boostAvailable)
         throw new Error("Launch settings need the Windows helper.");
       if (action === "apply") {
+        if (!exe)
+          throw new Error("Frameforge does not know this game's executable.");
         if (saved)
           throw new Error(
             "Frameforge already changed this setting. Revert it first.",
@@ -215,6 +227,7 @@ export class LaunchSettingsService {
           value: read.current,
           applied: read.after,
           at: new Date().toISOString(),
+          pending: true,
         };
         this.repo.setMeta(key(gameId, setting), record);
         let result: LaunchResult | undefined;
@@ -225,16 +238,32 @@ export class LaunchSettingsService {
           failure = error;
         }
         if (result?.state === "applied") {
+          this.repo.setMeta(key(gameId, setting), {
+            ...record,
+            pending: undefined,
+          });
           this.log(
             `${label}: set. Prior value saved; use Revert to restore it.`,
           );
         } else {
-          // Unknown how far it got: an exact-prior revert is safe whether or not the value was written.
-          await this.call(setting, exe, "revert", record).catch(() => null);
-          this.repo.setMeta(key(gameId, setting), null);
+          // Unknown how far it got: an exact-prior revert is safe whether or not the value was written. Only a confirmed
+          // revert lets the saved prior go; otherwise it stays so Revert (or Forget) remains available.
           const why = result?.detail ?? text(failure);
-          this.log(`${label}: could not be set. ${why}`, "failed");
-          throw new Error(why);
+          const undone = await this.call(setting, exe, "revert", record).catch(
+            () => null,
+          );
+          if (undone?.state === "reverted") {
+            this.repo.setMeta(key(gameId, setting), null);
+            this.log(`${label}: could not be set. ${why}`, "failed");
+            throw new Error(why);
+          }
+          this.log(
+            `${label}: could not be set and the change could not be undone (${why}). The saved prior value was kept; use Revert.`,
+            "failed",
+          );
+          throw new Error(
+            `${why} The value may be half applied and could not be undone; Revert is available in Launch settings.`,
+          );
         }
       } else {
         if (!saved) throw new Error("Frameforge has not changed this setting.");

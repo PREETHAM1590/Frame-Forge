@@ -7,6 +7,7 @@ import {
   CapturedSchema,
   StateSchema,
   defaultState,
+  legacyMechanismIds,
   type Activity,
   type AppState,
   type Backup,
@@ -26,6 +27,31 @@ const restoreRecovery: Record<string, string> = {
   [restoreLabels.pending]:
     "The app stopped while Windows was creating a restore point. Open Restore & backups to check it.",
 };
+// Unfinished sessions from before GPU preference and fullscreen optimizations became launch settings may carry those ids.
+function stripLegacyIds(payload: Record<string, unknown>): {
+  payload: Record<string, unknown>;
+  dropped: number;
+} {
+  const keep = (id: unknown) => !legacyMechanismIds.includes(String(id));
+  const captured = Array.isArray(payload.captured)
+    ? payload.captured.filter((c) =>
+        keep((c as { mechanism?: unknown })?.mechanism),
+      )
+    : payload.captured;
+  const mechanisms = Array.isArray(payload.mechanisms)
+    ? payload.mechanisms.filter((m) => keep((m as { id?: unknown })?.id))
+    : payload.mechanisms;
+  const dropped =
+    (Array.isArray(payload.captured) && Array.isArray(captured)
+      ? payload.captured.length - captured.length
+      : 0) +
+    (Array.isArray(payload.mechanisms) && Array.isArray(mechanisms)
+      ? payload.mechanisms.length - mechanisms.length
+      : 0);
+  return dropped
+    ? { payload: { ...payload, captured, mechanisms }, dropped }
+    : { payload, dropped: 0 };
+}
 export class Repository {
   private db: DatabaseSync;
   constructor(file: string) {
@@ -249,6 +275,7 @@ export class Repository {
       : null;
   }
   recoverInterrupted(): void {
+    this.dropRetiredCaptures();
     // Restore point rows are resolved on Restore & backups, not by a registry snapshot.
     for (const [label, message] of Object.entries(restoreRecovery))
       this.db
@@ -267,6 +294,26 @@ export class Repository {
       )
       .run();
   }
+  // Startup: an unfinished session from an older build may hold retired ids. Drop them (they can no longer be reverted by
+  // a session) and say so once, since the Windows value they changed is not tracked any more.
+  dropRetiredCaptures(): void {
+    for (const row of this.db
+      .prepare("SELECT id, payload FROM boost_sessions WHERE status!='ended'")
+      .all()) {
+      const { payload, dropped } = stripLegacyIds(
+        JSON.parse(String(row.payload)) as Record<string, unknown>,
+      );
+      if (!dropped) continue;
+      this.db
+        .prepare("UPDATE boost_sessions SET payload=? WHERE id=?")
+        .run(JSON.stringify(payload), String(row.id));
+      this.log(
+        "Game booster",
+        "An unfinished session from an older build had changed a GPU preference or fullscreen optimization value. Frameforge no longer tracks those; check Windows Graphics settings or the game's compatibility settings if the game behaves differently.",
+        "failed",
+      );
+    }
+  }
   boostSession(): BoostSession | null {
     return this.boostRecord()?.session ?? null;
   }
@@ -278,7 +325,9 @@ export class Repository {
       )
       .get();
     if (!row) return null;
-    const payload = JSON.parse(String(row.payload)) as Record<string, unknown>;
+    const payload = stripLegacyIds(
+      JSON.parse(String(row.payload)) as Record<string, unknown>,
+    ).payload;
     // Task 1 rows stored only the target, whose priority was raised to Above normal.
     const legacy = "pid" in payload;
     const { captured = [], ...rest } = legacy ? { target: payload } : payload;

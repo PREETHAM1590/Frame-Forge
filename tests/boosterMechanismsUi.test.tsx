@@ -1,6 +1,7 @@
 ﻿// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
 import {
+  act,
   render,
   screen,
   fireEvent,
@@ -523,6 +524,28 @@ describe("per-game launch settings", () => {
     await waitFor(() =>
       expect(within(section).queryByText("set by Frameforge")).toBeNull(),
     );
+  });
+});
+describe("launch settings reads", () => {
+  it("reads once per game and only again on request, not on every app state change", async () => {
+    const { calls } = install("balanced");
+    await openGameMode();
+    const section = await screen.findByRole("region", {
+      name: "Launch settings",
+    });
+    await within(section).findByText("High-performance GPU preference");
+    const reads = () =>
+      calls.filter((c) => c.method === "launchSettings").length;
+    await waitFor(() => expect(reads()).toBe(1));
+    // Changing the mode refreshes the app state (bootstrap) but must not re-read the Windows values.
+    fireEvent.click(screen.getByRole("button", { name: "Competitive" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === "boostConfig")).toBe(true),
+    );
+    await act(async () => {});
+    expect(reads()).toBe(1);
+    fireEvent.click(within(section).getByRole("button", { name: "Re-check" }));
+    await waitFor(() => expect(reads()).toBe(2));
   });
 });
 describe("network check", () => {

@@ -496,6 +496,7 @@ export const LaunchStatusSchema = z
             "already-set",
             "applied",
             "conflict",
+            "recovery-needed",
             "unsupported",
             "failed",
           ]),
@@ -788,6 +789,20 @@ export const EventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("boost"), session: BoostSessionSchema }).strict(),
 ]);
 export type AppEvent = z.infer<typeof EventSchema>;
+// Session toggles that moved to per-game launch settings. Saved data from before that change may still carry them.
+export const legacyMechanismIds: readonly string[] = [
+  "gpuPreference",
+  "fullscreenOptimizations",
+];
+/** Removes the retired session toggles from a saved state, backup or demo payload so it still parses. */
+export function dropLegacyMechanisms<T>(value: T): T {
+  const custom = (
+    value as { booster?: { custom?: Record<string, unknown> } } | null
+  )?.booster?.custom;
+  if (custom && typeof custom === "object")
+    for (const id of legacyMechanismIds) delete custom[id];
+  return value;
+}
 export type FrameforgeApi = Api & {
   onEvent: (callback: (event: AppEvent) => void) => () => void;
 };
@@ -904,7 +919,7 @@ export const CapturedSchema = z
     /** Prior and applied lists: paused service names, or CPU set ids (smartCores). */
     items: z.array(z.string().max(64)).max(256).optional(),
     appliedItems: z.array(z.string().max(64)).max(256).optional(),
-    /** Current-user registry values written by gameBarCapture, gpuPreference and fullscreenOptimizations. */
+    /** Current-user registry values written by gameBarCapture. */
     regValues: z.array(CapturedRegValueSchema).min(1).max(8).optional(),
   })
   .strict();

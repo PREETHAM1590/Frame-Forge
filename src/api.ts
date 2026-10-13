@@ -5,6 +5,7 @@ import {
   requests,
   responses,
   defaultState,
+  dropLegacyMechanisms,
   MechanismId,
   type Api,
   type AppEvent,
@@ -29,7 +30,8 @@ function load() {
       backups: unknown;
       activity: unknown;
     };
-    state = StateSchema.parse(saved.state);
+    // Older demo data may still carry the retired GPU preference / fullscreen toggles.
+    state = StateSchema.parse(dropLegacyMechanisms(saved.state));
     backups = BackupSchema.array().parse(saved.backups);
     activity = BootstrapSchema.shape.activity.parse(saved.activity);
   }

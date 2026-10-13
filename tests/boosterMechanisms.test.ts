@@ -16,6 +16,7 @@ import {
   SessionEventSchema,
   StateSchema,
   defaultState,
+  dropLegacyMechanisms,
   modeMechanisms,
   requests,
   type Captured,
@@ -178,6 +179,89 @@ describe("second-pass booster contracts", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+  it("tolerates retired session ids in old sessions, results and demo data (N5)", () => {
+    const repo = new Repository(":memory:");
+    const gameId = crypto.randomUUID();
+    const target = {
+      pid: 7,
+      startTime: "2026-10-12T10:00:00.0000000Z",
+      executablePath: "C:\\g\\g.exe",
+      name: "g",
+      priority: "Normal",
+    };
+    const db = (repo as unknown as { db: DatabaseSync }).db;
+    const gpu = {
+      mechanism: "gpuPreference",
+      regValues: [
+        {
+          path: "x",
+          name: "C:\\g\\g.exe",
+          kind: "String",
+          existed: false,
+          value: null,
+          applied: "GpuPreference=2;",
+        },
+      ],
+    };
+    const priority = {
+      mechanism: "priority",
+      process: target,
+      prior: "Normal",
+      applied: "High",
+    };
+    db.prepare(
+      "INSERT INTO boost_sessions(id,game_id,status,started_at,message,payload) VALUES(?,?,?,?,?,?)",
+    ).run(
+      crypto.randomUUID(),
+      gameId,
+      "active",
+      "2026-10-12T10:00:01.000Z",
+      "x",
+      JSON.stringify({
+        mode: "competitive",
+        target,
+        endedAt: null,
+        mechanisms: [
+          { id: "gpuPreference", state: "applied", detail: "old" },
+          { id: "priority", state: "applied", detail: "ok" },
+        ],
+        samples: [],
+        failed: false,
+        abnormal: false,
+        captured: [priority, gpu],
+      }),
+    );
+    // Reading never fails: the retired ids are stripped, everything else is kept.
+    const record = repo.boostRecord()!;
+    expect(record.captured).toEqual([priority]);
+    expect(record.session.mechanisms.map((m) => m.id)).toEqual(["priority"]);
+    // Startup rewrites the row and says once that the old change is no longer tracked.
+    repo.recoverInterrupted();
+    repo.recoverInterrupted();
+    const notes = repo
+      .activity()
+      .filter((a) => a.message.includes("older build"));
+    expect(notes).toHaveLength(1);
+    expect(repo.boostRecord()!.captured).toEqual([priority]);
+    // Demo data saved with the legacy keys still parses.
+    const demo = JSON.parse(
+      JSON.stringify({
+        ...defaultState,
+        booster: {
+          ...defaultState.booster,
+          custom: {
+            ...defaultState.booster.custom,
+            gpuPreference: true,
+            fullscreenOptimizations: false,
+          },
+        },
+      }),
+    );
+    expect(StateSchema.safeParse(demo).success).toBe(false);
+    expect(StateSchema.safeParse(dropLegacyMechanisms(demo)).success).toBe(
+      true,
+    );
   });
   it("wires the mechanisms into modes as researched", () => {
     const on = (mode: keyof typeof modeMechanisms) =>

@@ -256,7 +256,13 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
   useEffect(() => {
     void refresh();
   }, [refresh, data]);
+  // Launch settings are read when the game (or its executable) changes or on request, not on every app state change:
+  // each read starts the Windows helper twice.
   const launchGameId = gameId;
+  const launchExe = data.state.games.find(
+    (g) => g.id === gameId,
+  )?.executablePath;
+  const [launchTick, setLaunchTick] = useState(0);
   useEffect(() => {
     if (!launchGameId || data.mode === "demo") return;
     let current = true;
@@ -276,7 +282,8 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
     return () => {
       current = false;
     };
-  }, [launchGameId, data]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `data.mode` is stable for the session; the rest are listed.
+  }, [launchGameId, launchExe, launchTick]);
   useEffect(
     () =>
       onEvent((event) => {
@@ -1212,6 +1219,17 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
         {data.mode === "demo" && (
           <p className="muted">Launch settings require the desktop app.</p>
         )}
+        {data.mode !== "demo" && game && (
+          <div className="toolbar">
+            <Button
+              disabled={pending}
+              title="Read the current values again."
+              onClick={() => setLaunchTick((n) => n + 1)}
+            >
+              Re-check
+            </Button>
+          </div>
+        )}
         {launch && launch.gameId === gameId && (
           <ul className="mechanism-list">
             {launch.settings.map((s) => (
@@ -1223,7 +1241,9 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                       ? "lime"
                       : s.state === "ready" || s.state === "already-set"
                         ? "neutral"
-                        : "amber"
+                        : s.state === "recovery-needed"
+                          ? "red"
+                          : "amber"
                   }
                 >
                   {s.state === "applied"
@@ -1232,7 +1252,9 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                       ? "not set"
                       : s.state === "already-set"
                         ? "already set"
-                        : s.state}
+                        : s.state === "recovery-needed"
+                          ? "recovery needed"
+                          : s.state}
                 </Badge>
                 <small className="muted">{s.detail}</small>
                 {s.current !== null && (
