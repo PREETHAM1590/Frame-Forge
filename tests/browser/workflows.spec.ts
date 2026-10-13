@@ -12,7 +12,7 @@ test("desktop browser workflows and persistence", async ({ page }) => {
   await page
     .getByRole("button", { name: "Optimizations", exact: true })
     .click();
-  await page.getByLabel("Search optimizations").fill("pointer");
+  await page.getByLabel("Search optimizations").fill("Consistent pointer");
   await expect(
     page.getByRole("heading", { name: "Consistent pointer movement" }),
   ).toBeVisible();
