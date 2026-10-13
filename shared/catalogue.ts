@@ -1,4 +1,4 @@
-import type { OperationId } from "./contracts.js";
+import type { OperationId, Request } from "./contracts.js";
 export interface Optimization {
   id: OperationId;
   name: string;
@@ -11,6 +11,8 @@ export interface Optimization {
   prerequisites: string[];
   supported: boolean;
   rollback: string;
+  /** Windows page for manual review of unsupported entries. */
+  settingsPage?: Request<"openSettings">["page"];
 }
 export const catalogue: Optimization[] = [
   {
@@ -55,17 +57,21 @@ export const catalogue: Optimization[] = [
   },
   {
     id: "power-plan",
-    name: "Power plan review",
+    name: "High performance power plan",
     category: "System",
     risk: "Moderate",
     impact: "Power policy",
-    description: "Review Windows power policy for your machine.",
+    description: "Switch the active Windows power plan to High performance.",
     reason:
-      "Power plans affect heat, battery life and energy use. Automated changes are unavailable in this release.",
-    settings: ["Windows power plan"],
-    prerequisites: ["Manual review in Windows Settings"],
-    supported: false,
-    rollback: "Unavailable; this app does not change power plans.",
+      "Lets the processor stay at higher clock states. It raises heat, fan noise and energy use, and shortens laptop battery life. No FPS improvement is claimed. Game Mode can switch plans for a single session instead; this switch stays until you roll it back.",
+    settings: ["Active Windows power plan (powrprof PowerSetActiveScheme)"],
+    prerequisites: [
+      "Windows desktop helper available",
+      "The built-in High performance plan is present (Modern Standby laptops often only have Balanced)",
+    ],
+    supported: true,
+    rollback:
+      "Switches back to the plan that was active before, only while High performance is still active. A plan you chose since is kept.",
   },
   {
     id: "hardware-scheduling",
@@ -80,6 +86,7 @@ export const catalogue: Optimization[] = [
     prerequisites: ["Compatible GPU and driver"],
     supported: false,
     rollback: "Unavailable; preview only.",
+    settingsPage: "graphics",
   },
   {
     id: "startup-review",
@@ -90,9 +97,10 @@ export const catalogue: Optimization[] = [
     description: "Review software that starts when you sign in.",
     reason: "No third-party startup entries are modified by Frameforge.",
     settings: ["Third-party startup entries"],
-    prerequisites: ["Manual review in Task Manager"],
+    prerequisites: ["Manual review in Windows Settings > Apps > Startup"],
     supported: false,
     rollback: "Unavailable; read-only catalogue entry.",
+    settingsPage: "startup",
   },
   {
     id: "driver-review",
@@ -121,6 +129,7 @@ export const catalogue: Optimization[] = [
     prerequisites: ["Network configuration review"],
     supported: false,
     rollback: "Unavailable; no network changes.",
+    settingsPage: "network",
   },
   {
     id: "service-tuning",
@@ -135,18 +144,19 @@ export const catalogue: Optimization[] = [
     prerequisites: ["Independent service-specific verification"],
     supported: false,
     rollback: "Unavailable; no service changes.",
+    settingsPage: "services",
   },
 ];
 export const presets = [
   {
-    name: "Recommended",
-    description: "One reversible input preference.",
+    name: "Beginner",
+    description: "Start with one reversible input preference.",
     ids: ["mouse-precision"],
   },
   {
-    name: "Beginner",
-    description: "Start with consistent pointer movement.",
-    ids: ["mouse-precision"],
+    name: "Recommended",
+    description: "Consistent pointer movement and the High performance plan.",
+    ids: ["mouse-precision", "power-plan"],
   },
   {
     name: "Balanced",
@@ -155,7 +165,7 @@ export const presets = [
   },
   {
     name: "Gaming",
-    description: "Review both supported preferences for your setup.",
-    ids: ["mouse-precision", "capture-off"],
+    description: "All three supported changes, each reversible.",
+    ids: ["mouse-precision", "capture-off", "power-plan"],
   },
 ] as const;

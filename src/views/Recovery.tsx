@@ -17,6 +17,7 @@ import {
   Empty,
   Modal,
   formatTime,
+  statusTone,
 } from "../components/ui";
 import {
   RestoreDescription,
@@ -107,7 +108,9 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
                     : "neutral"
               }
             >
-              Protection {status.protection}
+              {status.protection === "enabled"
+                ? `Protection on for a drive (${drive} unconfirmed)`
+                : `Protection ${status.protection}`}
             </Badge>
             {status.policyDisabled && (
               <Badge tone="red">Blocked by policy</Badge>
@@ -572,17 +575,7 @@ export function ActivityLog({ data, run, pending, navigate }: ViewProps) {
               <div>
                 <div className="inline-title">
                   <h3>{a.label}</h3>
-                  <Badge
-                    tone={
-                      a.status === "success"
-                        ? "lime"
-                        : a.status === "recovery-needed"
-                          ? "red"
-                          : "neutral"
-                    }
-                  >
-                    {a.status}
-                  </Badge>
+                  <Badge tone={statusTone(a.status)}>{a.status}</Badge>
                 </div>
                 <p className="muted">{a.message}</p>
                 <span className="muted">{formatTime(a.at)}</span>
@@ -611,7 +604,7 @@ export function ActivityLog({ data, run, pending, navigate }: ViewProps) {
       {selected && (
         <Modal
           title="Restore Windows snapshot?"
-          description="Restore the exact current-user registry values captured before this operation. A conflicting external change will stop rollback."
+          description="Restore the exact Windows values (registry preferences or power plan) captured before this operation. A conflicting external change will stop rollback."
           onClose={() => setSelected(null)}
         >
           <p>{selected.label}</p>

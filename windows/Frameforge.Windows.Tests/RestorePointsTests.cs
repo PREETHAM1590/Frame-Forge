@@ -70,6 +70,27 @@ public class RestorePointsTests
     }
 
     [Fact]
+    public void UnknownSystemDriveCoverageIsStated()
+    {
+        var store = new FakeRestoreStore();
+        store.Protection.Enqueue(null);
+        store.Protection.Enqueue(null);
+        var result = new RestorePoints(store).Create("Name", false, store.Frequency);
+        Assert.Equal("created", result.Outcome);
+        Assert.Contains("C: coverage could not be confirmed", result.Message);
+    }
+
+    [Fact]
+    public void EnableNeverClaimsSystemDriveFromAnyDriveHint()
+    {
+        var store = new FakeRestoreStore();
+        store.Protection.Enqueue(null);
+        var result = new RestorePoints(store).Enable("C:");
+        Assert.Equal("unknown", result.RestoreStatus!.Protection);
+        Assert.DoesNotContain("turned on for C:", result.Message);
+    }
+
+    [Fact]
     public void PendingResultIsReadLaterAndDeleted()
     {
         var path = Path.Combine(Path.GetTempPath(), $"frameforge-{Guid.NewGuid():N}.json");

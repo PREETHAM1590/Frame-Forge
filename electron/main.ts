@@ -74,6 +74,27 @@ if (!app.requestSingleInstanceLock()) {
               "rstrui.exe",
             ),
           )) === "",
+        // Fixed targets selected by an enum; renderer text never becomes a URI or path.
+        openSettings: async (page) => {
+          if (process.platform !== "win32") return false;
+          if (page === "services")
+            return (
+              (await shell.openPath(
+                path.join(
+                  process.env.SystemRoot ?? "C:\\Windows",
+                  "System32",
+                  "services.msc",
+                ),
+              )) === ""
+            );
+          const uri = {
+            graphics: "ms-settings:display-advancedgraphics",
+            startup: "ms-settings:startupapps",
+            network: "ms-settings:network-status",
+          }[page];
+          await shell.openExternal(uri);
+          return true;
+        },
         detectGames: () =>
           detectInstalledGames({}, (progress) => {
             // A window closed mid-scan must not fail the scan.

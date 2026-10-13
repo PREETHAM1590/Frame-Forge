@@ -1,4 +1,6 @@
+import { useState } from "react";
 import {
+  Play,
   Cpu,
   Monitor,
   MemoryStick,
@@ -13,12 +15,14 @@ import {
   Button,
   Badge,
   Toggle,
+  Busy,
   formatBytes,
   formatTime,
 } from "../components/ui";
 import type { ViewProps } from "../types";
 export function System({ data, run, pending }: ViewProps) {
   const h = data.hardware;
+  const [refreshing, setRefreshing] = useState(false);
   return (
     <>
       <PageTitle
@@ -27,12 +31,20 @@ export function System({ data, run, pending }: ViewProps) {
         action={
           <Button
             disabled={pending}
-            onClick={() =>
-              void run("refresh", {}, "System readings refreshed.")
-            }
+            onClick={async () => {
+              setRefreshing(true);
+              await run("refresh", {}, "System readings refreshed.");
+              setRefreshing(false);
+            }}
           >
-            <RefreshCw size={17} />
-            Refresh
+            {refreshing ? (
+              <Busy label="Refreshing" />
+            ) : (
+              <>
+                <RefreshCw size={17} />
+                Refresh
+              </>
+            )}
           </Button>
         }
       />
@@ -52,8 +64,8 @@ export function System({ data, run, pending }: ViewProps) {
           <dd>{h.cpu || "Unavailable"}</dd>
           <dt>Logical processors</dt>
           <dd>{h.cores || "Unavailable"}</dd>
-          <dt>Live CPU utilization</dt>
-          <dd>Unavailable in this release</dd>
+          <dt>Live CPU utilization & temperature</dt>
+          <dd>Unsupported in this release</dd>
         </dl>
       </section>
       <section className="system-section">
@@ -68,8 +80,8 @@ export function System({ data, run, pending }: ViewProps) {
           <dd>{h.drivers.join(" / ") || "Unavailable"}</dd>
           <dt>Displays</dt>
           <dd>{h.displays.join(" / ") || "Unavailable"}</dd>
-          <dt>Temperature & GPU load</dt>
-          <dd>Unavailable in this release</dd>
+          <dt>Temperature, live GPU use & FPS</dt>
+          <dd>Unsupported in this release</dd>
         </dl>
       </section>
       <section className="system-section">
@@ -158,7 +170,7 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
         />
         <Toggle
           label="In-app notifications"
-          description="Show success notifications for completed app actions."
+          description="Show success notifications for completed app actions. Errors are always shown."
           checked={settings.notifications}
           disabled={pending}
           onChange={(notifications) => update({ notifications })}
@@ -170,6 +182,21 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           disabled={pending}
           onChange={(diagnostics) => update({ diagnostics })}
         />
+      </section>
+      <section className="settings-section">
+        <h2>
+          <Play size={20} />
+          Booster
+        </h2>
+        <div className="setting-row">
+          <div>
+            <strong>Game Mode</strong>
+            <p className="muted">
+              Booster options and sessions live on the Game Mode page.
+            </p>
+          </div>
+          <Button onClick={() => navigate("Game Mode")}>Open Game Mode</Button>
+        </div>
       </section>
       <section className="settings-section">
         <h2>
@@ -214,7 +241,7 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           <dt>Windows operation access</dt>
           <dd>
             {data.capabilities.length
-              ? `${data.capabilities.length} current-user preferences`
+              ? `${data.capabilities.length} supported Windows changes`
               : "Unavailable; desktop helper required"}
           </dd>
         </dl>

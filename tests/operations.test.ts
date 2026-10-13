@@ -29,6 +29,42 @@ describe("confirmed reversible operations", () => {
     expect(repo.activity()[0].status).toBe("rolled-back");
     repo.close();
   });
+  it("previews the power plan by name and refuses it during a boost session", async () => {
+    const repo = new Repository(":memory:");
+    const platform = new MockPlatform();
+    platform.capabilities = ["power-plan"];
+    platform.capture = async () => ({
+      values: [],
+      scheme: "381b4222-f694-41f0-9685-ff5bb260df2e",
+    });
+    const engine = new OperationEngine(repo, platform);
+    expect((await engine.preview(["power-plan"])).changes).toEqual([
+      {
+        id: "power-plan",
+        setting: "Active Windows power plan",
+        before: "Balanced",
+        after: "High performance",
+      },
+    ]);
+    repo.saveBoostSession({
+      id: crypto.randomUUID(),
+      gameId: crypto.randomUUID(),
+      target: {
+        pid: 4242,
+        startTime: "2026-10-13T00:00:00.0000000Z",
+        executablePath: "C:\\Games\\game.exe",
+        name: "game",
+        priority: "High",
+      },
+      startedAt: new Date().toISOString(),
+      status: "active",
+      message: "Boosted.",
+    });
+    await expect(engine.preview(["power-plan"])).rejects.toThrow(
+      /Stop Game Mode/,
+    );
+    repo.close();
+  });
   it("rejects stale previews before mutation", async () => {
     const repo = new Repository(":memory:");
     let time = 100;

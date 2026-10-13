@@ -28,6 +28,7 @@ export interface DesktopServices {
   version: string;
   startupSupported?: boolean;
   openSystemRestore?: () => Promise<boolean>;
+  openSettings?: (page: Request<"openSettings">["page"]) => Promise<boolean>;
 }
 export class AppService {
   private engine: OperationEngine;
@@ -157,6 +158,11 @@ export class AppService {
       },
       openSystemRestore: async () =>
         (await this.desktop.openSystemRestore?.()) ?? false,
+      openSettings: async ({ page }) => {
+        if (!(await this.desktop.openSettings?.(page)))
+          throw new Error("Windows could not open that settings page.");
+        return true;
+      },
       boostTargets: async ({ gameId }) => {
         guard();
         const game = this.repo.state().games.find((g) => g.id === gameId);
@@ -173,6 +179,9 @@ export class AppService {
       },
       removeGame: async ({ id }) => {
         guard();
+        // Removing the game would orphan its boost session's restore target.
+        if (this.repo.boostSession()?.gameId === id)
+          throw new Error("Stop Game Mode for this game before removing it.");
         const state = this.repo.state();
         return this.repo.updateState({
           ...state,

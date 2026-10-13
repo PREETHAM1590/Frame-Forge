@@ -9,6 +9,14 @@ import {
 } from "../shared/contracts.js";
 import type { Platform } from "./platform.js";
 import { Repository } from "./repository.js";
+const plans: Record<string, string> = {
+  "381b4222-f694-41f0-9685-ff5bb260df2e": "Balanced",
+  "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c": "High performance",
+  "a1841308-3541-4fab-bc81-f71556f20b4a": "Power saver",
+  "e9a42b02-d5df-448d-aa00-03f14749eb61": "Ultimate performance",
+};
+const planName = (scheme: string) =>
+  plans[scheme.toLowerCase()] ?? `Custom plan ${scheme}`;
 export class OperationEngine {
   private previews = new Map<
     string,
@@ -30,6 +38,11 @@ export class OperationEngine {
       ids.some((id) => !this.platform.capabilities.includes(id))
     )
       throw new Error("This operation is unavailable on this installation.");
+    // A boost session restores the plan it found when it ends, which would undo this switch.
+    if (ids.includes("power-plan") && this.repo.boostSession())
+      throw new Error(
+        "Stop Game Mode before changing the power plan; its session restores the plan when it ends.",
+      );
   }
   async preview(ids: OperationId[]): Promise<Preview> {
     this.supported(ids);
@@ -45,12 +58,24 @@ export class OperationEngine {
       token,
       expiresAt: new Date(expires).toISOString(),
       ids,
-      changes: snapshot.values.map((value) => ({
-        id: value.operation,
-        setting: `${value.path} / ${value.name}`,
-        before: value.existed ? String(value.value) : "Not set",
-        after: value.kind === "String" ? "0" : "0 (DWORD)",
-      })),
+      changes: [
+        ...snapshot.values.map((value) => ({
+          id: value.operation,
+          setting: `${value.path} / ${value.name}`,
+          before: value.existed ? String(value.value) : "Not set",
+          after: value.kind === "String" ? "0" : "0 (DWORD)",
+        })),
+        ...(snapshot.scheme
+          ? [
+              {
+                id: "power-plan" as const,
+                setting: "Active Windows power plan",
+                before: planName(snapshot.scheme),
+                after: "High performance",
+              },
+            ]
+          : []),
+      ],
       warnings: ids.map((id) => catalogue.find((o) => o.id === id)!.rollback),
     };
   }
@@ -87,7 +112,7 @@ export class OperationEngine {
       return this.repo.finish(
         record.id,
         "success",
-        "Windows registry preferences verified. See the operation details for when Windows reloads them.",
+        "Windows settings re-read and verified. See the operation details for when Windows reloads them.",
       );
     } catch (e) {
       if (!record) throw e;
@@ -123,7 +148,7 @@ export class OperationEngine {
       return this.repo.finish(
         id,
         "rolled-back",
-        "The captured Windows registry state was restored and verified.",
+        "The captured Windows state was restored and verified.",
         false,
       );
     } catch {

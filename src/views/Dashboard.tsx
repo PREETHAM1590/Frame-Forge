@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import {
+  Play,
   Cpu,
   MemoryStick,
   HardDrive,
@@ -18,10 +20,25 @@ import {
   formatTime,
   Empty,
   LinkButton,
+  statusTone,
 } from "../components/ui";
+import { request } from "../api";
+import type { RestoreStatus } from "../../shared/contracts";
 import type { ViewProps } from "../types";
 export function Dashboard({ data, navigate, preview }: ViewProps) {
   const h = data.hardware;
+  const [restore, setRestore] = useState<RestoreStatus | null>(null);
+  useEffect(() => {
+    let active = true;
+    void request("restoreStatus", {})
+      .then((value) => active && setRestore(value))
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  const session = data.boost.session;
+  const pointerReady = data.capabilities.includes("mouse-precision");
   const used = h.memoryBytes - h.freeMemoryBytes;
   const memoryPercent = h.memoryBytes
     ? Math.round((used / h.memoryBytes) * 100)
@@ -131,7 +148,11 @@ export function Dashboard({ data, navigate, preview }: ViewProps) {
               </span>
               <div>
                 <strong>Consistent pointer movement</strong>
-                <p className="muted">Review a reversible input preference</p>
+                <p className="muted">
+                  {pointerReady
+                    ? "Review a reversible input preference"
+                    : "Preview only: applying requires the desktop app and its Windows helper"}
+                </p>
               </div>
               <ArrowUpRight size={19} />
             </button>
@@ -156,10 +177,50 @@ export function Dashboard({ data, navigate, preview }: ViewProps) {
               <div>
                 <strong>Keep a way back</strong>
                 <p className="muted">
-                  {data.backups.length} app configuration backups
+                  {data.backups.length} app configuration backup
+                  {data.backups.length === 1 ? "" : "s"}
                 </p>
               </div>
-              <ArrowUpRight size={19} />
+              <Badge
+                tone={
+                  restore?.protection === "enabled"
+                    ? "lime"
+                    : restore?.protection === "disabled" ||
+                        restore?.policyDisabled
+                      ? "red"
+                      : "neutral"
+                }
+              >
+                {!restore
+                  ? data.mode === "demo"
+                    ? "Restore points: desktop app"
+                    : "Restore points: checking"
+                  : restore.policyDisabled
+                    ? "Restore blocked by policy"
+                    : restore.protection === "enabled"
+                      ? "Protection on for a drive"
+                      : `Protection ${restore.protection}`}
+              </Badge>
+            </button>
+            <button onClick={() => navigate("Game Mode")}>
+              <span className="action-icon lime">
+                <Play />
+              </span>
+              <div>
+                <strong>Game Mode</strong>
+                <p className="muted">
+                  {!data.boost.available
+                    ? data.mode === "demo"
+                      ? "Requires the desktop app"
+                      : "Windows helper missing"
+                    : session
+                      ? `Session ${session.status}`
+                      : "No active session"}
+                </p>
+              </div>
+              <Badge tone={session ? statusTone(session.status) : "neutral"}>
+                {session ? session.status : "Idle"}
+              </Badge>
             </button>
           </div>
         </section>
@@ -179,17 +240,7 @@ export function Dashboard({ data, navigate, preview }: ViewProps) {
                     <strong>{a.label}</strong>
                     <p className="muted">{formatTime(a.at)}</p>
                   </div>
-                  <Badge
-                    tone={
-                      a.status === "success"
-                        ? "lime"
-                        : a.status === "recovery-needed"
-                          ? "red"
-                          : "neutral"
-                    }
-                  >
-                    {a.status}
-                  </Badge>
+                  <Badge tone={statusTone(a.status)}>{a.status}</Badge>
                 </div>
               ))}
             </div>

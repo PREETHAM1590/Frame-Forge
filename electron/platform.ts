@@ -82,7 +82,11 @@ const frequencyArgs = (f: Frequency) => [
   String(f.minutes ?? -1),
 ];
 export class WindowsPlatform implements Platform {
-  capabilities: OperationId[] = ["mouse-precision", "capture-off"];
+  capabilities: OperationId[] = [
+    "mouse-precision",
+    "capture-off",
+    "power-plan",
+  ];
   boostAvailable = true;
   constructor(private executable: string) {}
   private call(
@@ -264,16 +268,20 @@ export class WindowsPlatform implements Platform {
     );
     return result.outcome === "pending" ? null : result;
   }
+  // An elevated request still running carries no status; re-read it unelevated instead.
+  private async elevatedStatus(result: HelperOutput) {
+    if (cancelled(result)) return null;
+    if (result.code === "elevated-pending")
+      return { ...(await this.restoreStatus()), message: result.message };
+    return restoreStatusOf(result);
+  }
   async restoreEnable(drive: string) {
-    const result = await this.elevated("restore-enable", [drive]);
-    return cancelled(result) ? null : restoreStatusOf(result);
+    return this.elevatedStatus(await this.elevated("restore-enable", [drive]));
   }
   async restoreFrequencySet(original: Frequency) {
-    const result = await this.elevated(
-      "restore-frequency-set",
-      frequencyArgs(original),
+    return this.elevatedStatus(
+      await this.elevated("restore-frequency-set", frequencyArgs(original)),
     );
-    return cancelled(result) ? null : restoreStatusOf(result);
   }
 }
 export function fallbackHardware(

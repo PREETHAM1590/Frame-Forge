@@ -231,6 +231,7 @@ export function Games({ data, run, pending }: ViewProps) {
               ? `Executable: ${selected.executablePath}`
               : "Matched by folder"}
           </p>
+          <p className="muted">Source: {sourceLabels[selected.source]}</p>
           <form
             onSubmit={async (e) => {
               e.preventDefault();

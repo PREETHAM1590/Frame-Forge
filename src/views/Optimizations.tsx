@@ -12,7 +12,19 @@ import { catalogue, presets, type Optimization } from "../../shared/catalogue";
 import type { OperationId } from "../../shared/contracts";
 import { PageTitle, Badge, Button, Modal, Empty } from "../components/ui";
 import type { ViewProps } from "../types";
-export function Optimizations({ data, preview }: ViewProps) {
+const settingsLabels = {
+  graphics: "Graphics settings",
+  startup: "Startup apps",
+  network: "Network status",
+  services: "Services",
+} as const;
+export function Optimizations({
+  data,
+  preview,
+  run,
+  navigate,
+  pending,
+}: ViewProps) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [availability, setAvailability] = useState("All");
@@ -155,6 +167,33 @@ export function Optimizations({ data, preview }: ViewProps) {
           )}
           <div className="dialog-actions">
             <Button onClick={() => setDetail(null)}>Close</Button>
+            {detail.settingsPage && (
+              <Button
+                disabled={pending || data.mode === "demo"}
+                title={
+                  data.mode === "demo"
+                    ? "Opening Windows Settings requires the desktop app."
+                    : undefined
+                }
+                onClick={() =>
+                  void run("openSettings", { page: detail.settingsPage! })
+                }
+              >
+                Open {settingsLabels[detail.settingsPage]} in Windows
+                <ArrowUpRight size={17} />
+              </Button>
+            )}
+            {detail.id === "driver-review" && (
+              <Button
+                onClick={() => {
+                  setDetail(null);
+                  navigate("System");
+                }}
+              >
+                View drivers in System
+                <ArrowUpRight size={17} />
+              </Button>
+            )}
             <Button
               variant="primary"
               disabled={!data.capabilities.includes(detail.id)}

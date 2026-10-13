@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Repository } from "../electron/repository";
 import {
   MockPlatform,
+  WindowsPlatform,
   type PlatformCreateResult,
   type PlatformRestoreStatus,
 } from "../electron/platform";
@@ -272,5 +273,30 @@ describe("Windows restore points", () => {
       "Windows helper",
     );
     repo.close();
+  });
+  it("treats an elevated request that is still running as pending, not a crash", async () => {
+    const platform = new WindowsPlatform("unused.exe");
+    const status = {
+      protection: "unknown",
+      policyDisabled: false,
+      frequency: { existed: false, minutes: null },
+      elevated: false,
+      systemDrive: "C:",
+    };
+    Object.assign(platform, {
+      call: async (request: { command: string }) =>
+        request.command === "elevated"
+          ? { ok: true, message: "Still working.", code: "elevated-pending" }
+          : { ok: true, message: "Status read.", restoreStatus: status },
+    });
+    expect(await platform.restoreEnable("C:")).toMatchObject({
+      protection: "unknown",
+      message: "Still working.",
+    });
+    expect(
+      (await platform.restoreFrequencySet({ existed: false, minutes: null }))
+        ?.message,
+    ).toBe("Still working.");
+    expect((await platform.restoreList()).available).toBe(false);
   });
 });

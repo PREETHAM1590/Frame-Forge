@@ -374,7 +374,7 @@ export default function App() {
           <span>
             {data.mode === "demo"
               ? "Browser preview / Windows operations disabled"
-              : "Offline-ready / Current-user operations only"}
+              : "Offline-ready / Every Windows change is reversible"}
           </span>
           <span>v{data.version}</span>
         </footer>

@@ -174,7 +174,13 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
       result = state;
       break;
     case "clearActivity":
-      activity = activity.filter((a) => a.rollback);
+      // Same rule as the desktop journal: keep rollback, recovery and running rows.
+      activity = activity.filter(
+        (a) =>
+          a.rollback ||
+          a.status === "recovery-needed" ||
+          a.status === "running",
+      );
       result = true;
       break;
     case "cancel":
@@ -202,14 +208,14 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "recoverRestoreFrequency":
     case "openSystemRestore":
       throw new Error("Windows System Restore requires the desktop app.");
+    case "openSettings":
+      throw new Error("Opening Windows Settings requires the desktop app.");
     case "boostTargets":
     case "boostStart":
     case "boostStop":
       throw new Error("Game booster requires the desktop app.");
     default:
-      throw new Error(
-        "Windows operations are unavailable in browser demo mode.",
-      );
+      throw new Error("Windows operations require the desktop app.");
   }
   state = StateSchema.parse(state);
   persist();

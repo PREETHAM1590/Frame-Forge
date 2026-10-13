@@ -336,6 +336,10 @@ export const requests = {
   enableSystemProtection: z.object({ confirmed: z.literal(true) }).strict(),
   recoverRestoreFrequency: z.object({ confirmed: z.literal(true) }).strict(),
   openSystemRestore: Empty,
+  // Server-side allowlist; the renderer never sends a URI or path.
+  openSettings: z
+    .object({ page: z.enum(["graphics", "startup", "network", "services"]) })
+    .strict(),
   boostTargets: z.object({ gameId: Id }).strict(),
   boostStart: z
     .object({
@@ -377,6 +381,7 @@ export const responses = {
   enableSystemProtection: RestoreStatusSchema,
   recoverRestoreFrequency: RestoreStatusSchema,
   openSystemRestore: z.boolean(),
+  openSettings: z.boolean(),
   boostTargets: z.array(ProcessTargetSchema),
   boostStart: BoostSessionSchema,
   boostStop: BoostSessionSchema.nullable(),
@@ -435,7 +440,14 @@ export const RegistryValueSchema = z
   })
   .strict();
 export const SnapshotSchema = z
-  .object({ values: z.array(RegistryValueSchema).max(4) })
+  .object({
+    values: z.array(RegistryValueSchema).max(4),
+    // Prior active power scheme, present only when power-plan was captured.
+    scheme: z
+      .string()
+      .regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i)
+      .optional(),
+  })
   .strict();
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 export const HelperResult = z
