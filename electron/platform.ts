@@ -54,6 +54,8 @@ export type PlatformRestoreStatus = HelperRestoreStatus & {
 export type PlatformCreateResult = CreateRestorePointResult & {
   frequencyRestored: boolean | null;
   resultPath: string | null;
+  /** The helper's per-drive answer for the system drive, when it checked. */
+  driveCoverage?: "confirmed" | "off" | "unknown";
 };
 type HelperOutput = ReturnType<typeof HelperResult.parse>;
 // Covers the UAC prompt plus the helper's 150 s wait (which itself covers the child's 120 s create).
@@ -77,6 +79,7 @@ function createResultOf(result: HelperOutput): PlatformCreateResult {
     message: pending ? stillRunning : result.message,
     frequencyRestored: result.frequencyRestored ?? null,
     resultPath: result.resultPath ?? null,
+    driveCoverage: result.driveCoverage,
   };
 }
 function restoreStatusOf(result: HelperOutput): PlatformRestoreStatus {

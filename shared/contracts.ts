@@ -239,8 +239,8 @@ export const RestoreStatusSchema = HelperRestoreStatusSchema.extend({
   pendingFrequencyRecovery: z.boolean(),
   pendingCreation: z.boolean(),
   message: z.string().max(1000),
-  // True only when the per-drive check confirmed the system drive (after Enable).
-  systemDriveConfirmed: z.boolean().default(false),
+  // When an elevated per-drive check last confirmed the system drive; a past fact, not current state.
+  systemDriveConfirmedAt: z.string().nullable().default(null),
 }).strict();
 export type RestoreStatus = z.infer<typeof RestoreStatusSchema>;
 export const RestoreOutcome = z.enum([
@@ -469,6 +469,7 @@ export const HelperResult = z
     lastPoint: RestorePointSchema.optional(),
     frequencyRestored: z.boolean().optional(),
     resultPath: z.string().max(2048).optional(),
+    driveCoverage: z.enum(["confirmed", "off", "unknown"]).optional(),
     processes: z.array(ProcessTargetSchema).optional(),
     boostSnapshot: ProcessTargetSchema.optional(),
   })

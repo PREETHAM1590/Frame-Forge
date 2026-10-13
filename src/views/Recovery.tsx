@@ -40,8 +40,11 @@ export function protectionChip(
   if (status.policyDisabled) return { text: "Blocked by policy", tone: "red" };
   const drive = status.systemDrive;
   if (status.protection === "enabled")
-    return status.systemDriveConfirmed
-      ? { text: `Protection on for ${drive}`, tone: "lime" }
+    return status.systemDriveConfirmedAt
+      ? {
+          text: `Protection on; ${drive} confirmed ${formatTime(status.systemDriveConfirmedAt)}`,
+          tone: "lime",
+        }
       : {
           text: `Protection on for a drive (${drive} unconfirmed)`,
           tone: "amber",

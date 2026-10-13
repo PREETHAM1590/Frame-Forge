@@ -270,8 +270,9 @@ describe("Windows restore points", () => {
       ...(await platform.restoreStatus()),
       systemDriveConfirmed: true,
     });
-    expect((await restore.enable()).systemDriveConfirmed).toBe(true);
-    expect((await restore.status()).systemDriveConfirmed).toBe(true);
+    const confirmed = (await restore.enable()).systemDriveConfirmedAt;
+    expect(confirmed).toEqual(expect.any(String));
+    expect((await restore.status()).systemDriveConfirmedAt).toBe(confirmed);
     platform.restoreStatus = async () => ({
       protection: "disabled",
       policyDisabled: false,
@@ -280,7 +281,30 @@ describe("Windows restore points", () => {
       systemDrive: "C:",
       message: "Off.",
     });
-    expect((await restore.status()).systemDriveConfirmed).toBe(false);
+    expect((await restore.status()).systemDriveConfirmedAt).toBeNull();
+    repo.close();
+  });
+  it("drops the C: confirmation when a creation finds C: off while another drive stays protected", async () => {
+    const { repo, platform, restore } = setup();
+    platform.restoreEnable = async () => ({
+      ...(await platform.restoreStatus()),
+      systemDriveConfirmed: true,
+    });
+    await restore.enable();
+    // The any-drive hint still says "enabled" (D: is protected), but the per-drive check says C: is off.
+    const create = platform.restoreCreate.bind(platform);
+    platform.restoreCreate = async (name, bypass, original) => ({
+      ...(await create(name, bypass, original)),
+      outcome: "protection-disabled",
+      point: null,
+      driveCoverage: "off",
+    });
+    expect((await restore.create("Frameforge", false)).outcome).toBe(
+      "protection-disabled",
+    );
+    const after = await restore.status();
+    expect(after.protection).toBe("enabled");
+    expect(after.systemDriveConfirmedAt).toBeNull();
     repo.close();
   });
   it("reports the mock platform honestly", async () => {
@@ -320,7 +344,7 @@ describe("Windows restore points", () => {
     const service = new RestorePointService(repo, platform);
     const shown = await service.enable();
     expect(shown.protection).toBe("unknown");
-    expect(shown.systemDriveConfirmed).toBe(false);
+    expect(shown.systemDriveConfirmedAt).toBeNull();
     expect(labels(repo)).not.toContainEqual([
       "System Protection turned on",
       "success",

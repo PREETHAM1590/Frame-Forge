@@ -39,6 +39,7 @@ public class RestorePointsTests
         var result = new RestorePoints(store).Create("Frameforge 2026-10-13", false, store.Frequency);
         Assert.Equal("created", result.Outcome);
         Assert.Equal(1, result.CreatedSequence);
+        Assert.Equal("confirmed", result.DriveCoverage);
     }
 
     [Fact]
@@ -78,6 +79,7 @@ public class RestorePointsTests
         var result = new RestorePoints(store).Create("Name", false, store.Frequency);
         Assert.Equal("created", result.Outcome);
         Assert.Contains("C: coverage could not be confirmed", result.Message);
+        Assert.Equal("unknown", result.DriveCoverage);
     }
 
     [Fact]
