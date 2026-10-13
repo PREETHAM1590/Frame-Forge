@@ -196,8 +196,9 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         var all = processes.List();
         var info = all.FirstOrDefault(p => WindowsProcesses.Same(p.Target, game));
         if (info is null || info.Critical || info.SessionId == 0) throw new InvalidOperationException("This process is protected. Frameforge does not boost system processes.");
-        // First, so its journal entry is the oldest and the restart prompt is the last revert step.
-        if (mechanisms.PauseServices) { PlanServices(command); PauseServices(); }
+        // The services are planned and journaled first (the oldest entry, so crash recovery sees them), but the administrator
+        // prompt itself runs after every other mechanism, so the game is already boosted while the prompt is open.
+        if (mechanisms.PauseServices) PlanServices(command);
         if (mechanisms.GameMode) Run("gameMode", GameMode);
         if (mechanisms.PowerPlan) Run("powerPlan", PowerPlan);
         if (mechanisms.TimerResolution) Run("timerResolution", Timer);
@@ -212,6 +213,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         foreach (var rule in rules) Background(rule, mechanisms, info, command.ParentPid, all);
         foreach (var (action, id, on) in new[] { ("lower", "lowerBackground", mechanisms.LowerBackground), ("suspend", "suspendBackground", mechanisms.SuspendBackground), ("close", "closeBackground", mechanisms.CloseBackground) })
             if (on && !rules.Any(r => r.Action == action)) emit(new("skipped", id, "Not configured: no background apps are selected for this action. Pick apps on the Game Mode page."));
+        if (mechanisms.PauseServices) PauseServices();
     }
     public MechanismResult[] Revert()
     {
@@ -223,7 +225,17 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
     private readonly HashSet<Captured> notApplied = new(ReferenceEqualityComparer.Instance);
     private void Release(Captured item) { notApplied.Add(item); emit(new("released", item.Mechanism, Prior: item)); }
     // Reverse order of capture; every item is attempted (RevertOne never throws) and checks that Frameforge's value is still in place.
-    public MechanismResult[] Recover(Captured[] items) => items.Reverse().Select(RevertOne).ToArray();
+    // Results stay one per capture in reverse capture order (Node aligns them by index), but the services restart opens an
+    // administrator prompt, so it is performed after every other revert: nothing else waits on the user.
+    public MechanismResult[] Recover(Captured[] items)
+    {
+        var order = items.Reverse().ToArray();
+        var results = new MechanismResult[order.Length];
+        foreach (var servicesPass in new[] { false, true })
+            for (var i = 0; i < order.Length; i++)
+                if ((order[i]?.Mechanism == "pauseServices") == servicesPass) results[i] = RevertOne(order[i]);
+        return results;
+    }
 
     private void Capture(Captured item) { captured.Add(item); emit(new("captured", item.Mechanism, Prior: item)); }
     private void Run(string id, Func<MechanismResult> work)

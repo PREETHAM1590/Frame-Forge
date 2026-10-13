@@ -100,9 +100,14 @@ public class BoosterMechanismTests
         public bool Decline { get; set; }
         public string[] StopOnly { get; set; } = [];
         public int CapturedBefore { get; private set; } = -1;
+        public int StepsAtFirstCall { get; private set; } = -1;
+        // Lets a test look at the PC at the moment the prompt would open.
+        public Action<string>? Hook { get; set; }
         public ServiceBatch Run(string action, string[] names)
         {
             CapturedBefore = steps?.Count(s => s.Event == "captured") ?? -1;
+            if (StepsAtFirstCall < 0) StepsAtFirstCall = steps?.Count ?? 0;
+            Hook?.Invoke(action);
             Calls.Add((action, names));
             if (Decline) return new(true, []);
             return ServiceCommands.Execute(action, action == "stop" && StopOnly.Length > 0 ? StopOnly : names, services, new Controllers(false));
@@ -644,17 +649,71 @@ public class BoosterMechanismTests
         Assert.Equal("start Spooler,DiagTrack", Calls(rig).Last());
     }
     [Fact]
-    public void ServicesRunFirstSoTheirRestartIsTheLastRevertStep()
+    public void ThePromptWaitsForEveryOtherMechanismAndTheRestartIsTheLastRevertStep()
     {
         var rig = Setup(cores: [(0, 2), (0, 2), (0, 2), (0, 2)]);
         rig.Services.Add("DiagTrack");
-        rig.Settings.Values[(Power.Balanced, BoosterPaths.CpMinCores)] = 4;
+        rig.Settings.Values[(BoostSessionEngine.HighPerformance, BoosterPaths.CpMinCores)] = 4;
         rig.Engine.Start(Command(Off() with { PauseServices = true, PowerPlan = true, CoreParking = true, PowerThrottling = true }));
+        // The journal entry is the oldest, so crash recovery sees the services.
         Assert.Equal("pauseServices", rig.Steps.First(s => s.Event == "captured").Mechanism);
+        // The game was already boosted when the prompt would have opened.
+        var before = rig.Steps.Take(rig.Elevator.StepsAtFirstCall).ToArray();
+        foreach (var id in new[] { "powerPlan", "coreParking", "powerThrottling" })
+            Assert.Contains(before, s => s.Event == "applied" && s.Mechanism == id);
+        Assert.DoesNotContain(before, s => s.Event == "applied" && s.Mechanism == "pauseServices");
+        Assert.Equal(("applied", "pauseServices"), (rig.Steps.Last().Event, rig.Steps.Last().Mechanism));
+        // At revert the services restart (the prompt) comes after every other restore.
+        string? powerAtPrompt = null; uint? parkingAtPrompt = null;
+        rig.Elevator.Hook = action => { if (action == "start") { powerAtPrompt = rig.Power.Current.ToString(); parkingAtPrompt = rig.Settings.Values[(BoostSessionEngine.HighPerformance, BoosterPaths.CpMinCores)]; } };
         var reverts = rig.Engine.Revert();
-        Assert.Equal("pauseServices", reverts.Last().Id);
-        // The prompt (start of the services) comes after every other revert had its chance.
+        Assert.Equal(Power.Balanced.ToString(), powerAtPrompt);
+        Assert.Equal(4u, parkingAtPrompt);
         Assert.Equal("start DiagTrack", Calls(rig).Last());
+        // Results stay one per capture in reverse capture order, so the services result is last (it was captured first).
+        Assert.Equal(["coreParking", "powerThrottling", "powerPlan", "pauseServices"], reverts.Select(r => r.Id));
+    }
+    [Fact]
+    public void ANarrowedServicesJournalIsStillRestartedLastAndResultsStayAligned()
+    {
+        var rig = Setup(cores: [(0, 2), (0, 2), (0, 2), (0, 2)]);
+        rig.Services.Add("DiagTrack"); rig.Services.Add("SysMain");
+        rig.Settings.Values[(Power.Balanced, BoosterPaths.CpMinCores)] = 4;
+        rig.Elevator.StopOnly = ["DiagTrack"];
+        rig.Engine.Start(Command(Off() with { PauseServices = true, CoreParking = true }));
+        // Captured: planned services, core parking, then the narrowed services entry (the planned one was released).
+        var order = rig.Steps.Where(s => s.Event == "captured").Select(s => s.Mechanism).ToArray();
+        Assert.Equal(["pauseServices", "coreParking", "pauseServices"], order);
+        uint? parkingAtPrompt = null;
+        rig.Elevator.Hook = action => { if (action == "start") parkingAtPrompt = rig.Settings.Values[(Power.Balanced, BoosterPaths.CpMinCores)]; };
+        var reverts = rig.Engine.Revert();
+        Assert.Equal(4u, parkingAtPrompt);
+        // Reverse capture order: narrowed services, core parking, the released original ("never applied").
+        Assert.Equal(["pauseServices", "coreParking", "pauseServices"], reverts.Select(r => r.Id));
+        Assert.Contains("Restarted DiagTrack", reverts[0].Detail);
+        Assert.Equal("Never applied; nothing to undo.", reverts[2].Detail);
+    }
+    [Fact]
+    public void RecoveryRestartsServicesAfterTheOtherRevertsEvenWhenTheyWereCapturedLast()
+    {
+        var rig = Setup();
+        rig.Services.Add("DiagTrack", running: false);
+        rig.Throttling.State = (1u, 0u);
+        var services = new Captured("pauseServices", Items: ["DiagTrack"]);
+        var throttle = new Captured("powerThrottling", Game, "0:0", "1:0");
+        string? stateAtPrompt = null;
+        rig.Elevator.Hook = action => { if (action == "start") stateAtPrompt = rig.Throttling.State.ToString(); };
+        // Node's order: oldest first. Services were captured after the throttling entry (a narrowed journal).
+        var results = rig.Engine.Recover([throttle, services]);
+        Assert.Equal(["pauseServices", "powerThrottling"], results.Select(r => r.Id));
+        Assert.Equal("(0, 0)", stateAtPrompt);
+        Assert.All(results, r => Assert.Equal("reverted", r.State));
+        // And without elevation the other restores still happen while the services stay pending.
+        var quiet = Setup(elevate: false);
+        quiet.Services.Add("DiagTrack", running: false); quiet.Throttling.State = (1u, 0u);
+        var pending = quiet.Engine.Recover([throttle, services]);
+        Assert.Equal(["failed", "reverted"], pending.Select(r => r.State));
+        Assert.Equal((0u, 0u), quiet.Throttling.State);
     }
     [Fact]
     public void RevertWaitsOutAStoppingServiceAndReportsItHonestly()
