@@ -15,6 +15,8 @@ import type {
 export const overrideLabel = restoreLabels.override;
 export const pendingLabel = restoreLabels.pending;
 const metaKey = "restore_meta";
+// The last per-drive answer from an elevated Enable; unelevated reads only have the any-drive hint.
+const driveKey = "restore_system_drive";
 const bypassValue: Frequency = { existed: true, minutes: 0 };
 // A bypass needs fresh consent: one attempt, shortly after the explained throttle.
 const bypassWindowMs = 10 * 60 * 1000;
@@ -60,6 +62,18 @@ export class RestorePointService {
       this.busy = false;
     }
   }
+  // Kept only while the any-drive hint still says on; any "off" or "unknown" read drops it.
+  private confirmed(status: PlatformRestoreStatus): boolean {
+    const saved = this.repo.meta(driveKey) as {
+      confirmed?: unknown;
+      drive?: unknown;
+    } | null;
+    return (
+      status.protection === "enabled" &&
+      saved?.confirmed === true &&
+      saved.drive === status.systemDrive
+    );
+  }
   private withAppState(status: PlatformRestoreStatus): RestoreStatus {
     const meta = this.repo.meta(metaKey) as { lastAppCreatedAt?: unknown };
     return {
@@ -69,7 +83,8 @@ export class RestorePointService {
       elevated: status.elevated,
       systemDrive: status.systemDrive,
       message: status.message,
-      systemDriveConfirmed: status.systemDriveConfirmed ?? false,
+      systemDriveConfirmed:
+        status.systemDriveConfirmed ?? this.confirmed(status),
       lastAppCreatedAt:
         typeof meta?.lastAppCreatedAt === "string"
           ? meta.lastAppCreatedAt
@@ -280,6 +295,10 @@ export class RestorePointService {
       }
       // Still running: no outcome to record yet; the next status refresh shows it.
       if (after.pending) return this.withAppState(after);
+      this.repo.setMeta(driveKey, {
+        confirmed: after.systemDriveConfirmed === true,
+        drive: after.systemDrive,
+      });
       const on = after.protection === "enabled";
       this.repo.log(
         on ? "System Protection turned on" : "System Protection not confirmed",

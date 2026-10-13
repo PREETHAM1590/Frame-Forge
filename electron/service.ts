@@ -62,21 +62,22 @@ export class AppService {
       settings: async (settings: Settings) => {
         guard();
         const previous = this.repo.state();
-        if (settings.startup !== previous.settings.startup) {
+        // Compare with Windows' real state when readable; the stored value may be stale.
+        const readable =
+          this.desktop.startupSupported && this.desktop.startupEnabled;
+        const current = readable
+          ? this.desktop.startupEnabled!()
+          : previous.settings.startup;
+        if (settings.startup !== current) {
           this.desktop.setStartup(settings.startup);
-          if (
-            this.desktop.startupSupported &&
-            this.desktop.startupEnabled &&
-            this.desktop.startupEnabled() !== settings.startup
-          )
+          if (readable && this.desktop.startupEnabled!() !== settings.startup)
             throw new Error("Windows did not accept the sign-in change.");
         }
         const state = (() => {
           try {
             return this.repo.updateState({ ...previous, settings });
           } catch (e) {
-            if (settings.startup !== previous.settings.startup)
-              this.desktop.setStartup(previous.settings.startup);
+            if (settings.startup !== current) this.desktop.setStartup(current);
             throw e;
           }
         })();

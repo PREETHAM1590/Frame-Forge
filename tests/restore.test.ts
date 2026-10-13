@@ -264,6 +264,25 @@ describe("Windows restore points", () => {
     ]);
     repo.close();
   });
+  it("keeps a confirmed system drive until Windows reports protection off", async () => {
+    const { repo, platform, restore } = setup();
+    platform.restoreEnable = async () => ({
+      ...(await platform.restoreStatus()),
+      systemDriveConfirmed: true,
+    });
+    expect((await restore.enable()).systemDriveConfirmed).toBe(true);
+    expect((await restore.status()).systemDriveConfirmed).toBe(true);
+    platform.restoreStatus = async () => ({
+      protection: "disabled",
+      policyDisabled: false,
+      frequency: platform.frequency,
+      elevated: false,
+      systemDrive: "C:",
+      message: "Off.",
+    });
+    expect((await restore.status()).systemDriveConfirmed).toBe(false);
+    repo.close();
+  });
   it("reports the mock platform honestly", async () => {
     const repo = new Repository(":memory:");
     const restore = new RestorePointService(repo, new MockPlatform());

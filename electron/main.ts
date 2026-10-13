@@ -13,6 +13,7 @@ import {
 } from "./games.js";
 import { EventSchema } from "../shared/contracts.js";
 import { settingsTarget } from "./settingsPages.js";
+import { userDataOverride } from "./userData.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = !app.isPackaged && process.argv.includes("--dev");
 const rendererFile = path.join(here, "../../dist/index.html");
@@ -32,8 +33,13 @@ let window: BrowserWindow | null = null;
 let repo: Repository;
 let activeService: AppService | undefined;
 // Isolated profile for tests and smoke runs; must be set before the single-instance lock.
-if (process.env.FRAMEFORGE_USER_DATA)
-  app.setPath("userData", path.resolve(process.env.FRAMEFORGE_USER_DATA));
+try {
+  const userData = userDataOverride(process.env, app.isPackaged);
+  if (userData) app.setPath("userData", userData);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error);
+  app.exit(1);
+}
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {

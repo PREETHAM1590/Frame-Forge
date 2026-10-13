@@ -12,6 +12,7 @@ import { Repository } from "../electron/repository";
 import { MockPlatform, WindowsPlatform } from "../electron/platform";
 import { AppService, type DesktopServices } from "../electron/service";
 import { settingsTarget } from "../electron/settingsPages";
+import { userDataOverride } from "../electron/userData";
 const desktop = (extra: Partial<DesktopServices> = {}): DesktopServices => ({
   pickGame: async () => null,
   detectGames: async () => ({
@@ -179,6 +180,57 @@ describe("IPC surface", () => {
     expect(settingsTarget("services", "D:\\Win")).toEqual({
       file: "D:\\Win\\System32\\services.msc",
     });
+  });
+  it("honours the profile override only for tests and local absolute paths", () => {
+    const dir = { FRAMEFORGE_USER_DATA: "C:\\Temp\\ff" };
+    expect(userDataOverride({}, false, "win32")).toBeNull();
+    expect(userDataOverride(dir, false, "win32")).toBe("C:\\Temp\\ff");
+    // Packaged builds ignore it unless test mode is explicit.
+    expect(userDataOverride(dir, true, "win32")).toBeNull();
+    expect(
+      userDataOverride({ ...dir, FRAMEFORGE_TEST_MODE: "1" }, true, "win32"),
+    ).toBe("C:\\Temp\\ff");
+    for (const bad of [
+      "relative\\dir",
+      "\\\\server\\share",
+      "\\\\?\\C:\\x",
+      "\\\\.\\pipe\\x",
+      "\\rooted",
+      "//server/share",
+    ])
+      expect(
+        () => userDataOverride({ FRAMEFORGE_USER_DATA: bad }, false, "win32"),
+        bad,
+      ).toThrow("local absolute path");
+  });
+  it("writes the sign-in change when Windows differs from the stored value", async () => {
+    let windows = false;
+    const writes: boolean[] = [];
+    const repo = new Repository(":memory:");
+    const settings = {
+      theme: "dark" as const,
+      startup: true,
+      notifications: true,
+      diagnostics: false,
+    };
+    repo.updateState({ ...repo.state(), settings });
+    const service = new AppService(
+      repo,
+      new MockPlatform(),
+      desktop({
+        startupSupported: true,
+        startupEnabled: () => windows,
+        setStartup: (enabled) => {
+          writes.push(enabled);
+          windows = enabled;
+        },
+      }),
+    );
+    // Stored true, Windows false (removed in Task Manager): toggling on must write.
+    expect(service.bootstrap().state.settings.startup).toBe(false);
+    await service.dispatch("settings", settings);
+    expect(writes).toEqual([true]);
+    expect(windows).toBe(true);
   });
   it("shows and verifies Windows' real launch-at-sign-in state", async () => {
     let windows = false;

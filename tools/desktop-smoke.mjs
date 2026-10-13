@@ -10,7 +10,12 @@ const app = await electron.launch({
   executablePath:
     executable ?? path.resolve("node_modules/electron/dist/electron.exe"),
   args: executable ? [] : ["."],
-  env: { ...process.env, FRAMEFORGE_USER_DATA: userData },
+  // A packaged build ignores the override unless test mode is explicit.
+  env: {
+    ...process.env,
+    FRAMEFORGE_USER_DATA: userData,
+    FRAMEFORGE_TEST_MODE: "1",
+  },
   timeout: 30000,
 });
 try {
