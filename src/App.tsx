@@ -71,6 +71,7 @@ export default function App() {
   const [mobile, setMobile] = useState(false);
   const [requestsPending, setRequestsPending] = useState(0);
   const [restoreRequests, setRestoreRequests] = useState(0);
+  const [timerRequests, setTimerRequests] = useState(0);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(
     null,
   );
@@ -171,9 +172,13 @@ export default function App() {
     input: Request<M>,
     message?: string,
   ): Promise<Response<M> | undefined> {
-    const setCount = elevatedMethods.has(method)
-      ? setRestoreRequests
-      : setRequestsPending;
+    // The timer prompt can stay open for minutes; it gets its own counter so only that control waits.
+    const setCount =
+      method === "boostTimerGlobal"
+        ? setTimerRequests
+        : elevatedMethods.has(method)
+          ? setRestoreRequests
+          : setRequestsPending;
     setCount((n) => n + 1);
     try {
       const output = await request(method, input);
@@ -359,6 +364,7 @@ export default function App() {
     data,
     pending: requestsPending > 0,
     restorePending: restoreRequests > 0,
+    timerPending: timerRequests > 0,
     run,
     navigate,
     preview: (ids) => void openPreview(ids),

@@ -667,3 +667,99 @@ describe("the administrator explanation before a boost", () => {
     expect(within(services.dialog).queryByText(/standby/)).toBeNull();
   });
 });
+
+describe("review follow-ups", () => {
+  const status = (h: ReturnType<typeof harness>, extra: object) => ({
+    session: null,
+    capabilities: { logicalCpus: 12, mechanisms: [] },
+    watching: false,
+    ownedPowerPlan: false,
+    timer: h.model.timer,
+    ...extra,
+  });
+  it("offers to use an existing Frameforge plan instead of creating a second one", async () => {
+    const h = harness();
+    h.model.caps.powerPlan = off("High performance plan not present");
+    const a = "11111111-1111-4111-8111-111111111111";
+    h.install({
+      boostPowerPlan: (input: { action: string }) =>
+        status(h, {
+          ownedPowerPlan: input.action === "adopt",
+          existingPlans:
+            input.action === "adopt"
+              ? []
+              : [
+                  {
+                    guid: a,
+                    name: "Frameforge High performance",
+                    active: false,
+                  },
+                ],
+        }),
+    });
+    await openGameMode();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Create High performance plan…/,
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText(/already exists/)).toBeVisible();
+    expect(
+      within(dialog).queryByRole("button", { name: "Create plan" }),
+    ).toBeNull();
+    expect(
+      h.calls.some((c) => (c.input as { action?: string }).action === "adopt"),
+    ).toBe(false);
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Use existing Frameforge plan",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        h.calls.find((c) => (c.input as { action?: string }).action === "adopt")
+          ?.input,
+      ).toEqual({ action: "adopt", guid: a, confirmed: true }),
+    );
+  });
+  it("waits for the timer prompt in the timer row only, without locking the rest of the app", async () => {
+    const h = harness();
+    h.model.caps.timerResolution = off("Off.");
+    h.model.timer = {
+      eligible: true,
+      enabled: false,
+      ownedByFrameforge: false,
+      restartRequired: false,
+    };
+    let release: () => void = () => {};
+    h.install({
+      boostTimerGlobal: () =>
+        new Promise((resolve) => {
+          release = () => resolve(status(h, {}));
+        }),
+    });
+    await openGameMode();
+    const row = await timerRow();
+    fireEvent.click(
+      await within(row).findByRole("button", { name: /Allow games/ }),
+    );
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Allow it",
+      }),
+    );
+    await within(await timerRow()).findByText(
+      /Waiting for administrator approval/,
+    );
+    expect(
+      screen.getByRole("button", { name: "Refresh system readings" }),
+    ).toBeEnabled();
+    release();
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/Waiting for administrator approval/),
+      ).toBeNull(),
+    );
+  });
+});

@@ -43,6 +43,8 @@ try
         "network-check" when request.Host is not null => new { ok = true, message = "Network check completed.", network = NetworkCheck.Run(request.Host, request.Count, new WindowsPinger(), new WindowsResolver()) },
         // Frameforge records the destination GUID before asking, so a created plan is never left unrecorded.
         "power-create-plan" when owned is { } destination => CreatePlan(destination),
+        "power-list-plans" => new { ok = true, message = "Power plans read.", powerPlans = BoostSessionEngine.SameNamePlans(new WindowsPowerStore()) },
+        "power-delete-duplicate" when owned is { } duplicate => new { ok = true, message = BoostSessionEngine.DeleteDuplicate(new WindowsPowerStore(), duplicate) },
         "power-delete-plan" when owned is { } ownedPlan => new { ok = true, message = BoostSessionEngine.DeletePlan(new WindowsPowerStore(), ownedPlan) },
         _ => throw new InvalidOperationException("Unsupported helper request.")
     };

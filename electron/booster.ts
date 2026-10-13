@@ -13,6 +13,7 @@ import {
   type Game,
   type MechanismId,
   type MechanismResult,
+  type PowerPlanEntry,
   type ProcessTarget,
   type TimerStatus,
 } from "../shared/contracts.js";
@@ -160,6 +161,15 @@ export class BoostEngine {
     }
   }
   // GUID of the plan Frameforge created with the user's consent; only the helper's reply ever writes it.
+  // Same-named plans Frameforge has not recorded; refreshed by powerPlan("list") and after every plan change.
+  private plans: PowerPlanEntry[] = [];
+  private async refreshPlans() {
+    const owned = this.ownedPlan();
+    this.plans = await this.platform
+      .listPowerPlans()
+      .then((all) => all.filter((p) => p.guid !== owned))
+      .catch(() => []);
+  }
   private ownedPlan() {
     const guid = this.repo.meta(planKey);
     return typeof guid === "string" ? guid : null;
@@ -187,12 +197,14 @@ export class BoostEngine {
     capabilities: BoostCapabilities;
     watching: boolean;
     ownedPowerPlan: boolean;
+    existingPlans: PowerPlanEntry[];
     timer: TimerStatus;
   }> {
     const base = {
       session: this.live?.session ?? this.repo.boostSession(),
       watching: this.watching,
       ownedPowerPlan: this.ownedPlan() !== null,
+      existingPlans: this.plans,
     };
     // Plans and timer support rarely change; avoid a helper spawn on every page refresh.
     if (!this.capabilities || Date.now() - this.capabilities.at > 30000) {
@@ -281,7 +293,8 @@ export class BoostEngine {
           const after = await this.platform
             .timerGlobal({ op: "read" })
             .catch(() => null);
-          if (after?.value === 1) {
+          // Only a failed write of our own can leave the value on; already-set, conflict, declined and the like mean someone else's.
+          if (after?.value === 1 && result.state === "failed") {
             this.repo.setMeta(timerKey, {
               existed: read.existed,
               value: read.value,
@@ -337,9 +350,13 @@ export class BoostEngine {
     this.capabilities = undefined;
     this.platform.setOwnedPlan?.(this.ownedPlan());
     await this.platform.probe?.().catch(() => null);
+    await this.refreshPlans();
   }
   // Explicit consent from the UI; creates or removes only Frameforge's own copy of the High performance plan.
-  powerPlan(action: "create" | "remove") {
+  powerPlan(
+    action: "create" | "remove" | "adopt" | "removeDuplicate" | "list",
+    guid?: string,
+  ) {
     return this.exclusive(async () => {
       if (!this.platform.boostAvailable)
         throw new Error(
@@ -351,6 +368,29 @@ export class BoostEngine {
           "Stop the boost session, or finish or dismiss its recovery, before changing power plans.",
         );
       const owned = this.ownedPlan();
+      if (action === "list") {
+        await this.refreshPlans();
+        return this.status();
+      }
+      if (action === "adopt" || action === "removeDuplicate") {
+        await this.refreshPlans();
+        const target = this.plans.find((p) => p.guid === guid);
+        if (!target)
+          throw new Error(
+            "That power plan is no longer there, or is not named Frameforge High performance.",
+          );
+        if (action === "adopt") {
+          if (owned) throw new Error("Frameforge already has its plan.");
+          this.repo.setMeta(planKey, target.guid);
+          this.log(
+            `Now using the existing "Frameforge High performance" power plan (${target.guid}). Nothing was changed in Windows.`,
+          );
+        } else {
+          this.log(await this.platform.deleteDuplicatePlan(target.guid));
+        }
+        await this.plansChanged();
+        return this.status();
+      }
       if (action === "create") {
         if (owned) throw new Error("Frameforge already created its plan.");
         // Recorded before the helper creates it, so a created plan is never left unrecorded.
@@ -433,32 +473,39 @@ export class BoostEngine {
     const mechanisms = managed
       ? { ...requested, gameBarCapture: false }
       : requested;
-    const session = this.save(
-      {
-        id: randomUUID(),
-        gameId: game.id,
-        mode,
-        target,
-        startedAt: new Date().toISOString(),
-        endedAt: null,
-        status: "preparing",
-        message: `${modeLabels[mode]} mode starting for ${game.name}.${mechanisms.pauseServices && reason === "manual" ? " Windows will ask for administrator approval to pause services." : ""}`,
-        mechanisms: managed
-          ? [
-              {
-                id: "gameBarCapture",
-                state: "skipped",
-                detail: capturePolicy,
-                code: "managed",
-              },
-            ]
-          : [],
-        samples: [],
-        failed: false,
-        abnormal: false,
-      },
-      captured,
-    );
+    let session: BoostSession;
+    try {
+      session = this.save(
+        {
+          id: randomUUID(),
+          gameId: game.id,
+          mode,
+          target,
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          status: "preparing",
+          message: `${modeLabels[mode]} mode starting for ${game.name}.${mechanisms.pauseServices && reason === "manual" ? " Windows will ask for administrator approval to pause services." : ""}`,
+          mechanisms: managed
+            ? [
+                {
+                  id: "gameBarCapture",
+                  state: "skipped",
+                  detail: capturePolicy,
+                  code: "managed",
+                },
+              ]
+            : [],
+          samples: [],
+          failed: false,
+          abnormal: false,
+        },
+        captured,
+      );
+    } catch (error) {
+      // The hold must not outlive a failed save (disk error), or no prompt could ever open again.
+      if (prompts.length) this.platform.elevation.release("boost");
+      throw error;
+    }
     this.log(
       `${game.name}: ${modeLabels[mode]} session started (${reason === "auto" ? "auto-boost" : "manual"}).`,
     );

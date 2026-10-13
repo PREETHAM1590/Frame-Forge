@@ -251,7 +251,13 @@ const suggestions: [RegExp, Background[number]["action"], string][] = [
 const neverSuggest =
   /^(discord|teamspeak|ts3client|mumble|skype|teams|ms-teams|zoom|slack|obs|steam|epicgameslauncher|galaxyclient)/i;
 type Status = Response<"boostStatus">;
-export function GameMode({ data, run, pending, navigate }: ViewProps) {
+export function GameMode({
+  data,
+  run,
+  pending,
+  timerPending,
+  navigate,
+}: ViewProps) {
   const [status, setStatus] = useState<Status | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [outcome, setOutcome] = useState<{
@@ -270,6 +276,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
     : (data.state.games[0]?.id ?? "");
   const [now, setNow] = useState(0);
   const [confirmPlan, setConfirmPlan] = useState(false);
+  const [confirmPick, setConfirmPick] = useState(false);
   const [confirmServices, setConfirmServices] = useState(false);
   const [timerDialog, setTimerDialog] = useState<"enable" | "restore" | null>(
     null,
@@ -815,7 +822,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
               !timer.enabled &&
               !timer.ownedByFrameforge && (
                 <Button
-                  disabled={pending || !!session}
+                  disabled={pending || !!timerPending || !!session}
                   title={
                     session
                       ? "Stop the boost session first."
@@ -828,7 +835,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
               )}
             {!unavailable && timer?.ownedByFrameforge && (
               <Button
-                disabled={pending || !!session}
+                disabled={pending || !!timerPending || !!session}
                 title={
                   session
                     ? "Stop the boost session first."
@@ -838,6 +845,12 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
               >
                 <RotateCcw size={17} /> Turn back off…
               </Button>
+            )}
+            {timerPending && (
+              <small className="muted" role="status">
+                Waiting for administrator approval. The rest of Frameforge stays
+                usable.
+              </small>
             )}
           </li>
           <li>
@@ -855,6 +868,35 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
           </li>
         </ul>
       </section>
+      {confirmPick && game && (
+        <Modal
+          title="Choose the game's own .exe?"
+          description={`Frameforge does not know where ${game.name} is installed, so it cannot check that the file you pick belongs to it.`}
+          onClose={() => setConfirmPick(false)}
+        >
+          <p className="muted">
+            Launch settings are saved for whichever program you choose. Pick the
+            game's own executable.
+          </p>
+          <div className="dialog-actions">
+            <Button onClick={() => setConfirmPick(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={pending}
+              onClick={async () => {
+                setConfirmPick(false);
+                const chosen = await run("chooseExecutable", {
+                  id: game.id,
+                  pathConfirmed: true,
+                });
+                if (chosen) setLaunchTick((n) => n + 1);
+              }}
+            >
+              Choose the .exe…
+            </Button>
+          </div>
+        </Modal>
+      )}
       {confirmPlan && (
         <PowerPlanDialog
           run={run}
@@ -1397,6 +1439,11 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
               <Button
                 disabled={pending}
                 onClick={async () => {
+                  // Without a game folder nothing proves the file belongs to the game, so ask first.
+                  if (!game.path) {
+                    setConfirmPick(true);
+                    return;
+                  }
                   const chosen = await run("chooseExecutable", { id: gameId });
                   if (chosen) setLaunchTick((n) => n + 1);
                 }}

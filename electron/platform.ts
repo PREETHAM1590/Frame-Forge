@@ -21,6 +21,7 @@ import {
   type ProcessTarget,
   type RunningProcess,
   type Snapshot,
+  type PowerPlanEntry,
 } from "../shared/contracts.js";
 // A live `Frameforge.Windows.exe --session` process: emits "event" (one parsed JSON line) and "exit".
 export interface SessionChannel {
@@ -156,6 +157,9 @@ export interface Platform {
   // Creates the Frameforge plan under a GUID Frameforge already recorded.
   createPowerPlan(destination: string): Promise<void>;
   deletePowerPlan(ownedPlan: string): Promise<string>;
+  /** Read-only: every non-built-in plan named exactly "Frameforge High performance". */
+  listPowerPlans(): Promise<PowerPlanEntry[]>;
+  deleteDuplicatePlan(plan: string): Promise<string>;
   spawnSession(): SessionChannel;
   /** Re-checks per-machine prerequisites and updates `capabilities`; returns a warning when the check itself failed. */
   probe?(): Promise<string | null>;
@@ -458,6 +462,14 @@ export class WindowsPlatform implements Platform {
     return (await this.call({ command: "power-delete-plan", ownedPlan }))
       .message;
   }
+  async listPowerPlans() {
+    return (await this.call({ command: "power-list-plans" })).powerPlans ?? [];
+  }
+  async deleteDuplicatePlan(plan: string) {
+    return (
+      await this.call({ command: "power-delete-duplicate", ownedPlan: plan })
+    ).message;
+  }
   // GC-7: the helper elevates itself; the Node side never builds a command line.
   private elevated(action: string, args: string[]) {
     return this.call(
@@ -663,6 +675,13 @@ export class MockPlatform implements Platform {
   }
   async deletePowerPlan(ownedPlan: string): Promise<string> {
     void ownedPlan;
+    throw new Error("Game booster requires the Windows helper.");
+  }
+  async listPowerPlans(): Promise<PowerPlanEntry[]> {
+    return [];
+  }
+  async deleteDuplicatePlan(plan: string): Promise<string> {
+    void plan;
     throw new Error("Game booster requires the Windows helper.");
   }
   spawnSession(): SessionChannel {

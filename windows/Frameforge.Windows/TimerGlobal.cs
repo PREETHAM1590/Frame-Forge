@@ -105,6 +105,12 @@ public static class TimerGlobalSetting
         return new("failed", "The administrator step returned no readable result. Check the setting before trying again.", request.Existed, request.Value);
     }
 
+    // A DWORD of 0x80000000 or more reads back as a negative int; both the signed and the unsigned spelling round-trip to the same bits.
+    public static int ParseDword(string text)
+    {
+        var number = long.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
+        return number is >= int.MinValue and <= int.MaxValue ? (int)number : number is > int.MaxValue and <= uint.MaxValue ? unchecked((int)(uint)number) : throw new OverflowException();
+    }
     // Entry point for `--elevated-timer <op> <resultPath> <existed 0|1> <value|->`. Writes exactly one JSON object to the result file.
     public static int RunElevatedChild(string[] argv, Func<object, string> serialize, IKernelTimerSetting? setting = null)
     {
@@ -115,7 +121,7 @@ public static class TimerGlobalSetting
         try
         {
             var existed = argv[2] == "1";
-            int? value = argv[3] == "-" ? null : int.Parse(argv[3], NumberStyles.None, CultureInfo.InvariantCulture);
+            int? value = argv[3] == "-" ? null : ParseDword(argv[3]);
             if (argv[2] is not ("0" or "1") || (existed ? value is null : value is not null)) throw new InvalidOperationException("Unsupported timer request.");
             result = Apply(argv[0], existed, value, Environment.OSVersion.Version.Build, setting ?? new WindowsKernelTimerSetting());
         }

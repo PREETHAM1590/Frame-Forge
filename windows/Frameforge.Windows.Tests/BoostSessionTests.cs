@@ -64,6 +64,7 @@ public class BoostSessionTests
         public Guid Current { get; set; } = Balanced;
         public Guid Active() => Current;
         public bool Exists(Guid scheme) => Schemes.Contains(scheme);
+        public Guid[] List() => [.. Schemes];
         public void SetActive(Guid scheme) => Current = scheme;
         public void Duplicate(Guid source, Guid destination, string name)
         {
@@ -350,6 +351,30 @@ public class BoostSessionTests
         Assert.Contains("Windows said:", refusal.Message);
         Assert.Contains("error 87", refusal.Message);
         Assert.Contains("Nothing was changed", refusal.Message);
+    }
+    [Fact]
+    public void CreateRefusesWhileAnUnrecordedSameNamePlanExistsAndDuplicatesAreRemovedStrictly()
+    {
+        var older = Guid.NewGuid(); var other = Guid.NewGuid(); var user = Guid.NewGuid();
+        var power = new FakePower(BoostSessionEngine.HighPerformance, older, other, user);
+        power.Names[older] = BoostSessionEngine.OwnedPlanName; power.Names[other] = BoostSessionEngine.OwnedPlanName; power.Names[user] = "frameforge high performance (mine)";
+        Assert.Equal([older.ToString(), other.ToString()], BoostSessionEngine.SameNamePlans(power).Select(p => p.Guid));
+        var destination = Guid.NewGuid();
+        var refusal = Assert.Throws<PlanNotCreatedException>(() => BoostSessionEngine.CreatePlan(power, destination));
+        Assert.Contains("already exists", refusal.Message);
+        Assert.False(power.Exists(destination));
+        // Duplicate removal: exact name only, not active, never built-in.
+        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.DeleteDuplicate(power, user));
+        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.DeleteDuplicate(power, BoostSessionEngine.HighPerformance));
+        power.Current = other;
+        Assert.True(BoostSessionEngine.SameNamePlans(power).Single(p => p.Guid == other.ToString()).Active);
+        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.DeleteDuplicate(power, other));
+        BoostSessionEngine.DeleteDuplicate(power, older);
+        Assert.False(power.Exists(older)); Assert.True(power.Exists(user) && power.Exists(other));
+        power.Current = FakePower.Balanced;
+        BoostSessionEngine.DeleteDuplicate(power, other);
+        BoostSessionEngine.CreatePlan(power, destination);
+        Assert.True(power.Exists(destination));
     }
     [Fact]
     public void DeleteRefusesBuiltInAndUserPlansAndNamingFailureLeavesNoCopy()

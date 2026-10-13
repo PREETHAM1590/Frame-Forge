@@ -109,7 +109,16 @@ function install(capabilities: OperationId[]) {
       ownedPowerPlan: false,
     }),
     // Creating the plan makes the power-plan optimization available, as the real service's probe does.
-    boostPowerPlan: async (input: unknown) => {
+    boostPowerPlan: async (input: { action: string }) => {
+      // Looking for an existing plan is read-only and not a change the user consented to.
+      if (input.action === "list")
+        return {
+          session: null,
+          capabilities: { logicalCpus: 4, mechanisms: [] },
+          watching: false,
+          ownedPowerPlan: false,
+          existingPlans: [],
+        };
       calls.push({ method: "boostPowerPlan", input });
       bootstrap.capabilities = [...bootstrap.capabilities, "power-plan"];
       return {

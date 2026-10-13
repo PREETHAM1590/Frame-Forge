@@ -51,6 +51,7 @@ public static class HelperJson
     public static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
 }
 
+public sealed record NamedPlan(string Guid, string Name, bool Active);
 public interface IPowerStore
 {
     Guid Active(); bool Exists(Guid scheme); void SetActive(Guid scheme);
@@ -58,6 +59,8 @@ public interface IPowerStore
     void Duplicate(Guid source, Guid destination, string name);
     string? Name(Guid scheme);
     void Delete(Guid scheme);
+    // Every scheme GUID on this PC (read-only).
+    Guid[] List() => [];
 }
 public interface ITimerControl
 {
@@ -149,6 +152,8 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
     // which Remove can then clean up.
     public static void CreatePlan(IPowerStore power, Guid destination)
     {
+        // An unrecorded plan with our name (earlier profile, reinstall) must be adopted or removed, never duplicated.
+        if (SameNamePlans(power).Length > 0) throw new PlanNotCreatedException($"A power plan named \"{OwnedPlanName}\" already exists on this PC. Use it or remove the duplicate instead of creating another. Nothing was changed.");
         if (BuiltInPlans.Contains(destination) || power.Exists(destination)) throw new PlanNotCreatedException("Invalid destination for the new power plan. Nothing was changed.");
         Win32Exception? refused = null;
         foreach (var source in new[] { HighPerformance, Ultimate })
@@ -171,6 +176,31 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         // Windows' own answer is shown so the user sees the real reason (Modern Standby PCs commonly refuse).
         var reason = refused is null ? "" : $" Windows said: {refused.Message} (error {refused.NativeErrorCode}).";
         throw new PlanNotCreatedException($"Windows did not allow creating a High performance plan on this PC (common on Modern Standby devices).{reason} Nothing was changed.");
+    }
+    // Non-built-in plans with exactly the Frameforge name. Read-only; the caller decides which one (if any) is recorded as owned.
+    public static NamedPlan[] SameNamePlans(IPowerStore power)
+    {
+        var active = power.Active();
+        var found = new List<NamedPlan>();
+        foreach (var plan in power.List())
+        {
+            if (BuiltInPlans.Contains(plan)) continue;
+            string? name;
+            try { name = power.Name(plan); } catch (Win32Exception) { continue; }
+            if (name == OwnedPlanName) found.Add(new(plan.ToString(), name, plan == active));
+        }
+        return [.. found];
+    }
+    // Removes one duplicate: exact Frameforge name only, never built-in, never the active plan.
+    public static string DeleteDuplicate(IPowerStore power, Guid plan)
+    {
+        if (BuiltInPlans.Contains(plan)) throw new InvalidOperationException("Only a plan named Frameforge High performance can be removed.");
+        if (!power.Exists(plan)) return "That plan was already removed.";
+        if (power.Name(plan) != OwnedPlanName) throw new InvalidOperationException("That power plan is not named Frameforge High performance, so it was not removed.");
+        if (power.Active() == plan) throw new InvalidOperationException("That plan is active. Switch to another power plan first.");
+        power.Delete(plan);
+        if (power.Exists(plan)) throw new InvalidOperationException("Windows did not remove the duplicate plan.");
+        return "Duplicate Frameforge High performance plan removed and verified.";
     }
     private static bool SafeExists(IPowerStore power, Guid scheme) { try { return power.Exists(scheme); } catch (Win32Exception) { return true; } }
     // A copy left unnamed (helper killed between copy and naming) still carries a Windows source name, or none.
@@ -749,6 +779,23 @@ public sealed class WindowsPowerStore : IPowerStore
                 throw new InvalidOperationException("Windows created the plan copy but could neither name nor remove it. Use Remove Frameforge plan to clean it up.");
             throw new Win32Exception((int)named);
         }
+    }
+    public Guid[] List()
+    {
+        var found = new List<Guid>();
+        var buffer = Marshal.AllocHGlobal(16);
+        try
+        {
+            for (uint index = 0; ; index++)
+            {
+                uint size = 16;
+                var error = PowerEnumerate(IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 16, index, buffer, ref size);
+                if (error == 259) return [.. found];
+                if (error != 0) throw new Win32Exception((int)error);
+                found.Add(Marshal.PtrToStructure<Guid>(buffer));
+            }
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
     }
     public string? Name(Guid scheme)
     {

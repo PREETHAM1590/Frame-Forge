@@ -455,12 +455,18 @@ export const TimerStatusSchema = z
   })
   .strict();
 export type TimerStatus = z.infer<typeof TimerStatusSchema>;
+export const PowerPlanEntrySchema = z
+  .object({ guid: Id, name: z.string().max(200), active: z.boolean() })
+  .strict();
+export type PowerPlanEntry = z.infer<typeof PowerPlanEntrySchema>;
 const BoostStatusSchema = z
   .object({
     session: BoostSessionSchema.nullable(),
     capabilities: BoostCapabilitiesSchema,
     watching: z.boolean(),
     ownedPowerPlan: z.boolean(),
+    /** Plans named exactly "Frameforge High performance" that Frameforge has not recorded as its own. */
+    existingPlans: z.array(PowerPlanEntrySchema).default([]),
     timer: TimerStatusSchema.default({
       eligible: false,
       enabled: false,
@@ -768,7 +774,9 @@ export const requests = {
   // Consent-gated: create (or remove) the Frameforge copy of Windows' High performance plan.
   boostPowerPlan: z
     .object({
-      action: z.enum(["create", "remove"]),
+      // list: refresh existingPlans; adopt: record an existing same-named plan as Frameforge's; removeDuplicate: delete one.
+      action: z.enum(["create", "remove", "adopt", "removeDuplicate", "list"]),
+      guid: Id.optional(),
       confirmed: z.literal(true),
     })
     .strict(),
@@ -785,7 +793,10 @@ export const requests = {
     .strict(),
   removeGame: z.object({ id: Id }).strict(),
   // Native file dialog, opened by the main process: picks the .exe of a library game that has none (launch settings need it).
-  chooseExecutable: z.object({ id: Id }).strict(),
+  // pathConfirmed: the game has no known folder, so the user confirmed that the file they pick is the game's own.
+  chooseExecutable: z
+    .object({ id: Id, pathConfirmed: z.literal(true).optional() })
+    .strict(),
   // The renderer sends only a library id; the main process resolves and validates every path.
   gameIcon: z.object({ id: Id }).strict(),
   // Puts a removed game back (by its install path) and forgets the removal.
@@ -986,6 +997,7 @@ export const HelperResult = z
     timerGlobal: TimerGlobalResultSchema.optional(),
     reverts: z.array(MechanismResultSchema).optional(),
     powerPlan: Id.optional(),
+    powerPlans: z.array(PowerPlanEntrySchema).max(200).optional(),
     driveCoverage: z.enum(["confirmed", "off", "unknown"]).optional(),
   })
   .strict();

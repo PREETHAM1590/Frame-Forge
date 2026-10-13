@@ -552,6 +552,19 @@ public class V101Tests
         }
     }
     [Fact]
+    public void ADwordPriorValueOfAtLeast0x80000000IsRestoredNotRejected()
+    {
+        Assert.Equal(int.MinValue, TimerGlobalSetting.ParseDword("2147483648"));
+        Assert.Equal(-1, TimerGlobalSetting.ParseDword("4294967295"));
+        Assert.Throws<OverflowException>(() => TimerGlobalSetting.ParseDword("4294967296"));
+        var setting = new KernelSetting(true, 1);
+        var launcher = new TimerLauncher(setting);
+        launcher.Answer.Set();
+        var done = TimerGlobalSetting.Run(new("restore", true, int.MinValue), 26300, setting, launcher, elevated: false);
+        Assert.Equal("reverted", done.State);
+        Assert.Equal(int.MinValue, setting.Value);
+    }
+    [Fact]
     public void TheTimerChangeGoesThroughOneGuardedPromptAndLateApprovalDoesNothing()
     {
         var setting = new KernelSetting(false, null);

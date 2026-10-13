@@ -21,6 +21,8 @@ export interface ViewProps {
   pending: boolean;
   /** True while an elevated restore request waits on the administrator prompt; only restore actions are gated on it. */
   restorePending: boolean;
+  /** True while the Windows 11 timer setting waits on its administrator prompt; only that control is gated on it. */
+  timerPending?: boolean;
   run: <M extends Method>(
     method: M,
     input: Request<M>,

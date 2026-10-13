@@ -627,3 +627,130 @@ describe("standby purge and the new session states", () => {
     repo.close();
   });
 });
+
+describe("review follow-ups", () => {
+  const plan = (guid: string, active = false) => ({
+    guid,
+    name: "Frameforge High performance",
+    active,
+  });
+  const A = "11111111-1111-4111-8111-111111111111";
+  const B = "22222222-2222-4222-8222-222222222222";
+  it("never duplicates an existing unrecorded plan: adopt it so Remove works, or remove a duplicate", async () => {
+    const { repo, platform } = seed();
+    let present = [plan(A), plan(B)];
+    platform.listPowerPlans = async () => present;
+    const removed: string[] = [];
+    platform.deleteDuplicatePlan = async (g) => {
+      removed.push(g);
+      present = present.filter((p) => p.guid !== g);
+      return "removed";
+    };
+    platform.deletePowerPlan = async () => "gone";
+    let created = 0;
+    platform.createPowerPlan = async () => {
+      created++;
+    };
+    const engine = new BoostEngine(repo, platform, () => {});
+    expect((await engine.powerPlan("list")).existingPlans).toHaveLength(2);
+    // Only a plan the helper listed can be adopted or removed.
+    await expect(
+      engine.powerPlan("adopt", crypto.randomUUID()),
+    ).rejects.toThrow(/no longer there/);
+    const adopted = await engine.powerPlan("adopt", A);
+    expect(adopted.ownedPowerPlan).toBe(true);
+    expect(repo.meta("booster.powerPlan")).toBe(A);
+    expect(adopted.existingPlans.map((p) => p.guid)).toEqual([B]);
+    // The adopted plan is Frameforge's own, so it is never offered for duplicate removal.
+    await expect(engine.powerPlan("removeDuplicate", A)).rejects.toThrow(
+      /no longer there/,
+    );
+    await engine.powerPlan("removeDuplicate", B);
+    expect(removed).toEqual([B]);
+    expect((await engine.powerPlan("list")).existingPlans).toEqual([]);
+    expect((await engine.powerPlan("remove")).ownedPowerPlan).toBe(false);
+    expect(created).toBe(0);
+    repo.close();
+  });
+  it("keeps the record clear when the helper refuses to create beside an existing plan", async () => {
+    const { repo, platform } = seed();
+    platform.createPowerPlan = async () => {
+      throw Object.assign(new Error("A power plan named already exists"), {
+        code: "plan-not-created",
+      });
+    };
+    const engine = new BoostEngine(repo, platform, () => {});
+    await expect(engine.powerPlan("create")).rejects.toThrow(/already exists/);
+    expect(repo.meta("booster.powerPlan")).toBeNull();
+    repo.close();
+  });
+  it("does not take ownership of a timer value someone else set after an ambiguous enable", async () => {
+    const { repo, platform } = seed();
+    const engine = new BoostEngine(repo, platform, () => {});
+    platform.nextTimer = {
+      state: "already-set",
+      detail: "Already on.",
+      existed: true,
+      value: 1,
+    };
+    let reads = 0;
+    const real = platform.timerGlobal.bind(platform);
+    platform.timerGlobal = async (call) => {
+      if (call.op === "read" && ++reads === 1)
+        return { state: "ready", detail: "Off.", existed: false, value: null };
+      if (call.op === "read")
+        return { state: "ready", detail: "On.", existed: true, value: 1 };
+      return real(call);
+    };
+    await expect(engine.timerGlobal("enable")).rejects.toThrow(/Already on/);
+    expect(repo.meta("booster.timerGlobal")).toBeNull();
+    repo.close();
+  });
+  it("releases the administrator gate when saving the session throws", async () => {
+    const { repo, game, platform } = seed();
+    const engine = new BoostEngine(repo, platform, () => {}, {
+      start: 1000,
+      stop: 1000,
+    });
+    spawnWith(platform, waiting);
+    vi.spyOn(repo, "saveBoostSession").mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    await expect(engine.start(game.id, "manual")).rejects.toThrow(/disk full/);
+    expect(platform.elevation.current).toBeNull();
+    repo.close();
+  });
+  it("refuses a game's executable pick without a folder unless confirmed, and re-checks launch records after the dialog", async () => {
+    const { repo, game } = seed();
+    repo.updateState({
+      ...repo.state(),
+      games: [{ ...game, path: "", executablePath: null }],
+    });
+    let hook: () => void = () => {};
+    const service = new AppService(repo, new Platform(), {
+      pickExecutable: async () => {
+        hook();
+        return "C:/Anywhere/game.exe";
+      },
+    } as never);
+    await expect(
+      service.dispatch("chooseExecutable", { id: game.id }),
+    ).rejects.toThrow(/no known folder/);
+    hook = () =>
+      repo.setMeta(`launch:${game.id}:gpuPreference`, {
+        exe: "C:/Anywhere/old.exe",
+        existed: false,
+        value: null,
+        applied: "GpuPreference=2;",
+        at: new Date().toISOString(),
+      });
+    await expect(
+      service.dispatch("chooseExecutable", {
+        id: game.id,
+        pathConfirmed: true,
+      }),
+    ).rejects.toThrow(/Revert this game's launch settings/);
+    expect(repo.state().games[0]?.executablePath).toBeNull();
+    repo.close();
+  });
+});

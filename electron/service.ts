@@ -356,10 +356,10 @@ export class AppService {
         );
         return result;
       },
-      boostPowerPlan: async ({ action }) => {
+      boostPowerPlan: async ({ action, guid }) => {
         guard();
         noRestoreInFlight();
-        return this.booster.powerPlan(action);
+        return this.booster.powerPlan(action, guid);
       },
       boostTimerGlobal: async ({ action }) => {
         guard();
@@ -388,7 +388,7 @@ export class AppService {
               : state.gameMode,
         });
       },
-      chooseExecutable: async ({ id }) => {
+      chooseExecutable: async ({ id, pathConfirmed }) => {
         guard();
         const game = this.repo.state().games.find((g) => g.id === id);
         if (!game) throw new Error("Game not found");
@@ -399,9 +399,18 @@ export class AppService {
           throw new Error(
             "Revert this game's launch settings before changing its executable, so the saved prior values stay with the right program.",
           );
+        if (!game.path && !pathConfirmed)
+          throw new Error(
+            "This game has no known folder, so Frameforge cannot check that the file belongs to it. Confirm that you will choose the game's own .exe.",
+          );
         const picked = await this.desktop.pickExecutable?.(game);
         if (!picked) return null;
         guard();
+        // The dialog can stay open for a long time; a launch value may have been saved meanwhile.
+        if (this.launch.hasRecords(id))
+          throw new Error(
+            "Revert this game's launch settings before changing its executable, so the saved prior values stay with the right program.",
+          );
         if (game.path && !within(game.path, picked))
           throw new Error(
             `Choose the game's executable inside its folder (${game.path}).`,
