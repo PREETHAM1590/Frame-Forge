@@ -12,11 +12,7 @@ import {
   Flame,
   ChevronRight,
   RefreshCw,
-  ShieldCheck,
-  Menu,
-  X,
   AlertTriangle,
-  CheckCircle2,
 } from "lucide-react";
 import { onEvent, request } from "./api";
 import { catalogue, restartText, securityIds } from "../shared/catalogue";
@@ -30,7 +26,18 @@ import type {
   Activity,
 } from "../shared/contracts";
 import type { Page, ViewProps } from "./types";
-import { Button, Modal, Badge, Busy, formatTime } from "./components/ui";
+import {
+  Button,
+  Modal,
+  Badge,
+  Busy,
+  Toast,
+  NavRail,
+  TopBar,
+  PageTransition,
+  formatTime,
+} from "./components/ui";
+import type { RailItem } from "./components/ui";
 import { clearGameIcons } from "./components/GameIcon";
 import { PowerPlanDialog } from "./components/PowerPlanDialog";
 import { Dashboard } from "./views/Dashboard";
@@ -53,17 +60,33 @@ const changeKey = (changes: Preview["changes"]) =>
   JSON.stringify(changes.map((c) => [c.setting, c.before, c.after]));
 const sameChanges = (a: Preview["changes"], b: Preview["changes"]) =>
   changeKey(a) === changeKey(b);
-const navigation = [
-  { name: "Dashboard", icon: LayoutDashboard },
-  { name: "Optimizations", icon: SlidersHorizontal },
-  { name: "Presets", icon: Layers },
-  { name: "Game library", icon: Gamepad2 },
-  { name: "Game Mode", icon: Play },
-  { name: "Restore & backups", icon: Archive },
-  { name: "System", icon: Cpu },
-  { name: "Activity", icon: History },
-  { name: "Settings", icon: SettingsIcon },
-] as const;
+// Seven rail entries; Presets and Activity sit under their parent so every page stays one click away.
+const navigation: readonly RailItem<Page>[] = [
+  { page: "Dashboard", label: "Dashboard", icon: LayoutDashboard, index: "01" },
+  { page: "Game Mode", label: "Game Mode", icon: Play, index: "02" },
+  { page: "Game library", label: "Game library", icon: Gamepad2, index: "03" },
+  {
+    page: "Optimizations",
+    label: "Optimizations",
+    icon: SlidersHorizontal,
+    index: "04",
+  },
+  { page: "Presets", label: "Presets", icon: Layers, child: true },
+  {
+    page: "Restore & backups",
+    label: "Restore & backups",
+    icon: Archive,
+    index: "05",
+  },
+  { page: "Activity", label: "Activity", icon: History, child: true },
+  { page: "System", label: "System", icon: Cpu, index: "06" },
+];
+const settingsItem: RailItem<Page> = {
+  page: "Settings",
+  label: "Settings",
+  icon: SettingsIcon,
+  index: "SYS",
+};
 export default function App() {
   const [data, setData] = useState<Bootstrap | null>(null);
   const [error, setError] = useState("");
@@ -406,57 +429,51 @@ export default function App() {
       ? "Restore & backups"
       : "Activity"
     : "Game Mode";
+  const memoryUsed = data.hardware.memoryBytes
+    ? Math.round(
+        ((data.hardware.memoryBytes - data.hardware.freeMemoryBytes) /
+          data.hardware.memoryBytes) *
+          100,
+      )
+    : 0;
+  const status =
+    recovery > 0
+      ? { text: "Recovery needed", tone: "error" as const }
+      : data.boost.session
+        ? { text: "Boost engaged", tone: "caution" as const }
+        : { text: "System state: nominal", tone: "ok" as const };
+  const items = navigation.map((n) => ({
+    ...n,
+    badge:
+      n.page === "Activity" && recoveryRows.length > 0 ? (
+        <Badge tone="red">{recoveryRows.length}</Badge>
+      ) : n.page === "Game Mode" && boostRecovery ? (
+        <Badge tone="red">1</Badge>
+      ) : undefined,
+  }));
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <aside className={`sidebar ${mobile ? "open" : ""}`}>
-        <div className="brand">
-          <span className="brand-symbol">
-            <Flame size={25} />
-          </span>
-          <span>
-            frameforge<span className="brand-caption">PC CONFIGURATION</span>
-          </span>
-          <button
-            className="icon-button mobile-close"
-            aria-label="Close navigation"
-            onClick={() => setMobile(false)}
-          >
-            <X size={20} />
-          </button>
-        </div>
-        <nav aria-label="Main navigation">
-          {navigation.map((n, i) => (
-            <button
-              key={n.name}
-              className={`${page === n.name ? "selected" : ""} ${i === 5 ? "nav-divider" : ""}`}
-              aria-current={page === n.name ? "page" : undefined}
-              onClick={() => navigate(n.name)}
-            >
-              <n.icon size={19} />
-              <span>{n.name}</span>
-              {n.name === "Activity" && recoveryRows.length > 0 && (
-                <Badge tone="red">{recoveryRows.length}</Badge>
-              )}
-              {n.name === "Game Mode" && boostRecovery && (
-                <Badge tone="red">1</Badge>
-              )}
-              {page === n.name && (
-                <ChevronRight className="nav-arrow" size={16} />
-              )}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <ShieldCheck size={18} />
-          <div>
-            <strong>Local by design</strong>
-            <span>No telemetry. No account.</span>
+      <NavRail
+        items={items}
+        current={page}
+        onNavigate={navigate}
+        open={mobile}
+        onClose={() => setMobile(false)}
+        bottomItem={settingsItem}
+        version={data.version}
+        footer={
+          <div className="rail-chassis">
+            <div>
+              <span className="label">Local by design</span>
+              <strong>No telemetry. No account.</strong>
+            </div>
+            <span className={`led ${data.mode === "demo" ? "warn" : ""}`} />
           </div>
-        </div>
-      </aside>
+        }
+      />
       {mobile && (
         <button
           aria-label="Close navigation"
@@ -465,37 +482,30 @@ export default function App() {
         />
       )}
       <div className="workspace">
-        <div className="topbar">
-          <div className="breadcrumb">
-            <button
-              className="icon-button mobile-menu"
-              aria-label="Open navigation"
-              onClick={() => setMobile(true)}
-            >
-              <Menu size={20} />
-            </button>
-            <span>Workspace</span>
-            <ChevronRight size={14} />
-            <strong>{page}</strong>
-          </div>
-          <div className="topbar-status">
-            {requestsPending > 0 && <Busy label="Working" />}
-            <Badge tone={data.mode === "demo" ? "amber" : "lime"}>
-              {data.mode === "demo" ? "Demo data" : "On this PC"}
-            </Badge>
-            <button
-              className="icon-button"
-              title="Refresh system readings"
-              aria-label="Refresh system readings"
-              disabled={requestsPending > 0}
-              onClick={() =>
-                void run("refresh", {}, "System readings refreshed.")
-              }
-            >
-              <RefreshCw size={17} />
-            </button>
-          </div>
-        </div>
+        <TopBar
+          onMenu={() => setMobile(true)}
+          status={status}
+          readouts={[
+            { label: "Memory", value: `${memoryUsed}%` },
+            { label: "Cores", value: String(data.hardware.cores) },
+          ]}
+        >
+          {requestsPending > 0 && <Busy label="Working" />}
+          <Badge tone={data.mode === "demo" ? "amber" : "lime"}>
+            {data.mode === "demo" ? "Demo data" : "On this PC"}
+          </Badge>
+          <button
+            className="icon-button"
+            title="Refresh system readings"
+            aria-label="Refresh system readings"
+            disabled={requestsPending > 0}
+            onClick={() =>
+              void run("refresh", {}, "System readings refreshed.")
+            }
+          >
+            <RefreshCw size={17} />
+          </button>
+        </TopBar>
         {recovery > 0 && (
           <button
             className="recovery-banner"
@@ -512,7 +522,7 @@ export default function App() {
           </button>
         )}
         <main id="main-content" tabIndex={-1}>
-          {views[page]}
+          <PageTransition pageKey={page}>{views[page]}</PageTransition>
         </main>
         <footer>
           <span>FRAMEFORGE</span>
@@ -525,24 +535,11 @@ export default function App() {
         </footer>
       </div>
       {notice && (
-        <div
-          className={`toast ${notice.error ? "error" : ""}`}
-          role={notice.error ? "alert" : "status"}
-        >
-          {notice.error ? (
-            <AlertTriangle size={19} />
-          ) : (
-            <CheckCircle2 size={19} />
-          )}
-          <span>{notice.text}</span>
-          <button
-            className="icon-button"
-            aria-label="Dismiss notification"
-            onClick={() => setNotice(null)}
-          >
-            <X size={16} />
-          </button>
-        </div>
+        <Toast
+          text={notice.text}
+          error={notice.error}
+          onDismiss={() => setNotice(null)}
+        />
       )}
       {planDialog && (
         <PowerPlanDialog

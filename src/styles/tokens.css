@@ -1,0 +1,94 @@
+/* Aura Monolith design tokens. Components consume these only; no raw colours elsewhere. */
+:root {
+  color-scheme: dark;
+  /* surfaces */
+  --c-deep: #050608;
+  --c-rail: #090a0d;
+  --c-canvas: #0d0e11;
+  --c-cell: #12141a;
+  --c-container: #181a22;
+  --c-hover: #20232d;
+  --c-border: #262930;
+  --c-border-strong: #3d414d;
+  /* text (all >= 4.5:1 on canvas) */
+  --c-text: #f5f5f7;
+  --c-muted: #a0a5b2;
+  --c-dim: #868c9b;
+  /* accents */
+  --c-primary: #ff5500;
+  --c-primary-hot: #ff7733;
+  --c-on-primary: #0d0e11;
+  --c-caution: #ffaa00;
+  --c-error: #ff4d43;
+  --c-info: #ffb59c;
+  --c-focus: #ff5500;
+  --c-scrim: rgb(5 6 8 / 0.78);
+  /* fonts */
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  /* type scale */
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 14px;
+  --fs-md: 16px;
+  --fs-lg: 20px;
+  --fs-xl: 28px;
+  --fs-2xl: 40px;
+  --fs-3xl: 56px;
+  --track-label: 0.08em;
+  /* spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  /* borders and shape: 0 radius, no shadows */
+  --bw: 1px;
+  --bw-strong: 2px;
+  --radius: 0;
+  /* layout */
+  --rail-w: 256px;
+  --topbar-h: 56px;
+  /* motion */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-page: 200ms;
+  --dur-meter: 500ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-inout: cubic-bezier(0.6, 0, 0.3, 1);
+  /* legacy aliases so views not yet redesigned follow the new palette */
+  --bg: var(--c-canvas);
+  --surface: var(--c-cell);
+  --raised: var(--c-container);
+  --line: var(--c-border);
+  --text: var(--c-text);
+  --muted: var(--c-muted);
+  --lime: var(--c-primary);
+  --cyan: var(--c-info);
+  --amber: var(--c-caution);
+  --red: var(--c-error);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --c-deep: #e4e0d8;
+  --c-rail: #ebe8e1;
+  --c-canvas: #f5f3ee;
+  --c-cell: #fff;
+  --c-container: #efece5;
+  --c-hover: #e3dfd6;
+  --c-border: #cfc9bd;
+  --c-border-strong: #a59e90;
+  --c-text: #14151a;
+  --c-muted: #4b505e;
+  --c-dim: #5d6372;
+  --c-primary: #c23a00;
+  --c-primary-hot: #a83200;
+  --c-on-primary: #fff;
+  --c-caution: #8a5600;
+  --c-error: #b3261e;
+  --c-info: #7a2c0e;
+  --c-scrim: rgb(20 21 26 / 0.55);
+}
