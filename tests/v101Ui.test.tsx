@@ -616,3 +616,54 @@ describe("launch settings without a known executable", () => {
     );
   });
 });
+describe("the administrator explanation before a boost", () => {
+  const startCustom = async (
+    custom: Partial<typeof defaultState.booster.custom>,
+  ) => {
+    const h = harness({ mode: "custom" });
+    h.model.booster = {
+      ...h.model.booster,
+      custom: { ...h.model.booster.custom, ...custom },
+    };
+    h.install({
+      boostStart: () => {
+        throw new Error("not started");
+      },
+    });
+    await openGameMode();
+    const start = await screen.findByRole("button", { name: /Start boost/ });
+    await waitFor(() => expect(start).toBeEnabled());
+    fireEvent.click(start);
+    return { h, dialog: await screen.findByRole("dialog") };
+  };
+  it("names only the standby list when only that step is on", async () => {
+    const { h, dialog } = await startCustom({ standbyPurge: true });
+    expect(
+      within(dialog).getByText("Clear the standby memory list for this boost?"),
+    ).toBeVisible();
+    expect(within(dialog).queryByText(/Pause Windows services/)).toBeNull();
+    expect(
+      within(dialog).queryByText(/another one when the boost ends/),
+    ).toBeNull();
+    expect(
+      within(dialog).getByText(/cannot be undone and is harmless/),
+    ).toBeVisible();
+    expect(h.calls.some((c) => c.method === "boostStart")).toBe(false);
+  });
+  it("names both steps when both are on, and only services when only services are on", async () => {
+    const both = await startCustom({ standbyPurge: true, pauseServices: true });
+    expect(
+      within(both.dialog).getByText(
+        "Pause services and clear the standby memory list for this boost?",
+      ),
+    ).toBeVisible();
+    cleanup();
+    const services = await startCustom({ pauseServices: true });
+    expect(
+      within(services.dialog).getByText(
+        "Pause Windows services for this boost?",
+      ),
+    ).toBeVisible();
+    expect(within(services.dialog).queryByText(/standby/)).toBeNull();
+  });
+});

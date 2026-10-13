@@ -29,6 +29,18 @@ try {
   assert.equal(info.mode, "desktop");
   assert.equal(info.hardware.source, "windows");
   assert.ok(info.hardware.cpu.length > 0);
+  // The real helper's capability JSON must parse in the app: a mismatch makes every mechanism look unavailable.
+  const boost = await page.evaluate(async () =>
+    window.frameforge.boostStatus({}),
+  );
+  assert.ok(boost.capabilities.mechanisms.length >= 14);
+  assert.ok(
+    boost.capabilities.mechanisms.every(
+      (m) => !m.detail.includes("Windows helper failed"),
+    ),
+    "the helper's capability reply was rejected",
+  );
+  assert.equal(typeof boost.timer.eligible, "boolean");
   await page.evaluate(() => {
     location.hash = "main-content";
   });

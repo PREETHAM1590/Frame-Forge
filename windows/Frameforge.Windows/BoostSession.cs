@@ -121,7 +121,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         try { return read(); }
         catch (Exception error) { return new(id, false, $"Could not be read: {Describe(error)}"); }
     }
-    public const string TimerRestartNote = "Turned on in Windows, but Windows reads GlobalTimerResolutionRequests only at start-up. Restart Windows to finish; until then a timer request cannot reach the game.";
+    public const string TimerRestartNote = "Turned on in Windows, but Windows reads GlobalTimerResolutionRequests only at start-up. Restart Windows to finish (choose Restart, not Shut down: Fast Startup keeps the old session); until then a timer request cannot reach the game.";
     public static BoostCapabilities Capabilities(IPowerStore power, ITimerControl timer, int cpus, IRegistryStore registry, Guid? ownedPlan, Extras? extras = null, bool timerRestartPending = false)
     {
         var timerReason = timer.Unsupported;

@@ -155,12 +155,14 @@ public static class ServiceCommands
             throw new InvalidOperationException("Unsupported service request.");
         var outcomes = new List<ServiceOutcome>();
         var verb = action == "stop-purge" ? "stop" : action;
-        foreach (var name in verb == "stop" ? Resolve(names, store) : names)
-        {
-            try { outcomes.Add(One(verb, name, names, store, controllers, stable ?? StableWait)); }
-            catch (Win32Exception error) { outcomes.Add(new(name, "failed", $"Windows refused (error {error.NativeErrorCode}).", error.NativeErrorCode == 5 ? ServiceCodes.AccessDenied : ServiceCodes.ServiceError)); }
-            catch (InvalidOperationException error) { outcomes.Add(new(name, "failed", error.Message, ServiceCodes.ServiceError)); }
-        }
+        if (verb == "start") outcomes.AddRange(StartAll(names, store, stable ?? StableWait));
+        else
+            foreach (var name in verb == "stop" ? Resolve(names, store) : names)
+            {
+                try { outcomes.Add(One(name, names, store, controllers)); }
+                catch (Win32Exception error) { outcomes.Add(Refused(name, error)); }
+                catch (InvalidOperationException error) { outcomes.Add(new(name, "failed", error.Message, ServiceCodes.ServiceError)); }
+            }
         // One-shot and not reversible; harmless, because Windows refills the cache as programs need it.
         ServiceOutcome? purge = null;
         if (action is "stop-purge" or "purge")
@@ -172,23 +174,67 @@ public static class ServiceCommands
         }
         return new(false, [.. outcomes], Purge: purge);
     }
-    private static ServiceOutcome One(string action, string name, string[] names, IServiceStore store, IControllerProbe controllers, TimeSpan stable)
+    private static ServiceOutcome Refused(string name, Win32Exception error) =>
+        new(name, "failed", $"Windows refused (error {error.NativeErrorCode}).", error.NativeErrorCode == 5 ? ServiceCodes.AccessDenied : ServiceCodes.ServiceError);
+    // Running is not enough: a service can start and die a moment later (SysMain did once). Every service is started first, then all are
+    // watched in one shared window (not one window each, which would add 5 s per service); the ones that died get one more start and watch.
+    private static List<ServiceOutcome> StartAll(string[] names, IServiceStore store, TimeSpan stable)
+    {
+        var results = new Dictionary<string, ServiceOutcome>(StringComparer.OrdinalIgnoreCase);
+        var watching = new List<string>();
+        foreach (var name in names)
+        {
+            try
+            {
+                var info = store.Query(name);
+                if (!info.Exists) results[name] = new(name, "skipped", "Not installed.", ServiceCodes.NotInstalled);
+                else if (info.Running) results[name] = new(name, "skipped", "Already running.");
+                else if (info.StopPending) results[name] = new(name, "failed", "It is still shutting down. Retry in a moment.", ServiceCodes.StopPending);
+                else if (store.Start(name, StartWait)) watching.Add(name);
+                else results[name] = new(name, "failed", "Windows did not report it running in time.", ServiceCodes.StartTimeout);
+            }
+            catch (Win32Exception error) { results[name] = Refused(name, error); }
+            catch (InvalidOperationException error) { results[name] = new(name, "failed", error.Message, ServiceCodes.ServiceError); }
+        }
+        var (alive, dead) = Watch(watching, store, stable);
+        foreach (var name in alive) results[name] = new(name, "started", "Started and still running.");
+        var again = new List<string>();
+        foreach (var (name, code) in dead)
+        {
+            try
+            {
+                if (store.Start(name, StartWait)) again.Add(name);
+                else results[name] = new(name, "failed", $"It stopped again after starting (Windows error {code}) and did not start a second time.", ServiceCodes.StartTimeout);
+            }
+            catch (Win32Exception error) { results[name] = Refused(name, error); }
+            catch (InvalidOperationException error) { results[name] = new(name, "failed", error.Message, ServiceCodes.ServiceError); }
+        }
+        var (alive2, dead2) = Watch(again, store, stable);
+        foreach (var name in alive2) results[name] = new(name, "started", "Started and still running (second try).");
+        foreach (var (name, code) in dead2) results[name] = new(name, "failed", $"It started but stopped again, twice (Windows error {code}).", ServiceCodes.StoppedAgain);
+        return [.. names.Select(n => results[n])];
+    }
+    private static (List<string> Alive, List<(string Name, uint Code)> Dead) Watch(List<string> names, IServiceStore store, TimeSpan window)
+    {
+        var alive = new List<string>(); var dead = new List<(string, uint)>();
+        var deadline = DateTime.UtcNow + window;
+        foreach (var name in names)
+        {
+            var left = deadline - DateTime.UtcNow;
+            uint code;
+            try
+            {
+                if (store.StaysRunning(name, left < TimeSpan.Zero ? TimeSpan.Zero : left, out code)) alive.Add(name);
+                else dead.Add((name, code));
+            }
+            catch (Win32Exception error) { dead.Add((name, (uint)error.NativeErrorCode)); }
+        }
+        return (alive, dead);
+    }
+    private static ServiceOutcome One(string name, string[] names, IServiceStore store, IControllerProbe controllers)
     {
         var info = store.Query(name);
         if (!info.Exists) return new(name, "skipped", "Not installed.", ServiceCodes.NotInstalled);
-        if (action == "start")
-        {
-            if (info.Running) return new(name, "skipped", "Already running.");
-            if (info.StopPending) return new(name, "failed", "It is still shutting down. Retry in a moment.", ServiceCodes.StopPending);
-            // Running is not enough: a service can start and die a moment later (SysMain did once). Watch it, and try once more.
-            uint exitCode = 0;
-            for (var attempt = 1; attempt <= 2; attempt++)
-            {
-                if (!store.Start(name, StartWait)) return new(name, "failed", "Windows did not report it running in time.", ServiceCodes.StartTimeout);
-                if (store.StaysRunning(name, stable, out exitCode)) return new(name, "started", "Started and still running.");
-            }
-            return new(name, "failed", $"It started but stopped again, twice (Windows error {exitCode}).", ServiceCodes.StoppedAgain);
-        }
         if (!info.Running) return new(name, "skipped", "Not running.", ServiceCodes.NotRunning);
         if (!info.CanStop) return new(name, "skipped", "Windows does not allow stopping it right now.", ServiceCodes.CannotStop);
         if (name == "XboxGipSvc" && controllers.XboxControllerConnected()) return new(name, "skipped", "An Xbox controller is connected.", ServiceCodes.ControllerConnected);

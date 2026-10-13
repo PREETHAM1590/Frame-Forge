@@ -50,6 +50,8 @@ public class V101Tests
         public Dictionary<string, ServiceInfo> Items { get; } = new(StringComparer.OrdinalIgnoreCase);
         public List<string> Calls { get; } = [];
         public Func<string, int, (bool Stays, uint Code)>? Stays { get; set; }
+        // Spend the watch window for real, so a test can see how long a restart pass takes.
+        public bool Sleep { get; set; }
         private readonly Dictionary<string, int> starts = new();
         public void Add(string name, bool running = true) => Items[name] = new(true, running, true, []);
         public ServiceInfo Query(string name) => Items.GetValueOrDefault(name, new(false, false, false, []));
@@ -63,6 +65,7 @@ public class V101Tests
         }
         public bool StaysRunning(string name, TimeSpan window, out uint exitCode)
         {
+            if (Sleep) Thread.Sleep(window);
             var (stays, code) = Stays?.Invoke(name, starts[name]) ?? (true, 0u);
             exitCode = stays ? 0 : code;
             if (!stays) Items[name] = Items[name] with { Running = false };
@@ -129,6 +132,29 @@ public class V101Tests
         Assert.Equal(2, services.Calls.Count(c => c == "start DiagTrack"));
         Assert.Equal("started", batch.Outcomes[2].State);
         Assert.Equal(1, services.Calls.Count(c => c == "start Spooler"));
+    }
+    [Fact]
+    public void RestartingManyServicesWatchesThemInOneSharedWindowNotOneEach()
+    {
+        var services = new Services { Sleep = true };
+        var names = new[] { "DiagTrack", "SysMain", "Spooler", "lfsvc", "PhoneSvc", "TrkWks" };
+        foreach (var name in names) services.Add(name, running: false);
+        var window = TimeSpan.FromMilliseconds(400);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var batch = ServiceCommands.Execute("start", names, services, new Controllers(), stable: window);
+        clock.Stop();
+        Assert.All(batch.Outcomes, o => Assert.Equal("started", o.State));
+        // Six separate windows would take 2.4 s; one shared window takes about 0.4 s.
+        Assert.True(clock.Elapsed < TimeSpan.FromMilliseconds(1200), clock.Elapsed.ToString());
+        // A service that died during the watch is the only one restarted, and its second try gets its own watch.
+        var one = new Services { Sleep = true };
+        foreach (var name in names) one.Add(name, running: false);
+        one.Stays = (name, starts) => name == "SysMain" && starts == 1 ? (false, 87u) : (true, 0u);
+        var again = ServiceCommands.Execute("start", names, one, new Controllers(), stable: window);
+        Assert.All(again.Outcomes, o => Assert.Equal("started", o.State));
+        Assert.Equal(2, one.Calls.Count(c => c == "start SysMain"));
+        Assert.Equal(1, one.Calls.Count(c => c == "start DiagTrack"));
+        Assert.Contains("second try", again.Outcomes.Single(o => o.Name == "SysMain").Detail);
     }
     [Fact]
     public void ADyingServiceKeepsTheJournalSoRetryIsOffered()

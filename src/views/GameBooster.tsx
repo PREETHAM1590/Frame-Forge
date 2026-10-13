@@ -433,10 +433,12 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
       : gameMode === "custom"
         ? config.custom
         : modeMechanisms[gameMode];
-  const willPauseServices =
-    (!!gameMechanisms?.pauseServices &&
-      cap("pauseServices")?.available === true) ||
-    (!!gameMechanisms?.standbyPurge && cap("standbyPurge")?.available === true);
+  const pausesServices =
+    !!gameMechanisms?.pauseServices && cap("pauseServices")?.available === true;
+  const clearsStandby =
+    !!gameMechanisms?.standbyPurge && cap("standbyPurge")?.available === true;
+  // Either step opens the administrator prompt, so either one gets the explanation first.
+  const willPauseServices = pausesServices || clearsStandby;
   const timer = status?.timer;
   const startBoost = async () => {
     const result = await run("boostStart", {
@@ -877,7 +879,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
         >
           <p className="muted">
             {timerDialog === "enable"
-              ? "Frameforge sets GlobalTimerResolutionRequests to 1 under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel. That needs one Windows administrator approval, and Windows reads it only at start-up, so you must restart Windows before the High timer resolution step can work. Frameforge saves the current value first and “Turn back off” restores exactly that. A finer timer raises power use while a game runs. Nothing else is changed."
+              ? "Frameforge sets GlobalTimerResolutionRequests to 1 under HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel. That needs one Windows administrator approval, and Windows reads it only at start-up, so you must restart Windows (choose Restart; a Shut down with Fast Startup keeps the old session) before the High timer resolution step can work. Frameforge saves the current value first and “Turn back off” restores exactly that. A finer timer raises power use while a game runs. Nothing else is changed."
               : "This needs one Windows administrator approval and, like turning it on, takes effect after a restart of Windows. If the value was changed by something else since, that change is kept."}
           </p>
           <div className="dialog-actions">
@@ -1320,17 +1322,36 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
       </section>
       {confirmServices && (
         <Modal
-          title="Pause Windows services for this boost?"
-          description="This mode pauses a short list of background services, which needs administrator approval."
+          title={
+            pausesServices && clearsStandby
+              ? "Pause services and clear the standby memory list for this boost?"
+              : pausesServices
+                ? "Pause Windows services for this boost?"
+                : "Clear the standby memory list for this boost?"
+          }
+          description={
+            pausesServices && clearsStandby
+              ? "This mode pauses a short list of background services and clears Windows' cached memory once. Both need administrator approval, in one prompt."
+              : pausesServices
+                ? "This mode pauses a short list of background services, which needs administrator approval."
+                : "This mode clears Windows' cached (standby) memory once at the start, which needs administrator approval."
+          }
           onClose={() => setConfirmServices(false)}
         >
           <p className="muted">
             The boost starts right away. Windows then shows an administrator
-            prompt, and another one when the boost ends so paused services can
-            be restarted. Declining the prompt, leaving it unanswered for 2
-            minutes, or pressing Stop only skips this step; everything else in
-            the mode still runs. Frameforge stops services and never disables
-            them: {cap("pauseServices")?.detail}
+            prompt
+            {pausesServices
+              ? ", and another one when the boost ends so paused services can be restarted"
+              : ""}
+            . Declining the prompt, leaving it unanswered for 2 minutes, or
+            pressing Stop only skips{" "}
+            {pausesServices && clearsStandby ? "these steps" : "this step"};
+            everything else in the mode still runs.{" "}
+            {pausesServices &&
+              `Frameforge stops services and never disables them: ${cap("pauseServices")?.detail ?? ""} `}
+            {clearsStandby &&
+              "Clearing the standby list cannot be undone and is harmless: Windows refills the cache as programs need memory."}
           </p>
           <div className="dialog-actions">
             <Button onClick={() => setConfirmServices(false)}>Cancel</Button>
