@@ -39,6 +39,7 @@ public class RestorePointsTests
         var result = new RestorePoints(store).Create("Frameforge 2026-10-13", false, store.Frequency);
         Assert.Equal("created", result.Outcome);
         Assert.Equal(1, result.CreatedSequence);
+        Assert.Equal("confirmed", result.DriveCoverage);
     }
 
     [Fact]
@@ -67,6 +68,28 @@ public class RestorePointsTests
         var store = new FakeRestoreStore { ForeignDescription = "Windows Update" };
         var result = new RestorePoints(store).Create("Frameforge", false, store.Frequency);
         Assert.NotEqual("created", result.Outcome);
+    }
+
+    [Fact]
+    public void UnknownSystemDriveCoverageIsStated()
+    {
+        var store = new FakeRestoreStore();
+        store.Protection.Enqueue(null);
+        store.Protection.Enqueue(null);
+        var result = new RestorePoints(store).Create("Name", false, store.Frequency);
+        Assert.Equal("created", result.Outcome);
+        Assert.Contains("C: coverage could not be confirmed", result.Message);
+        Assert.Equal("unknown", result.DriveCoverage);
+    }
+
+    [Fact]
+    public void EnableNeverClaimsSystemDriveFromAnyDriveHint()
+    {
+        var store = new FakeRestoreStore();
+        store.Protection.Enqueue(null);
+        var result = new RestorePoints(store).Enable("C:");
+        Assert.Equal("unknown", result.RestoreStatus!.Protection);
+        Assert.DoesNotContain("turned on for C:", result.Message);
     }
 
     [Fact]

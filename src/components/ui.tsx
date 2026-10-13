@@ -25,6 +25,17 @@ export function Badge({
 }) {
   return <span className={`badge ${tone}`}>{children}</span>;
 }
+/** One colour per journal/session status, shared by every list. */
+export function statusTone(
+  status: string,
+): "neutral" | "lime" | "cyan" | "amber" | "red" {
+  if (status === "success" || status === "active") return "lime";
+  if (status === "failed" || status === "recovery-needed") return "red";
+  if (status === "running" || status === "preparing" || status === "restoring")
+    return "amber";
+  if (status === "rolled-back") return "cyan";
+  return "neutral";
+}
 export function Modal({
   title,
   description,

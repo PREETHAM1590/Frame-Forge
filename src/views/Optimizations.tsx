@@ -12,7 +12,22 @@ import { catalogue, presets, type Optimization } from "../../shared/catalogue";
 import type { OperationId } from "../../shared/contracts";
 import { PageTitle, Badge, Button, Modal, Empty } from "../components/ui";
 import type { ViewProps } from "../types";
-export function Optimizations({ data, preview }: ViewProps) {
+// The helper runs but a per-PC prerequisite (e.g. the High performance plan) is missing.
+const missingHere = (data: ViewProps["data"]) =>
+  data.mode === "desktop" && data.capabilities.length > 0;
+const settingsLabels = {
+  graphics: "Graphics settings",
+  startup: "Startup apps",
+  network: "Network status",
+  services: "Services",
+} as const;
+export function Optimizations({
+  data,
+  preview,
+  run,
+  navigate,
+  pending,
+}: ViewProps) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [availability, setAvailability] = useState("All");
@@ -97,7 +112,9 @@ export function Optimizations({ data, preview }: ViewProps) {
                 {data.capabilities.includes(o.id)
                   ? "Available"
                   : o.supported
-                    ? "Desktop helper required"
+                    ? missingHere(data)
+                      ? "Not available on this PC"
+                      : "Desktop helper required"
                     : "Unsupported"}
               </Badge>
               <button
@@ -148,13 +165,42 @@ export function Optimizations({ data, preview }: ViewProps) {
           {!data.capabilities.includes(detail.id) && (
             <div className="notice">
               <ShieldAlert size={18} />
-              {detail.supported
-                ? "Windows operations require the desktop app and its published helper."
-                : "This operation is unsupported. No changes will be made."}
+              {!detail.supported
+                ? "This operation is unsupported. No changes will be made."
+                : missingHere(data)
+                  ? "A prerequisite is not met on this PC. See Prerequisites above."
+                  : "Windows operations require the desktop app and its published helper."}
             </div>
           )}
           <div className="dialog-actions">
             <Button onClick={() => setDetail(null)}>Close</Button>
+            {detail.settingsPage && (
+              <Button
+                disabled={pending || data.mode === "demo"}
+                title={
+                  data.mode === "demo"
+                    ? "Opening Windows Settings requires the desktop app."
+                    : undefined
+                }
+                onClick={() =>
+                  void run("openSettings", { page: detail.settingsPage! })
+                }
+              >
+                Open {settingsLabels[detail.settingsPage]} in Windows
+                <ArrowUpRight size={17} />
+              </Button>
+            )}
+            {detail.id === "driver-review" && (
+              <Button
+                onClick={() => {
+                  setDetail(null);
+                  navigate("System");
+                }}
+              >
+                View drivers in System
+                <ArrowUpRight size={17} />
+              </Button>
+            )}
             <Button
               variant="primary"
               disabled={!data.capabilities.includes(detail.id)}
@@ -234,7 +280,24 @@ export function Presets({ data, preview, run, pending }: ViewProps) {
                   <Trash2 size={17} />
                 </button>
               )}
-              <Button disabled={pending} onClick={() => preview(p.ids)}>
+              {missingHere(data) &&
+                p.ids.some((id) => !data.capabilities.includes(id)) && (
+                  <span className="muted">
+                    Not available on this PC:{" "}
+                    {p.ids
+                      .filter((id) => !data.capabilities.includes(id))
+                      .map((id) => catalogue.find((o) => o.id === id)?.name)
+                      .join(", ")}
+                  </span>
+                )}
+              <Button
+                disabled={
+                  pending ||
+                  (missingHere(data) &&
+                    p.ids.some((id) => !data.capabilities.includes(id)))
+                }
+                onClick={() => preview(p.ids)}
+              >
                 Review preset
                 <ArrowUpRight size={17} />
               </Button>

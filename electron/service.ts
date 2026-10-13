@@ -26,10 +26,13 @@ export interface DesktopServices {
   /** Opens the native folder dialog and scans the chosen folder; null when cancelled. */
   scanFolder: () => Promise<DetectionResult | null>;
   setStartup: (enabled: boolean) => void;
+  /** Windows' real launch-at-sign-in state; absent where it cannot be read. */
+  startupEnabled?: () => boolean;
   version: string;
   startupSupported?: boolean;
   openSystemRestore?: () => Promise<boolean>;
   notify?: (event: AppEvent) => void;
+  openSettings?: (page: Request<"openSettings">["page"]) => Promise<boolean>;
 }
 export class AppService {
   private engine: OperationEngine;
@@ -69,14 +72,22 @@ export class AppService {
       settings: async (settings: Settings) => {
         guard();
         const previous = this.repo.state();
-        if (settings.startup !== previous.settings.startup)
+        // Compare with Windows' real state when readable; the stored value may be stale.
+        const readable =
+          this.desktop.startupSupported && this.desktop.startupEnabled;
+        const current = readable
+          ? this.desktop.startupEnabled!()
+          : previous.settings.startup;
+        if (settings.startup !== current) {
           this.desktop.setStartup(settings.startup);
+          if (readable && this.desktop.startupEnabled!() !== settings.startup)
+            throw new Error("Windows did not accept the sign-in change.");
+        }
         const state = (() => {
           try {
             return this.repo.updateState({ ...previous, settings });
           } catch (e) {
-            if (settings.startup !== previous.settings.startup)
-              this.desktop.setStartup(previous.settings.startup);
+            if (settings.startup !== current) this.desktop.setStartup(current);
             throw e;
           }
         })();
@@ -167,6 +178,11 @@ export class AppService {
       },
       openSystemRestore: async () =>
         (await this.desktop.openSystemRestore?.()) ?? false,
+      openSettings: async ({ page }) => {
+        if (!(await this.desktop.openSettings?.(page)))
+          throw new Error("Windows could not open that settings page.");
+        return true;
+      },
       boostStatus: async () => this.booster.status(),
       boostConfig: async (booster) => {
         guard();
@@ -199,6 +215,9 @@ export class AppService {
       },
       removeGame: async ({ id }) => {
         guard();
+        // Removing the game would orphan its boost session's restore target.
+        if (this.repo.boostSession()?.gameId === id)
+          throw new Error("Stop Game Mode for this game before removing it.");
         const state = this.repo.state();
         return this.repo.updateState({
           ...state,
@@ -297,18 +316,23 @@ export class AppService {
       this.loggingFailed = true;
     }
   }
+  private probeWarning: string | null = null;
   private currentHardware(): Hardware {
-    return this.loggingFailed
-      ? {
-          ...this.hardware,
-          warnings: [
-            ...this.hardware.warnings,
+    const extra = [
+      ...(this.probeWarning ? [this.probeWarning] : []),
+      ...(this.loggingFailed
+        ? [
             "Activity logging failed. Recent actions may be missing from history.",
-          ],
-        }
+          ]
+        : []),
+    ];
+    return extra.length
+      ? { ...this.hardware, warnings: [...this.hardware.warnings, ...extra] }
       : this.hardware;
   }
   async refresh(): Promise<Hardware> {
+    this.probeWarning =
+      (await this.platform.probe?.().catch(() => null)) ?? null;
     try {
       this.hardware = await this.platform.hardware();
     } catch {
@@ -319,8 +343,14 @@ export class AppService {
     return this.currentHardware();
   }
   bootstrap(): Bootstrap {
+    const state = this.repo.state();
+    // Show Windows' real sign-in state; the next settings save stores it.
+    const startup =
+      this.desktop.startupSupported && this.desktop.startupEnabled
+        ? this.desktop.startupEnabled()
+        : state.settings.startup;
     return {
-      state: this.repo.state(),
+      state: { ...state, settings: { ...state.settings, startup } },
       hardware: this.currentHardware(),
       activity: this.repo.activity(),
       backups: this.repo.backups(),

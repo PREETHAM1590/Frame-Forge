@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { spawn } from "node:child_process";
+import { BoostSessionSchema } from "../shared/contracts";
 import { OperationEngine } from "../electron/operations";
 import { Repository } from "../electron/repository";
 import { MockPlatform, WindowsPlatform } from "../electron/platform";
@@ -27,6 +28,80 @@ describe("confirmed reversible operations", () => {
     await expect(engine.confirm(preview.token)).rejects.toThrow(/preview/i);
     await engine.rollback(result.id);
     expect(repo.activity()[0].status).toBe("rolled-back");
+    repo.close();
+  });
+  it("previews the power plan by name and refuses it during a boost session", async () => {
+    const repo = new Repository(":memory:");
+    const platform = new MockPlatform();
+    platform.capabilities = ["power-plan"];
+    platform.capture = async () => ({
+      values: [],
+      scheme: "381b4222-f694-41f0-9685-ff5bb260df2e",
+    });
+    const engine = new OperationEngine(repo, platform);
+    expect((await engine.preview(["power-plan"])).changes).toEqual([
+      {
+        id: "power-plan",
+        setting: "Active Windows power plan",
+        before: "Balanced",
+        after: "High performance",
+      },
+    ]);
+    platform.capture = async () => ({
+      values: [],
+      scheme: "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+    });
+    const same = await engine.preview(["power-plan"]);
+    expect(same.changes[0].after).toMatch(/already active/);
+    expect(same.warnings[0]).toMatch(/already the active plan/);
+    repo.saveBoostSession(
+      BoostSessionSchema.parse({
+        id: crypto.randomUUID(),
+        gameId: crypto.randomUUID(),
+        mode: "performance",
+        target: {
+          pid: 4242,
+          startTime: "2026-10-13T00:00:00.0000000Z",
+          executablePath: "C:\\Games\\game.exe",
+          name: "game",
+          priority: "High",
+        },
+        startedAt: new Date().toISOString(),
+        status: "active",
+        message: "Boosted.",
+      }),
+      [],
+    );
+    await expect(engine.preview(["power-plan"])).rejects.toThrow(
+      /Stop Game Mode/,
+    );
+    repo.close();
+  });
+  it("previews the plan the helper chose (Ultimate or the Frameforge copy) by its Windows name", async () => {
+    const repo = new Repository(":memory:");
+    const platform = new MockPlatform();
+    platform.capabilities = ["power-plan"];
+    platform.capture = async () => ({
+      values: [],
+      scheme: "11111111-1111-4111-8111-111111111111",
+      schemeName: "My tuned plan",
+      target: "e9a42b02-d5df-448d-aa00-03f14749eb61",
+    });
+    const engine = new OperationEngine(repo, platform);
+    expect((await engine.preview(["power-plan"])).changes[0]).toMatchObject({
+      before: "My tuned plan",
+      after: "Ultimate performance",
+    });
+    platform.capture = async () => ({
+      values: [],
+      scheme: "381b4222-f694-41f0-9685-ff5bb260df2e",
+      target: "22222222-2222-4222-8222-222222222222",
+      targetName: "Frameforge High performance",
+    });
+    expect((await engine.preview(["power-plan"])).changes[0]).toMatchObject({
+      before: "Balanced",
+      after: "Frameforge High performance",
+    });
     repo.close();
   });
   it("rejects stale previews before mutation", async () => {

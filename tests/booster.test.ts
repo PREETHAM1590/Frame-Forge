@@ -47,6 +47,15 @@ class TestPlatform extends MockPlatform {
   recovered: Captured[][] = [];
   running = [{ gameId: "", target }];
   onSpawn: (session: FakeSession) => void = () => {};
+  owned: Array<string | null> = [];
+  probes = 0;
+  setOwnedPlan(guid: string | null) {
+    this.owned.push(guid);
+  }
+  async probe() {
+    this.probes++;
+    return null;
+  }
   override async runningGames() {
     return this.running;
   }
@@ -318,6 +327,17 @@ describe("game booster sessions", () => {
     expect((await engine.powerPlan("remove")).ownedPowerPlan).toBe(false);
     expect(removed).toBe(created);
     repo.close();
+  });
+  it("re-probes optimization support with the owned plan after the plan is created or removed", async () => {
+    const { platform, engine } = setup();
+    platform.createPowerPlan = async () => {};
+    platform.deletePowerPlan = async () => "removed";
+    await engine.powerPlan("create");
+    expect(platform.owned.at(-1)).toMatch(/^[0-9a-f-]{36}$/);
+    expect(platform.probes).toBe(1);
+    await engine.powerPlan("remove");
+    expect(platform.owned.at(-1)).toBeNull();
+    expect(platform.probes).toBe(2);
   });
   it("keeps the plan record only when the helper could not confirm the outcome", async () => {
     const { repo, platform, engine } = setup();

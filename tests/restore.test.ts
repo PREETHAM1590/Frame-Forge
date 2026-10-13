@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Repository } from "../electron/repository";
 import {
   MockPlatform,
+  WindowsPlatform,
   type PlatformCreateResult,
   type PlatformRestoreStatus,
 } from "../electron/platform";
@@ -263,6 +264,49 @@ describe("Windows restore points", () => {
     ]);
     repo.close();
   });
+  it("keeps a confirmed system drive until Windows reports protection off", async () => {
+    const { repo, platform, restore } = setup();
+    platform.restoreEnable = async () => ({
+      ...(await platform.restoreStatus()),
+      systemDriveConfirmed: true,
+    });
+    const confirmed = (await restore.enable()).systemDriveConfirmedAt;
+    expect(confirmed).toEqual(expect.any(String));
+    expect((await restore.status()).systemDriveConfirmedAt).toBe(confirmed);
+    platform.restoreStatus = async () => ({
+      protection: "disabled",
+      policyDisabled: false,
+      frequency: platform.frequency,
+      elevated: false,
+      systemDrive: "C:",
+      message: "Off.",
+    });
+    expect((await restore.status()).systemDriveConfirmedAt).toBeNull();
+    repo.close();
+  });
+  it("drops the C: confirmation when a creation finds C: off while another drive stays protected", async () => {
+    const { repo, platform, restore } = setup();
+    platform.restoreEnable = async () => ({
+      ...(await platform.restoreStatus()),
+      systemDriveConfirmed: true,
+    });
+    await restore.enable();
+    // The any-drive hint still says "enabled" (D: is protected), but the per-drive check says C: is off.
+    const create = platform.restoreCreate.bind(platform);
+    platform.restoreCreate = async (name, bypass, original) => ({
+      ...(await create(name, bypass, original)),
+      outcome: "protection-disabled",
+      point: null,
+      driveCoverage: "off",
+    });
+    expect((await restore.create("Frameforge", false)).outcome).toBe(
+      "protection-disabled",
+    );
+    const after = await restore.status();
+    expect(after.protection).toBe("enabled");
+    expect(after.systemDriveConfirmedAt).toBeNull();
+    repo.close();
+  });
   it("reports the mock platform honestly", async () => {
     const repo = new Repository(":memory:");
     const restore = new RestorePointService(repo, new MockPlatform());
@@ -272,5 +316,44 @@ describe("Windows restore points", () => {
       "Windows helper",
     );
     repo.close();
+  });
+  it("treats an elevated request that is still running as pending, not a crash", async () => {
+    const platform = new WindowsPlatform("unused.exe");
+    // The any-drive hint says "enabled"; a pending request must not inherit it.
+    const status = {
+      protection: "enabled",
+      policyDisabled: false,
+      frequency: { existed: false, minutes: null },
+      elevated: false,
+      systemDrive: "C:",
+    };
+    Object.assign(platform, {
+      call: async (request: { command: string }) =>
+        request.command === "elevated"
+          ? { ok: true, message: "Still working.", code: "elevated-pending" }
+          : { ok: true, message: "Status read.", restoreStatus: status },
+    });
+    const pending = await platform.restoreEnable("C:");
+    expect(pending).toMatchObject({
+      protection: "unknown",
+      message: "Still working.",
+      pending: true,
+    });
+    expect(pending?.systemDriveConfirmed).toBeUndefined();
+    const repo = new Repository(":memory:");
+    const service = new RestorePointService(repo, platform);
+    const shown = await service.enable();
+    expect(shown.protection).toBe("unknown");
+    expect(shown.systemDriveConfirmedAt).toBeNull();
+    expect(labels(repo)).not.toContainEqual([
+      "System Protection turned on",
+      "success",
+    ]);
+    repo.close();
+    expect(
+      (await platform.restoreFrequencySet({ existed: false, minutes: null }))
+        ?.message,
+    ).toBe("Still working.");
+    expect((await platform.restoreList()).available).toBe(false);
   });
 });

@@ -29,7 +29,9 @@ public record RestoreResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RestoreStatus? RestoreStatus = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RestorePoint[]? RestorePoints = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Available = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ResultPath = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ResultPath = null,
+    // Per-drive answer for the system drive at creation time: "confirmed", "off" or "unknown".
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DriveCoverage = null);
 
 public interface IRestoreStore
 {
@@ -82,7 +84,7 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
     {
         if (store.PolicyDisabled()) return new(true, "System Restore is turned off by policy on this PC.", Outcome: "policy-disabled");
         // A point is useless for whole-PC recovery unless the system drive itself is protected.
-        if (store.SystemDriveProtected() == false) return new(true, $"System Protection is off for {store.SystemDrive}.", Outcome: "protection-disabled");
+        if (store.SystemDriveProtected() == false) return new(true, $"System Protection is off for {store.SystemDrive}.", Outcome: "protection-disabled", DriveCoverage: "off");
         if (bypass && store.ReadFrequency() != original) throw new InvalidOperationException("The restore point frequency changed. Retry the normal creation first.");
         var before = Sorted().FirstOrDefault()?.Sequence ?? 0;
         if (!bypass) return CreateCore(description, before, null);
@@ -98,16 +100,19 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
         if (Task.WhenAny(task, Task.Delay(createTimeout ?? CreateLimit)).GetAwaiter().GetResult() != task)
             return new(true, $"Windows did not finish creating the restore point within {CreateLimit.TotalSeconds:0} seconds. It may still be created; check Load restore points.", "restore-timeout", "failed");
         var code = task.GetAwaiter().GetResult();
-        if (code is 1058 or 0x80070422) return new(true, $"System Protection is off for {store.SystemDrive}.", Outcome: "protection-disabled");
+        if (code is 1058 or 0x80070422) return new(true, $"System Protection is off for {store.SystemDrive}.", Outcome: "protection-disabled", DriveCoverage: "off");
         if (code != 0) return new(true, $"Windows could not create the restore point (error {code}).", "restore-failed", "failed");
         var points = Sorted();
         var newest = points.FirstOrDefault();
         // Only a new point carrying our description counts; another app may create one at the same time.
         var created = points.FirstOrDefault(p => p.Sequence > before && p.Description == description);
         if (created is not null)
-            return store.SystemDriveProtected() == false
-                ? new(true, $"Windows created restore point #{created.Sequence}, but System Protection is off for {store.SystemDrive}, so it does not cover the system drive.", Outcome: "protection-disabled", Point: created)
-                : new(true, "Windows restore point created and verified.", Outcome: "created", Point: created, CreatedSequence: created.Sequence);
+            return store.SystemDriveProtected() switch
+            {
+                false => new(true, $"Windows created restore point #{created.Sequence}, but System Protection is off for {store.SystemDrive}, so it does not cover the system drive.", Outcome: "protection-disabled", Point: created, DriveCoverage: "off"),
+                null => new(true, $"Windows restore point created and verified. {store.SystemDrive} coverage could not be confirmed.", Outcome: "created", Point: created, CreatedSequence: created.Sequence, DriveCoverage: "unknown"),
+                true => new(true, "Windows restore point created and verified.", Outcome: "created", Point: created, CreatedSequence: created.Sequence, DriveCoverage: "confirmed")
+            };
         // Windows returns 0 but silently skips creation inside the frequency window, so 0 alone is not success.
         var minutes = window ?? store.ReadFrequency().Minutes ?? 1440;
         if (newest is not null && minutes > 0 && newest.CreatedAt > DateTime.UtcNow.AddMinutes(-minutes))
@@ -121,12 +126,12 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
         if (code != 0) return new(false, $"Windows could not turn on System Protection (error {code}).", "enable-failed");
         var result = StatusResult();
         var status = result.RestoreStatus!;
-        // The status chip reports the system drive here, not the any-drive hint.
-        var confirmed = store.SystemDriveProtected() ?? status.Protection == "enabled";
-        return result with
+        // Only the per-drive check confirms the system drive; the any-drive hint never does.
+        return store.SystemDriveProtected() switch
         {
-            Message = confirmed ? $"System Protection turned on for {drive}." : $"Windows accepted the request but has not confirmed System Protection for {drive} yet.",
-            RestoreStatus = status with { Protection = confirmed ? "enabled" : status.Protection == "enabled" ? "unknown" : status.Protection }
+            true => result with { Message = $"System Protection turned on for {drive}.", RestoreStatus = status with { Protection = "enabled" } },
+            false => result with { Message = $"Windows accepted the request but has not turned on System Protection for {drive}.", RestoreStatus = status with { Protection = "disabled" } },
+            null => result with { Message = $"Windows accepted the request, but System Protection for {drive} could not be confirmed.", RestoreStatus = status with { Protection = "unknown" } }
         };
     }
     public RestoreResult SetFrequency(FrequencyState state)

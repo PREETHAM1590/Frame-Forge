@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { catalogue } from "../shared/catalogue.js";
 import {
   SnapshotSchema,
+  builtInPowerPlans,
   type Activity,
   type OperationId,
   type Preview,
@@ -9,6 +10,15 @@ import {
 } from "../shared/contracts.js";
 import type { Platform } from "./platform.js";
 import { Repository } from "./repository.js";
+const planName = (scheme: string, name?: string) =>
+  name ?? builtInPowerPlans[scheme.toLowerCase()] ?? `Custom plan ${scheme}`;
+// Snapshots saved before the target was recorded always meant High performance.
+const targetPlan = (snapshot: Snapshot) =>
+  (snapshot.target ?? "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c").toLowerCase();
+const alreadyOnTarget = (snapshot: Snapshot) =>
+  snapshot.scheme?.toLowerCase() === targetPlan(snapshot);
+const targetLabel = (snapshot: Snapshot) =>
+  planName(targetPlan(snapshot), snapshot.targetName);
 export class OperationEngine {
   private previews = new Map<
     string,
@@ -31,8 +41,17 @@ export class OperationEngine {
     )
       throw new Error("This operation is unavailable on this installation.");
   }
+  // A boost session restores the plan it found when it ends, which would undo this switch.
+  // Rollback is deliberately not blocked: it is a recovery path.
+  private noBoost(ids: OperationId[]) {
+    if (ids.includes("power-plan") && this.repo.boostSession())
+      throw new Error(
+        "Stop Game Mode before changing the power plan; its session restores the plan when it ends.",
+      );
+  }
   async preview(ids: OperationId[]): Promise<Preview> {
     this.supported(ids);
+    this.noBoost(ids);
     if (this.busy) throw new Error("Another operation is running.");
     const snapshot = await this.platform.capture(ids);
     const token = randomUUID();
@@ -45,13 +64,34 @@ export class OperationEngine {
       token,
       expiresAt: new Date(expires).toISOString(),
       ids,
-      changes: snapshot.values.map((value) => ({
-        id: value.operation,
-        setting: `${value.path} / ${value.name}`,
-        before: value.existed ? String(value.value) : "Not set",
-        after: value.kind === "String" ? "0" : "0 (DWORD)",
-      })),
-      warnings: ids.map((id) => catalogue.find((o) => o.id === id)!.rollback),
+      changes: [
+        ...snapshot.values.map((value) => ({
+          id: value.operation,
+          setting: `${value.path} / ${value.name}`,
+          before: value.existed ? String(value.value) : "Not set",
+          after: value.kind === "String" ? "0" : "0 (DWORD)",
+        })),
+        ...(snapshot.scheme
+          ? [
+              {
+                id: "power-plan" as const,
+                setting: "Active Windows power plan",
+                before: planName(snapshot.scheme, snapshot.schemeName),
+                after: alreadyOnTarget(snapshot)
+                  ? `${targetLabel(snapshot)} (already active; no change)`
+                  : targetLabel(snapshot),
+              },
+            ]
+          : []),
+      ],
+      warnings: [
+        ...(alreadyOnTarget(snapshot)
+          ? [
+              `${targetLabel(snapshot)} is already the active plan. Applying leaves the power plan unchanged.`,
+            ]
+          : []),
+        ...ids.map((id) => catalogue.find((o) => o.id === id)!.rollback),
+      ],
     };
   }
   cancel() {
@@ -67,6 +107,7 @@ export class OperationEngine {
     if (preview.expires < this.now())
       throw new Error("Preview expired. Review the settings again.");
     this.supported(preview.ids);
+    this.noBoost(preview.ids);
     this.busy = true;
     this.controller = new AbortController();
     let record: Activity | undefined;
@@ -87,7 +128,9 @@ export class OperationEngine {
       return this.repo.finish(
         record.id,
         "success",
-        "Windows registry preferences verified. See the operation details for when Windows reloads them.",
+        alreadyOnTarget(current)
+          ? `Windows settings re-read and verified. ${targetLabel(current)} was already active, so the power plan was not changed.`
+          : "Windows settings re-read and verified. See the operation details for when Windows reloads them.",
       );
     } catch (e) {
       if (!record) throw e;
@@ -116,14 +159,22 @@ export class OperationEngine {
     const row = this.repo.operation(id);
     if (!row || !row.activity.rollback)
       throw new Error("No restorable snapshot for this operation.");
-    this.supported(row.activity.ids);
+    // The probe hides power-plan when High performance is missing, but going back to the prior plan needs only the helper.
+    if (
+      row.activity.ids.some(
+        (id) =>
+          !this.platform.capabilities.includes(id) &&
+          !(id === "power-plan" && this.platform.probe),
+      )
+    )
+      throw new Error("This operation is unavailable on this installation.");
     this.busy = true;
     try {
       await this.platform.restore(SnapshotSchema.parse(row.snapshot), false);
       return this.repo.finish(
         id,
         "rolled-back",
-        "The captured Windows registry state was restored and verified.",
+        "The captured Windows state was restored and verified.",
         false,
       );
     } catch {

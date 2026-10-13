@@ -25,7 +25,16 @@ test("desktop browser workflows and persistence", async ({ page }) => {
     page.getByRole("button", { name: "Preview changes" }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByLabel("Search optimizations").fill("GPU");
+  await page
+    .getByRole("button", { name: "Details for GPU scheduling review" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Open Graphics settings in Windows" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Close dialog" }).click();
   await page.getByRole("button", { name: "Presets", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Beginner" })).toBeVisible();
   await page.getByRole("button", { name: "Custom preset" }).click();
   await page.getByLabel("Preset name").fill("My input preset");
   await page

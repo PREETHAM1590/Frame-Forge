@@ -15,9 +15,9 @@ try
     var line = new StreamReader(Console.OpenStandardInput(), new System.Text.UTF8Encoding(false)).ReadLine();
     if (line is null || line.Length > 1048576) throw new InvalidOperationException("Invalid request size.");
     var request = JsonSerializer.Deserialize<Request>(line, options) ?? throw new InvalidOperationException("Missing request.");
-    var engine = new RegistryOperations(new WindowsRegistryStore());
-    var ids = request.Ids ?? [];
     Guid? owned = request.OwnedPlan is null ? null : Guid.TryParse(request.OwnedPlan, out var plan) ? plan : throw new InvalidOperationException("Invalid power plan.");
+    var ids = request.Ids ?? [];
+    var engine = new Optimizations(new RegistryOperations(new WindowsRegistryStore()), new WindowsPowerStore(), owned);
     BoostSessionEngine Booster() => new(new WindowsProcessControl(), new WindowsPowerStore(), new WindowsTimerControl(), new WindowsRegistryStore(), _ => { }, Environment.ProcessId, owned);
     response = request.Command switch
     {
@@ -52,6 +52,6 @@ catch (Exception error)
 }
 Console.WriteLine(JsonSerializer.Serialize(response, options));
 static object CreatePlan(Guid destination) { BoostSessionEngine.CreatePlan(new WindowsPowerStore(), destination); return new { ok = true, message = "Frameforge High performance plan created and verified. The active plan was not changed.", powerPlan = destination.ToString() }; }
-static object Apply(RegistryOperations engine, string[] ids, Snapshot snapshot) { engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written." }; }
-static object Restore(RegistryOperations engine, Snapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
-record Request(string Command, string[]? Ids, Snapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null);
+static object Apply(Optimizations engine, string[] ids, OptimizationSnapshot snapshot) { engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written." }; }
+static object Restore(Optimizations engine, OptimizationSnapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
+record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null);

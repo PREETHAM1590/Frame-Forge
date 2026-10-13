@@ -81,7 +81,9 @@ export class BoostEngine {
     private platform: Platform,
     private notify: (session: BoostSession) => void = () => {},
     private timeouts = { start: 60000, stop: 15000 },
-  ) {}
+  ) {
+    this.platform.setOwnedPlan?.(this.ownedPlan());
+  }
   get isBusy() {
     return this.busy;
   }
@@ -154,6 +156,12 @@ export class BoostEngine {
     }
     return { ...base, capabilities: this.capabilities.value };
   }
+  // The owned plan changes what Optimizations can target too (Recommended and Gaming presets), so tell the platform and re-probe.
+  private async plansChanged() {
+    this.capabilities = undefined;
+    this.platform.setOwnedPlan?.(this.ownedPlan());
+    await this.platform.probe?.().catch(() => null);
+  }
   // Explicit consent from the UI; creates or removes only Frameforge's own copy of the High performance plan.
   powerPlan(action: "create" | "remove") {
     return this.exclusive(async () => {
@@ -178,7 +186,7 @@ export class BoostEngine {
           // "plan-not-created": the helper verified no copy exists. Any other outcome keeps the record so Remove can clean up.
           if ((error as { code?: string }).code === "plan-not-created")
             this.repo.setMeta(planKey, null);
-          this.capabilities = undefined;
+          await this.plansChanged();
           throw error;
         }
         this.log(
@@ -190,7 +198,7 @@ export class BoostEngine {
         this.repo.setMeta(planKey, null);
         this.log(message);
       }
-      this.capabilities = undefined;
+      await this.plansChanged();
       return this.status();
     });
   }

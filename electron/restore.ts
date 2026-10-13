@@ -15,6 +15,8 @@ import type {
 export const overrideLabel = restoreLabels.override;
 export const pendingLabel = restoreLabels.pending;
 const metaKey = "restore_meta";
+// The last per-drive answer from an elevated Enable; unelevated reads only have the any-drive hint.
+const driveKey = "restore_system_drive";
 const bypassValue: Frequency = { existed: true, minutes: 0 };
 // A bypass needs fresh consent: one attempt, shortly after the explained throttle.
 const bypassWindowMs = 10 * 60 * 1000;
@@ -60,10 +62,36 @@ export class RestorePointService {
       this.busy = false;
     }
   }
+  // A dated past confirmation: shown as "confirmed <time>", dropped by any read that says off or unknown.
+  private confirmedAt(status: PlatformRestoreStatus): string | null {
+    const saved = this.repo.meta(driveKey) as {
+      at?: unknown;
+      drive?: unknown;
+    } | null;
+    if (status.protection !== "enabled") {
+      if (saved?.at) this.forgetDrive();
+      return null;
+    }
+    return typeof saved?.at === "string" && saved.drive === status.systemDrive
+      ? saved.at
+      : null;
+  }
+  private confirmDrive(drive: string) {
+    this.repo.setMeta(driveKey, { at: new Date().toISOString(), drive });
+  }
+  private forgetDrive() {
+    this.repo.setMeta(driveKey, {});
+  }
   private withAppState(status: PlatformRestoreStatus): RestoreStatus {
     const meta = this.repo.meta(metaKey) as { lastAppCreatedAt?: unknown };
     return {
-      ...status,
+      protection: status.protection,
+      policyDisabled: status.policyDisabled,
+      frequency: status.frequency,
+      elevated: status.elevated,
+      systemDrive: status.systemDrive,
+      message: status.message,
+      systemDriveConfirmedAt: this.confirmedAt(status),
       lastAppCreatedAt:
         typeof meta?.lastAppCreatedAt === "string"
           ? meta.lastAppCreatedAt
@@ -223,6 +251,9 @@ export class RestorePointService {
     status: PlatformRestoreStatus,
   ): CreateRestorePointResult {
     let message = result.message;
+    if (result.driveCoverage === "confirmed")
+      this.confirmDrive(status.systemDrive);
+    else if (result.driveCoverage) this.forgetDrive();
     const [baseLabel, activity] = outcomeLog[result.outcome];
     let label = baseLabel;
     if (result.outcome === "created") {
@@ -272,6 +303,10 @@ export class RestorePointService {
         this.repo.log("System Protection unchanged", declined, "cancelled");
         return this.withAppState({ ...before, message: declined });
       }
+      // Still running: no outcome to record yet; the next status refresh shows it.
+      if (after.pending) return this.withAppState(after);
+      if (after.systemDriveConfirmed) this.confirmDrive(after.systemDrive);
+      else this.forgetDrive();
       const on = after.protection === "enabled";
       this.repo.log(
         on ? "System Protection turned on" : "System Protection not confirmed",

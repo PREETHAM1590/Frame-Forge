@@ -196,8 +196,13 @@ export function Games({ data, run, pending }: ViewProps) {
                 <div className="card-bottom">
                   <button
                     className="icon-button"
-                    title="Remove game"
+                    title={
+                      data.boost.session?.gameId === g.id
+                        ? "Stop Game Mode for this game before removing it."
+                        : "Remove game"
+                    }
                     aria-label={`Remove ${g.name}`}
+                    disabled={data.boost.session?.gameId === g.id}
                     onClick={() => setRemove(g)}
                   >
                     <Trash2 size={17} />
@@ -239,6 +244,7 @@ export function Games({ data, run, pending }: ViewProps) {
               ? `Executable: ${selected.executablePath}`
               : "Matched by folder"}
           </p>
+          <p className="muted">Source: {sourceLabels[selected.source]}</p>
           <form
             onSubmit={async (e) => {
               e.preventDefault();

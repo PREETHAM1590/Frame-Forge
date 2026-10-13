@@ -17,6 +17,7 @@ import {
   Empty,
   Modal,
   formatTime,
+  statusTone,
 } from "../components/ui";
 import {
   RestoreDescription,
@@ -29,6 +30,29 @@ import {
 import { request } from "../api";
 import type { ViewProps } from "../types";
 const dayMs = 24 * 60 * 60 * 1000;
+/** One honest wording for System Protection, shared by Dashboard and Restore & backups. */
+export function protectionChip(
+  status: RestoreStatus | null,
+  mode: ViewProps["data"]["mode"],
+): { text: string; tone: "lime" | "red" | "neutral" | "amber" } {
+  if (mode === "demo") return { text: "Desktop app only", tone: "neutral" };
+  if (!status) return { text: "Checking protection", tone: "neutral" };
+  if (status.policyDisabled) return { text: "Blocked by policy", tone: "red" };
+  const drive = status.systemDrive;
+  if (status.protection === "enabled")
+    return status.systemDriveConfirmedAt
+      ? {
+          text: `Protection on; ${drive} confirmed ${formatTime(status.systemDriveConfirmedAt)}`,
+          tone: "lime",
+        }
+      : {
+          text: `Protection on for a drive (${drive} unconfirmed)`,
+          tone: "amber",
+        };
+  if (status.protection === "disabled")
+    return { text: "Protection off", tone: "red" };
+  return { text: "Protection state unknown", tone: "neutral" };
+}
 function WindowsRestore({ data, run, pending }: ViewProps) {
   const [status, setStatus] = useState<RestoreStatus | null>(null);
   const [statusError, setStatusError] = useState("");
@@ -98,20 +122,9 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
       <div className="restore-status">
         {status ? (
           <>
-            <Badge
-              tone={
-                status.protection === "enabled"
-                  ? "lime"
-                  : status.protection === "disabled"
-                    ? "red"
-                    : "neutral"
-              }
-            >
-              Protection {status.protection}
+            <Badge tone={protectionChip(status, data.mode).tone}>
+              {protectionChip(status, data.mode).text}
             </Badge>
-            {status.policyDisabled && (
-              <Badge tone="red">Blocked by policy</Badge>
-            )}
             <span className="muted">{status.message}</span>
           </>
         ) : (
@@ -572,17 +585,7 @@ export function ActivityLog({ data, run, pending, navigate }: ViewProps) {
               <div>
                 <div className="inline-title">
                   <h3>{a.label}</h3>
-                  <Badge
-                    tone={
-                      a.status === "success"
-                        ? "lime"
-                        : a.status === "recovery-needed"
-                          ? "red"
-                          : "neutral"
-                    }
-                  >
-                    {a.status}
-                  </Badge>
+                  <Badge tone={statusTone(a.status)}>{a.status}</Badge>
                 </div>
                 <p className="muted">{a.message}</p>
                 <span className="muted">{formatTime(a.at)}</span>
@@ -611,7 +614,7 @@ export function ActivityLog({ data, run, pending, navigate }: ViewProps) {
       {selected && (
         <Modal
           title="Restore Windows snapshot?"
-          description="Restore the exact current-user registry values captured before this operation. A conflicting external change will stop rollback."
+          description="Restore the exact Windows values (registry preferences or power plan) captured before this operation. A conflicting external change will stop rollback."
           onClose={() => setSelected(null)}
         >
           <p>{selected.label}</p>

@@ -12,6 +12,8 @@ import {
   scanGameFolder,
 } from "./games.js";
 import { EventSchema } from "../shared/contracts.js";
+import { settingsTarget } from "./settingsPages.js";
+import { userDataOverride } from "./userData.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = !app.isPackaged && process.argv.includes("--dev");
 const rendererFile = path.join(here, "../../dist/index.html");
@@ -30,6 +32,14 @@ function trustedUrl(value: string) {
 let window: BrowserWindow | null = null;
 let repo: Repository;
 let activeService: AppService | undefined;
+// Isolated profile for tests and smoke runs; must be set before the single-instance lock.
+try {
+  const userData = userDataOverride(process.env, app.isPackaged);
+  if (userData) app.setPath("userData", userData);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error);
+  app.exit(1);
+}
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -64,6 +74,9 @@ if (!app.requestSingleInstanceLock()) {
           }
           app.setLoginItemSettings({ openAtLogin: enabled });
         },
+        // Read back so the toggle follows changes made in Task Manager > Startup.
+        startupEnabled: () =>
+          app.isPackaged && app.getLoginItemSettings().openAtLogin,
         // Fixed path, no renderer input; ShellExecute handles rstrui's own elevation.
         openSystemRestore: async () =>
           process.platform === "win32" &&
@@ -74,6 +87,14 @@ if (!app.requestSingleInstanceLock()) {
               "rstrui.exe",
             ),
           )) === "",
+        openSettings: async (page) => {
+          if (process.platform !== "win32") return false;
+          const target = settingsTarget(page, process.env.SystemRoot);
+          if ("file" in target)
+            return (await shell.openPath(target.file)) === "";
+          await shell.openExternal(target.uri);
+          return true;
+        },
         detectGames: () =>
           detectInstalledGames({}, (progress) => {
             // A window closed mid-scan must not fail the scan.

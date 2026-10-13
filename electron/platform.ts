@@ -85,11 +85,23 @@ export interface Platform {
   createPowerPlan(destination: string): Promise<void>;
   deletePowerPlan(ownedPlan: string): Promise<string>;
   spawnSession(): SessionChannel;
+  /** Re-checks per-machine prerequisites and updates `capabilities`; returns a warning when the check itself failed. */
+  probe?(): Promise<string | null>;
+  /** The Frameforge-created plan GUID (from SQLite); optimizations treat it like a Windows performance plan. */
+  setOwnedPlan?(guid: string | null): void;
 }
-export type PlatformRestoreStatus = HelperRestoreStatus & { message: string };
+export type PlatformRestoreStatus = HelperRestoreStatus & {
+  message: string;
+  /** The per-drive check confirmed protection on the system drive. */
+  systemDriveConfirmed?: boolean;
+  /** The elevated request is still running; nothing is confirmed yet. */
+  pending?: boolean;
+};
 export type PlatformCreateResult = CreateRestorePointResult & {
   frequencyRestored: boolean | null;
   resultPath: string | null;
+  /** The helper's per-drive answer for the system drive, when it checked. */
+  driveCoverage?: "confirmed" | "off" | "unknown";
 };
 type HelperOutput = ReturnType<typeof HelperResult.parse>;
 // Covers the UAC prompt plus the helper's 150 s wait (which itself covers the child's 120 s create).
@@ -113,6 +125,7 @@ function createResultOf(result: HelperOutput): PlatformCreateResult {
     message: pending ? stillRunning : result.message,
     frequencyRestored: result.frequencyRestored ?? null,
     resultPath: result.resultPath ?? null,
+    driveCoverage: result.driveCoverage,
   };
 }
 function restoreStatusOf(result: HelperOutput): PlatformRestoreStatus {
@@ -126,9 +139,18 @@ const frequencyArgs = (f: Frequency) => [
   String(f.minutes ?? -1),
 ];
 export class WindowsPlatform implements Platform {
-  capabilities: OperationId[] = ["mouse-precision", "capture-off"];
+  static readonly supported: OperationId[] = [
+    "mouse-precision",
+    "capture-off",
+    "power-plan",
+  ];
+  capabilities: OperationId[] = [...WindowsPlatform.supported];
   boostAvailable = true;
+  private ownedPlan: string | null = null;
   constructor(private executable: string) {}
+  setOwnedPlan(guid: string | null) {
+    this.ownedPlan = guid;
+  }
   private call(
     request: unknown,
     signal?: AbortSignal,
@@ -211,24 +233,57 @@ export class WindowsPlatform implements Platform {
       child.stdin.end(JSON.stringify(request) + "\n");
     });
   }
+  // power-plan needs a performance plan (High performance, Ultimate or the owned copy); a read-only capture tells.
+  async probe(): Promise<string | null> {
+    let absent = false;
+    let warning: string | null = null;
+    try {
+      await this.capture(["power-plan"]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      // Only the helper's own refusal means the plan is missing; anything else is a failed check.
+      absent = /not present/i.test(message);
+      if (!absent)
+        warning = `The power plan check failed (${message}). Retry Refresh.`;
+    }
+    this.capabilities = WindowsPlatform.supported.filter(
+      (id) => !absent || id !== "power-plan",
+    );
+    return warning;
+  }
   async hardware() {
     const result = await this.call({ command: "hardware" });
     if (!result.hardware) throw new Error("Missing hardware response");
     return result.hardware;
   }
   async capture(ids: OperationId[]) {
-    const result = await this.call({ command: "capture", ids });
+    const result = await this.call({
+      command: "capture",
+      ids,
+      ownedPlan: this.ownedPlan,
+    });
     if (!result.snapshot) throw new Error("Missing Windows snapshot");
     return result.snapshot;
   }
   async apply(ids: OperationId[], signal: AbortSignal, snapshot: Snapshot) {
-    await this.call({ command: "apply", ids, snapshot }, signal);
+    await this.call(
+      { command: "apply", ids, snapshot, ownedPlan: this.ownedPlan },
+      signal,
+    );
   }
   async verify(ids: OperationId[]) {
-    return (await this.call({ command: "verify", ids })).verified === true;
+    return (
+      (await this.call({ command: "verify", ids, ownedPlan: this.ownedPlan }))
+        .verified === true
+    );
   }
   async restore(snapshot: Snapshot, force: boolean) {
-    await this.call({ command: "restore", snapshot, force });
+    await this.call({
+      command: "restore",
+      snapshot,
+      force,
+      ownedPlan: this.ownedPlan,
+    });
   }
   async runningGames(games: Game[]) {
     const result = await this.call(
@@ -334,16 +389,32 @@ export class WindowsPlatform implements Platform {
     );
     return result.outcome === "pending" ? null : result;
   }
+  // An elevated request still running carries no status; re-read it unelevated instead.
+  private async elevatedStatus(result: HelperOutput) {
+    if (cancelled(result)) return null;
+    // The unelevated re-read only has the any-drive hint, so it proves nothing about this request.
+    if (result.code === "elevated-pending")
+      return {
+        ...(await this.restoreStatus()),
+        protection: "unknown" as const,
+        message: result.message,
+        pending: true,
+      };
+    return restoreStatusOf(result);
+  }
   async restoreEnable(drive: string) {
-    const result = await this.elevated("restore-enable", [drive]);
-    return cancelled(result) ? null : restoreStatusOf(result);
+    const status = await this.elevatedStatus(
+      await this.elevated("restore-enable", [drive]),
+    );
+    // The helper reports "enabled" after Enable only from the per-drive check.
+    return status && !status.pending
+      ? { ...status, systemDriveConfirmed: status.protection === "enabled" }
+      : status;
   }
   async restoreFrequencySet(original: Frequency) {
-    const result = await this.elevated(
-      "restore-frequency-set",
-      frequencyArgs(original),
+    return this.elevatedStatus(
+      await this.elevated("restore-frequency-set", frequencyArgs(original)),
     );
-    return cancelled(result) ? null : restoreStatusOf(result);
   }
   spawnSession(): SessionChannel {
     // detached: libuv otherwise puts the child in a kill-on-close job, and the helper

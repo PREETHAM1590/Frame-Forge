@@ -429,6 +429,8 @@ export const RestoreStatusSchema = HelperRestoreStatusSchema.extend({
   pendingFrequencyRecovery: z.boolean(),
   pendingCreation: z.boolean(),
   message: z.string().max(1000),
+  // When an elevated per-drive check last confirmed the system drive; a past fact, not current state.
+  systemDriveConfirmedAt: z.string().nullable().default(null),
 }).strict();
 export type RestoreStatus = z.infer<typeof RestoreStatusSchema>;
 export const RestoreOutcome = z.enum([
@@ -542,6 +544,10 @@ export const requests = {
       confirmed: z.literal(true),
     })
     .strict(),
+  // Server-side allowlist; the renderer never sends a URI or path.
+  openSettings: z
+    .object({ page: z.enum(["graphics", "startup", "network", "services"]) })
+    .strict(),
   removeGame: z.object({ id: Id }).strict(),
   profile: z
     .object({
@@ -576,6 +582,7 @@ export const responses = {
   openSystemRestore: z.boolean(),
   boostStatus: BoostStatusSchema,
   boostConfig: StateSchema,
+  openSettings: z.boolean(),
   boostStart: BoostSessionSchema,
   boostStop: BoostSessionSchema.nullable(),
   boostRecover: BoostSessionSchema.nullable(),
@@ -635,8 +642,27 @@ export const RegistryValueSchema = z
     value: z.union([z.string().max(100), z.number().int(), z.null()]),
   })
   .strict();
+// The built-in Windows plans, by GUID. The helper (BoostSession.cs) keeps the same list; a test compares the two.
+export const builtInPowerPlans: Record<string, string> = {
+  "381b4222-f694-41f0-9685-ff5bb260df2e": "Balanced",
+  "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c": "High performance",
+  "a1841308-3541-4fab-bc81-f71556f20b4a": "Power saver",
+  "e9a42b02-d5df-448d-aa00-03f14749eb61": "Ultimate performance",
+};
+const PlanGuid = z
+  .string()
+  .regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i);
 export const SnapshotSchema = z
-  .object({ values: z.array(RegistryValueSchema).max(4) })
+  .object({
+    values: z.array(RegistryValueSchema).max(4),
+    // Prior active power scheme, present only when power-plan was captured.
+    scheme: PlanGuid.optional(),
+    // The performance plan the apply switches to (High performance, Ultimate, or the Frameforge copy).
+    target: PlanGuid.optional(),
+    // Display names read from Windows, so custom plans are not shown as a GUID.
+    schemeName: z.string().max(120).optional(),
+    targetName: z.string().max(120).optional(),
+  })
   .strict();
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 export const HelperResult = z
@@ -663,6 +689,7 @@ export const HelperResult = z
     capabilities: BoostCapabilitiesSchema.optional(),
     reverts: z.array(MechanismResultSchema).optional(),
     powerPlan: Id.optional(),
+    driveCoverage: z.enum(["confirmed", "off", "unknown"]).optional(),
   })
   .strict();
 // A prior state saved by the session helper before each change (GC-10).

@@ -85,7 +85,7 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
         if (build < 22000) return "On Windows 10 version 2004 and later a timer request only affects the requesting process, so it cannot reach the game.";
         return globalFlag is 1 ? null : "Since Windows 10 version 2004 a timer request only affects the requesting process unless GlobalTimerResolutionRequests is enabled. Frameforge does not change that machine-wide setting.";
     }
-    private static Guid? PlanTarget(IPowerStore power, Guid? owned) =>
+    public static Guid? PlanTarget(IPowerStore power, Guid? owned) =>
         power.Exists(HighPerformance) ? HighPerformance : power.Exists(Ultimate) ? Ultimate : owned is { } o && power.Exists(o) ? o : null;
     private static string PlanName(Guid plan) => plan == HighPerformance ? "High performance" : plan == Ultimate ? "Ultimate performance" : OwnedPlanName;
     // Windows treats absent GameBar values as on, so only an explicit 0 means Game Mode is off.
