@@ -21,6 +21,7 @@ export default defineConfig({
   test: {
     maxWorkers: 2,
     testTimeout: 15000,
+    setupFiles: ["tests/setup.ts"],
     include: ["tests/**/*.test.{ts,tsx}"],
     environment: "node",
     coverage: { provider: "v8" },
