@@ -8,6 +8,7 @@ const waiting: Array<() => void> = [];
 const listeners = new Set<() => void>();
 let running = 0;
 const limit = 4;
+const cacheSize = 200;
 
 function next() {
   while (running < limit && waiting.length) {
@@ -17,7 +18,11 @@ function next() {
 }
 function load(id: string): Promise<string | null> {
   let hit = cache.get(id);
-  if (!hit) {
+  if (hit) {
+    // Least recently used goes first.
+    cache.delete(id);
+    cache.set(id, hit);
+  } else {
     hit = new Promise<string | null>((resolve) => {
       waiting.push(() => {
         request("gameIcon", { id })
@@ -31,6 +36,7 @@ function load(id: string): Promise<string | null> {
       next();
     });
     cache.set(id, hit);
+    if (cache.size > cacheSize) cache.delete(cache.keys().next().value!);
   }
   return hit;
 }
@@ -46,7 +52,9 @@ export function GameIcon({
   game: { id: string; name: string };
   size?: number;
 }) {
-  const [icon, setIcon] = useState<string | null>(null);
+  // Tagged with its id so a changed game never shows the previous game's icon.
+  const [loaded, setLoaded] = useState<{ id: string; icon: string | null }>();
+  const icon = loaded?.id === game.id ? loaded.icon : null;
   const [epoch, setEpoch] = useState(0);
   useEffect(() => {
     const listener = () => setEpoch((n) => n + 1);
@@ -55,7 +63,9 @@ export function GameIcon({
   }, []);
   useEffect(() => {
     let active = true;
-    void load(game.id).then((value) => active && setIcon(value));
+    void load(game.id).then(
+      (value) => active && setLoaded({ id: game.id, icon: value }),
+    );
     return () => {
       active = false;
     };

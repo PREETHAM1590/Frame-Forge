@@ -21,12 +21,15 @@ import { RestorePointService } from "./restore.js";
 import type { DetectionResult } from "./games.js";
 import { fallbackHardware, type Platform } from "./platform.js";
 import {
-  dismissPath,
+  dismissGame,
   dismissedKey,
   lastScanKey,
+  partialScanKey,
   pathKey,
   readDismissed,
   shouldAutoScan,
+  toDismissed,
+  undismissPaths,
 } from "./scanPolicy.js";
 type Handlers = { [M in Method]: (input: Request<M>) => Promise<Response<M>> };
 export interface DesktopServices {
@@ -44,6 +47,8 @@ export interface DesktopServices {
   openSettings?: (page: Request<"openSettings">["page"]) => Promise<boolean>;
   /** PNG data URL for a library game's icon, or null. */
   gameIcon?: (game: Game) => Promise<string | null>;
+  /** Deletes cached icons that no library game uses any more. */
+  pruneIcons?: (games: Game[]) => Promise<void>;
 }
 export class AppService {
   private engine: OperationEngine;
@@ -53,6 +58,8 @@ export class AppService {
   private loggingFailed = false;
   // One scan at a time: startup, Rescan and Dashboard "Scan now" all share it.
   private scanning: Promise<DetectionResult> | null = null;
+  // False once a manual request joins a startup scan, so it is reported as manual.
+  private scanIsAuto = false;
   private handlers: Handlers;
   get isBusy() {
     return (
@@ -173,7 +180,10 @@ export class AppService {
           throw new Error("That game is already in your library.");
         this.repo.updateState({ ...state, games: [...state.games, game] });
         // Adding a game by hand undoes an earlier removal.
-        this.undismiss(game.path);
+        this.undismiss([
+          game.path,
+          ...(game.executablePath ? [path.dirname(game.executablePath)] : []),
+        ]);
         this.log("Game added", "A local game was added to the library.");
         return game;
       },
@@ -186,13 +196,53 @@ export class AppService {
         const result = await this.desktop.scanFolder();
         guard();
         return result
-          ? this.merge(result, { label: "Installed game scan completed" })
+          ? // Choosing a folder is explicit consent to add what is in it, removed games included.
+            this.merge(result, {
+              label: "Installed game scan completed",
+              bypassDismissed: true,
+            })
           : {
               games: [],
               warnings: ["No folder was chosen."],
               launchers: [],
               perLauncher: [],
             };
+      },
+      restoreGame: async ({ path: gamePath }) => {
+        guard();
+        const entry = this.dismissed().find(
+          (d) => pathKey(d.path) === pathKey(gamePath),
+        );
+        if (!entry) throw new Error("That game is not in the removed list.");
+        const state = this.repo.state();
+        const present = state.games.some(
+          (g) => pathKey(g.path) === pathKey(entry.path),
+        );
+        if (!present && state.games.length >= 500)
+          throw new Error(
+            "The library is full (500 games). Remove a game first.",
+          );
+        const next = present
+          ? state
+          : this.repo.updateState({
+              ...state,
+              games: [
+                ...state.games,
+                {
+                  id: randomUUID(),
+                  ...entry,
+                  profile: "balanced",
+                  boostMode: "global",
+                  notes: "",
+                },
+              ],
+            });
+        this.undismiss([entry.path]);
+        this.log(
+          "Game restored",
+          "A removed game was added back to the library.",
+        );
+        return next;
       },
       restoreStatus: async () => this.restorePoints.status(),
       restorePoints: async () => this.restorePoints.list(),
@@ -253,7 +303,7 @@ export class AppService {
         const state = this.repo.state();
         const removed = state.games.find((g) => g.id === id);
         // Remember removed games so scans do not bring them back.
-        if (removed) this.dismiss(removed.path);
+        if (removed) this.dismiss(toDismissed(removed));
         return this.repo.updateState({
           ...state,
           games: state.games.filter((g) => g.id !== id),
@@ -307,16 +357,13 @@ export class AppService {
   private dismissed() {
     return readDismissed(this.repo.meta(dismissedKey));
   }
-  private dismiss(gamePath: string) {
-    this.repo.setMeta(dismissedKey, dismissPath(this.dismissed(), gamePath));
+  private dismiss(game: ReturnType<typeof toDismissed>) {
+    this.repo.setMeta(dismissedKey, dismissGame(this.dismissed(), game));
   }
-  private undismiss(gamePath: string) {
+  private undismiss(paths: string[]) {
     const list = this.dismissed();
-    if (list.includes(pathKey(gamePath)))
-      this.repo.setMeta(
-        dismissedKey,
-        list.filter((p) => p !== pathKey(gamePath)),
-      );
+    const next = undismissPaths(list, paths);
+    if (next.length !== list.length) this.repo.setMeta(dismissedKey, next);
   }
   // A closed window must not fail a scan.
   private tell(event: AppEvent) {
@@ -328,7 +375,12 @@ export class AppService {
   }
   /** Whole-PC scan: shares an in-flight scan, adds new games, records the time and tells the window. */
   private scan(auto: boolean): Promise<DetectionResult> {
-    this.scanning ??= (async () => {
+    if (this.scanning) {
+      if (!auto) this.scanIsAuto = false;
+      return this.scanning;
+    }
+    this.scanIsAuto = auto;
+    this.scanning = (async () => {
       this.tell({
         type: "scan",
         phase: "started",
@@ -342,16 +394,28 @@ export class AppService {
           throw new Error("Wait for the Windows operation to finish.");
         const before = this.repo.state().games.length;
         const merged = this.merge(result, {
-          label: auto
+          label: this.scanIsAuto
             ? "Automatic game scan completed"
             : "Installed game scan completed",
           full: true,
+          partial:
+            result.warnings.length > 0 ||
+            result.perLauncher.some((row) => row.status === "error"),
         });
         added = Math.max(0, this.repo.state().games.length - before);
+        // Icons of games that are gone (or whose art changed) are no longer needed.
+        void this.desktop
+          .pruneIcons?.(this.repo.state().games)
+          .catch(() => undefined);
         return merged;
       } finally {
         this.scanning = null;
-        this.tell({ type: "scan", phase: "finished", auto, added });
+        this.tell({
+          type: "scan",
+          phase: "finished",
+          auto: this.scanIsAuto,
+          added,
+        });
       }
     })();
     return this.scanning;
@@ -360,7 +424,15 @@ export class AppService {
   async autoScan(now = Date.now()): Promise<void> {
     try {
       const settings = this.repo.state().settings;
-      if (!shouldAutoScan(this.repo.meta(lastScanKey), settings, now)) return;
+      if (
+        !shouldAutoScan(
+          this.repo.meta(lastScanKey),
+          settings,
+          now,
+          this.repo.meta(partialScanKey) === true,
+        )
+      )
+        return;
       await this.scan(true);
     } catch (error) {
       this.log(
@@ -373,10 +445,21 @@ export class AppService {
   // Adds scanned games the library does not have yet (matched by install path) and logs the scan.
   private merge(
     result: DetectionResult,
-    options: { label: string; full?: boolean },
+    options: {
+      label: string;
+      /** A whole-PC scan: records when it ran (and whether a source failed). */
+      full?: boolean;
+      partial?: boolean;
+      /** Add games even if the user removed them (an explicit folder scan). */
+      bypassDismissed?: boolean;
+    },
   ): DetectionResult {
     const state = this.repo.state();
-    const dismissed = new Set(this.dismissed());
+    const dismissed = new Set(
+      options.bypassDismissed
+        ? []
+        : this.dismissed().map((d) => pathKey(d.path)),
+    );
     const known = [
       ...state.games.map((g) => g.path.toLowerCase()),
       ...dismissed,
@@ -415,7 +498,12 @@ export class AppService {
     const combined = [...library, ...added].slice(0, 500);
     const dropped = library.length + added.length - combined.length;
     this.repo.updateState({ ...state, games: combined });
-    if (options.full) this.repo.setMeta(lastScanKey, new Date().toISOString());
+    if (options.bypassDismissed)
+      this.undismiss(added.map((g) => g.path).filter(Boolean));
+    if (options.full) {
+      this.repo.setMeta(lastScanKey, new Date().toISOString());
+      this.repo.setMeta(partialScanKey, options.partial === true);
+    }
     this.log(
       options.label,
       `${combined.length - state.games.length} new of ${result.games.length} found. Scanned: ${result.launchers.length ? result.launchers.join(", ") : "no supported launchers"}.${skipped ? ` ${skipped} previously removed game${skipped === 1 ? " was" : "s were"} left out.` : ""}`,
@@ -429,7 +517,7 @@ export class AppService {
         : []),
       ...(skipped
         ? [
-            `${skipped} game${skipped === 1 ? "" : "s"} you removed earlier ${skipped === 1 ? "was" : "were"} not added back. Use Add game to restore ${skipped === 1 ? "it" : "one"}.`,
+            `${skipped} game${skipped === 1 ? "" : "s"} you removed earlier ${skipped === 1 ? "was" : "were"} not added back. Restore ${skipped === 1 ? "it" : "one"} under Removed games.`,
           ]
         : []),
     ];
@@ -495,6 +583,11 @@ export class AppService {
         available: this.platform.boostAvailable,
         watching: this.booster.watching,
       },
+      removedGames: this.dismissed().map(({ name, path: p, source }) => ({
+        name,
+        path: p,
+        source,
+      })),
       scan: {
         running: this.scanning !== null,
         lastScanAt: (this.repo.meta(lastScanKey) as string | null) ?? null,

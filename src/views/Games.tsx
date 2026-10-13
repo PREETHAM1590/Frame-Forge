@@ -219,6 +219,35 @@ export function Games({ data, run, pending }: ViewProps) {
           }
         />
       )}
+      {data.removedGames.length > 0 && (
+        <details className="removed-games">
+          <summary>Removed games ({data.removedGames.length})</summary>
+          <p className="muted">
+            Scans skip these. Restore one to put it back in your library.
+          </p>
+          <ul>
+            {data.removedGames.map((g) => (
+              <li key={g.path}>
+                <div>
+                  <strong>{g.name}</strong>
+                  <p className="muted setting-path">
+                    {sourceLabels[g.source]} · {g.path}
+                  </p>
+                </div>
+                <Button
+                  disabled={pending}
+                  aria-label={`Restore ${g.name}`}
+                  onClick={() =>
+                    void run("restoreGame", { path: g.path }, "Game restored.")
+                  }
+                >
+                  Restore
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {selected && (
         <Modal
           title={selected.name}

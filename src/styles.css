@@ -1668,3 +1668,28 @@ input[type="checkbox"] {
 .session-surface .game-icon {
   margin-bottom: 12px;
 }
+.removed-games {
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.removed-games summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.removed-games ul {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.removed-games li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.removed-games li > div {
+  min-width: 0;
+}

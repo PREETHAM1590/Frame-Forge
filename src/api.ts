@@ -94,6 +94,7 @@ function bootstrap(): Bootstrap {
     startupSupported: false,
     boost: { session: null, available: false, watching: false },
     scan: { running: false, lastScanAt: null },
+    removedGames: [],
   };
 }
 async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
@@ -206,6 +207,8 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
       break;
     case "cancel":
       return false;
+    case "restoreGame":
+      throw new Error("Removed games are tracked by the desktop app.");
     case "gameIcon":
       return null;
     case "addGame":

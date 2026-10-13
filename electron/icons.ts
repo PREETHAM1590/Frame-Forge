@@ -5,6 +5,7 @@ import {
   readdir,
   realpath,
   rename,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -23,10 +24,13 @@ export interface IconDeps {
   fileIcon: (exe: string) => Promise<Buffer | null>;
   /** PNG bytes of an image file, already scaled down (Electron nativeImage). */
   image: (file: string) => Promise<Buffer | null>;
+  /** The shell's stand-in icon for an executable with none; matching it means "no icon", so the letter shows. */
+  genericIcon?: () => Promise<Buffer | null>;
 }
 
 const prefix = "data:image/png;base64,";
-const maxBytes = 200_000;
+/** Larger icons are not served (the IPC schema allows 300 KB of base64). */
+export const maxIconBytes = 200_000;
 const hex40 = /^[0-9a-f]{40}\.(jpe?g|png)$/i;
 
 async function realDir(input: string): Promise<string | null> {
@@ -87,29 +91,55 @@ export class GameIcons {
   }
 
   // Keyed by source path, mtime and size, so changed art or a patched exe regenerates on the next request.
-  private async cached(source: { file: string; art: boolean }) {
+  private async key(source: { file: string; art: boolean }) {
     const info = await stat(source.file);
-    const key = createHash("sha256")
+    return createHash("sha256")
       .update(
-        `v1\0${source.art}\0${source.file.toLowerCase()}\0${info.mtimeMs}\0${info.size}`,
+        `v1|${source.art}|${source.file.toLowerCase()}|${info.mtimeMs}|${info.size}`,
       )
       .digest("hex")
       .slice(0, 32);
-    const target = path.join(this.deps.dir, `${key}.png`);
+  }
+
+  // An empty <key>.png records "this source has no usable icon" (generic or oversized), so it is not retried.
+  private async cached(source: { file: string; art: boolean }) {
+    const target = path.join(this.deps.dir, `${await this.key(source)}.png`);
     let png: Buffer | null = await readFile(target).catch(() => null);
     if (!png) {
-      png = await (source.art
+      const made = await (source.art
         ? this.deps.image(source.file)
         : this.deps.fileIcon(source.file));
-      if (!png) return null;
-      if (png.length <= maxBytes) {
-        await mkdir(this.deps.dir, { recursive: true });
-        const temp = `${target}.${process.pid}.tmp`;
-        await writeFile(temp, png);
-        await rename(temp, target);
-      }
+      const generic =
+        made && !source.art ? await this.deps.genericIcon?.() : null;
+      png =
+        made &&
+        made.length <= maxIconBytes &&
+        !(generic && made.equals(generic))
+          ? made
+          : Buffer.alloc(0);
+      await mkdir(this.deps.dir, { recursive: true });
+      const temp = `${target}.${process.pid}.tmp`;
+      await writeFile(temp, png);
+      await rename(temp, target);
     }
-    return png.length <= maxBytes ? prefix + png.toString("base64") : null;
+    return png.length && png.length <= maxIconBytes
+      ? prefix + png.toString("base64")
+      : null;
+  }
+
+  /** Deletes cached PNGs that no library game's current icon source maps to. */
+  async prune(games: Game[]): Promise<void> {
+    const keep = new Set<string>();
+    for (const game of games)
+      try {
+        const source = await this.source(game);
+        if (source) keep.add(`${await this.key(source)}.png`);
+      } catch {
+        /* no source, nothing to keep */
+      }
+    for (const file of await readdir(this.deps.dir).catch(() => [] as string[]))
+      if (/^[0-9a-f]{32}\.png$/.test(file) && !keep.has(file))
+        await rm(path.join(this.deps.dir, file), { force: true });
   }
 
   /** Launcher art first (Steam), then the game's own executable. */

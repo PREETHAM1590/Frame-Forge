@@ -70,6 +70,7 @@ const inputs: { [M in Method]: () => Request<M> } = {
   boostPowerPlan: () => ({ action: "create", confirmed: true }),
   removeGame: () => ({ id: id() }),
   gameIcon: () => ({ id: id() }),
+  restoreGame: () => ({ path: "C:\\Games\\Removed" }),
   profile: () => ({ id: id(), boostMode: "global", notes: "" }),
   savePreset: () => ({ name: "Mine", ids: ["mouse-precision"] }),
   removePreset: () => ({ id: id() }),

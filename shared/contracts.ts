@@ -502,6 +502,19 @@ export const BootstrapSchema = z
       .object({ running: z.boolean(), lastScanAt: z.string().nullable() })
       .strict()
       .default({ running: false, lastScanAt: null }),
+    /** Games the user removed; scans skip them until restored. */
+    removedGames: z
+      .array(
+        z
+          .object({
+            name: z.string().max(80),
+            path: z.string().max(2048),
+            source: GameSchema.shape.source,
+          })
+          .strict(),
+      )
+      .max(1000)
+      .default([]),
   })
   .strict();
 export type Bootstrap = z.infer<typeof BootstrapSchema>;
@@ -570,6 +583,8 @@ export const requests = {
   removeGame: z.object({ id: Id }).strict(),
   // The renderer sends only a library id; the main process resolves and validates every path.
   gameIcon: z.object({ id: Id }).strict(),
+  // Puts a removed game back (by its install path) and forgets the removal.
+  restoreGame: z.object({ path: z.string().min(1).max(2048) }).strict(),
   profile: z
     .object({
       id: Id,
@@ -614,6 +629,7 @@ export const responses = {
   boostPowerPlan: BoostStatusSchema,
   removeGame: StateSchema,
   gameIcon: GameIconSchema,
+  restoreGame: StateSchema,
   profile: StateSchema,
   savePreset: StateSchema,
   removePreset: StateSchema,

@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import App from "../src/App";
-import { clearGameIcons } from "../src/components/GameIcon";
+import { clearGameIcons, GameIcon } from "../src/components/GameIcon";
 import {
   defaultState,
   type AppEvent,
@@ -56,6 +56,9 @@ function install() {
     mode: "desktop",
     boost: { session: null, available: true, watching: false },
     scan: { running: false, lastScanAt: "2026-10-12T10:00:00.000Z" },
+    removedGames: [
+      { name: "Gamma Old", path: "C:/Games/Gamma", source: "epic" as const },
+    ],
   };
   window.frameforge = {
     bootstrap: async () => structuredClone(bootstrap),
@@ -69,6 +72,11 @@ function install() {
     gameIcon: async (input: { id: string }) => {
       calls.push({ method: "gameIcon", input });
       return input.id === withArt.id ? png : null;
+    },
+    restoreGame: async (input: { path: string }) => {
+      calls.push({ method: "restoreGame", input });
+      bootstrap.removedGames = [];
+      return bootstrap.state;
     },
     detectGames: async () => {
       calls.push({ method: "detectGames", input: {} });
@@ -192,5 +200,44 @@ describe("background scan UI", () => {
       }),
     ).toBeChecked();
     expect(screen.getByLabelText("Scan at most every")).toHaveValue("24");
+  });
+});
+
+describe("removed games", () => {
+  it("lists removed games on the Games page and restores one", async () => {
+    const { calls } = install();
+    render(<App />);
+    await screen.findByText("Your setup, in focus.");
+    fireEvent.click(screen.getByRole("button", { name: "Game library" }));
+    const summary = await screen.findByText("Removed games (1)");
+    fireEvent.click(summary);
+    expect(screen.getByText("Gamma Old")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Restore Gamma Old" }));
+    await act(async () => {});
+    expect(calls.find((c) => c.method === "restoreGame")?.input).toEqual({
+      path: "C:/Games/Gamma",
+    });
+    expect(screen.queryByText(/Removed games \(/)).toBeNull();
+  });
+});
+
+describe("GameIcon", () => {
+  it("does not show the previous game's icon while the next one loads", async () => {
+    install();
+    let release: (value: string | null) => void = () => {};
+    const first = window.frameforge!.gameIcon;
+    window.frameforge!.gameIcon = (input) =>
+      input.id === withoutArt.id
+        ? new Promise((resolve) => (release = resolve))
+        : first(input);
+    const { container, rerender } = render(<GameIcon game={withArt} />);
+    await act(async () => {});
+    expect(container.querySelector("img")).toHaveAttribute("src", png);
+    rerender(<GameIcon game={withoutArt} />);
+    await act(async () => {});
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector(".placeholder")).toHaveTextContent("B");
+    await act(async () => release(png));
+    expect(container.querySelector("img")).toHaveAttribute("src", png);
   });
 });

@@ -3,10 +3,12 @@ import { Repository } from "../electron/repository";
 import { MockPlatform } from "../electron/platform";
 import { AppService, type DesktopServices } from "../electron/service";
 import {
-  dismissPath,
+  dismissGame,
   lastScanKey,
   maxDismissed,
+  partialScanKey,
   shouldAutoScan,
+  undismissPaths,
 } from "../electron/scanPolicy";
 import type { AppEvent, Game } from "../shared/contracts";
 
@@ -38,18 +40,47 @@ describe("shouldAutoScan", () => {
   });
 });
 
-describe("dismissPath", () => {
-  it("lower-cases, de-duplicates, keeps the newest and caps the list", () => {
-    expect(dismissPath(["c:\\a"], "C:\\B")).toEqual(["c:\\a", "c:\\b"]);
-    expect(dismissPath(["c:\\a", "c:\\b"], "C:\\A")).toEqual([
-      "c:\\b",
-      "c:\\a",
-    ]);
-    const full = Array.from({ length: maxDismissed }, (_, i) => `c:\\g${i}`);
-    const next = dismissPath(full, "C:\\new");
+describe("shouldAutoScan after a partial scan", () => {
+  it("retries after an hour instead of the full interval", () => {
+    const at = (h: number) => new Date(now - h * hour).toISOString();
+    expect(shouldAutoScan(at(0.5), on, now, true)).toBe(false);
+    expect(shouldAutoScan(at(1), on, now, true)).toBe(true);
+    expect(shouldAutoScan(at(1), on, now, false)).toBe(false);
+  });
+});
+
+const entry = (path: string, name = "G") => ({
+  name,
+  path,
+  source: "steam" as const,
+  executablePath: null,
+});
+describe("dismissed list", () => {
+  it("keeps one entry per path (any case), newest last, capped", () => {
+    expect(
+      dismissGame([entry("c:\\a"), entry("C:\\B")], entry("C:\\A")).map(
+        (x) => x.path,
+      ),
+    ).toEqual(["C:\\B", "C:\\A"]);
+    const full = Array.from({ length: maxDismissed }, (_, i) =>
+      entry(`c:\\g${i}`),
+    );
+    const next = dismissGame(full, entry("C:\\new"));
     expect(next).toHaveLength(maxDismissed);
-    expect(next.at(-1)).toBe("c:\\new");
-    expect(next[0]).toBe("c:\\g1");
+    expect(next.at(-1)?.path).toBe("C:\\new");
+    expect(next[0]?.path).toBe("c:\\g1");
+  });
+  it("undismisses entries equal to, inside or above the given paths", () => {
+    const list = [
+      entry("C:\\Games\\Alpha"),
+      entry("C:\\Games\\Alpha\\Binaries\\Win64"),
+      entry("C:\\Games\\Alphabet"),
+      entry("D:\\Other"),
+    ];
+    expect(
+      undismissPaths(list, ["c:\\games\\alpha\\binaries"]).map((x) => x.path),
+    ).toEqual(["C:\\Games\\Alphabet", "D:\\Other"]);
+    expect(undismissPaths(list, []).length).toBe(4);
   });
 });
 
@@ -206,25 +237,71 @@ describe("removed games stay removed", () => {
     expect(libraryNames(repo)).toEqual([]);
   });
 
-  it("Add game brings a removed game back and scans may keep it", async () => {
+  it("Add game un-removes the game even when its folder differs from the scanner's install root", async () => {
     const alpha = game("Alpha", "C:\\Games\\Alpha");
-    const readded = {
+    // pickGame uses dirname(exe), which is deeper than the Steam install folder.
+    const exe = "C:\\Games\\Alpha\\Binaries\\Win64\\Alpha.exe";
+    const picked = {
       ...alpha,
       id: crypto.randomUUID(),
+      name: "Picked",
+      path: "C:\\Games\\Alpha\\Binaries\\Win64",
+      executablePath: exe,
       source: "custom",
     } as Game;
     const { repo, service } = setup([alpha]);
     const desktop = (service as unknown as { desktop: DesktopServices })
       .desktop;
-    desktop.pickGame = async () => readded;
+    desktop.pickGame = async () => picked;
     await service.dispatch("detectGames", {});
     await service.dispatch("removeGame", { id: repo.state().games[0]!.id });
+    expect(service.bootstrap().removedGames).toHaveLength(1);
     await service.dispatch("addGame", {});
-    expect(repo.state().games.map((g) => g.id)).toEqual([readded.id]);
-    // Removing it again, then scanning, still keeps it out.
-    await service.dispatch("removeGame", { id: readded.id });
+    expect(service.bootstrap().removedGames).toEqual([]);
+    // It is no longer skipped: the next scan lists the scanner's own entry again.
     await service.dispatch("detectGames", {});
-    expect(libraryNames(repo)).toEqual([]);
+    expect(libraryNames(repo)).toContain("Alpha");
+  });
+
+  it("lists removed games and restores one with its source and path", async () => {
+    const alpha = game("Alpha", "C:\\Games\\Alpha");
+    const { repo, service } = setup([alpha, game("Beta", "C:\\Games\\Beta")]);
+    await service.dispatch("detectGames", {});
+    await service.dispatch("removeGame", { id: repo.state().games[0]!.id });
+    expect(service.bootstrap().removedGames).toEqual([
+      { name: "Alpha", path: "C:\\Games\\Alpha", source: "steam" },
+    ]);
+    await service.dispatch("restoreGame", { path: "c:\\games\\ALPHA" });
+    expect(libraryNames(repo).sort()).toEqual(["Alpha", "Beta"]);
+    expect(repo.state().games.find((g) => g.name === "Alpha")).toMatchObject({
+      source: "steam",
+      boostMode: "global",
+    });
+    expect(service.bootstrap().removedGames).toEqual([]);
+    await expect(
+      service.dispatch("restoreGame", { path: "C:\\Games\\Alpha" }),
+    ).rejects.toThrow(/not in the removed list/);
+    // It is no longer skipped by scans.
+    await service.dispatch("detectGames", {});
+    expect(libraryNames(repo)).toHaveLength(2);
+  });
+
+  it("Scan a folder re-adds removed games it finds", async () => {
+    const alpha = game("Alpha", "C:\\Games\\Alpha");
+    const { repo, service } = setup([alpha]);
+    await service.dispatch("detectGames", {});
+    await service.dispatch("removeGame", { id: repo.state().games[0]!.id });
+    const desktop = (service as unknown as { desktop: DesktopServices })
+      .desktop;
+    desktop.scanFolder = async () => ({
+      games: [alpha],
+      warnings: [],
+      launchers: [],
+      perLauncher: [],
+    });
+    await service.dispatch("scanFolder", { confirmed: true });
+    expect(libraryNames(repo)).toEqual(["Alpha"]);
+    expect(service.bootstrap().removedGames).toEqual([]);
   });
 
   it("survives a game removed while a scan is running", async () => {
@@ -245,5 +322,60 @@ describe("removed games stay removed", () => {
     release();
     await scan;
     expect(libraryNames(repo)).toEqual([]);
+  });
+});
+
+describe("scan bookkeeping", () => {
+  const desktopOf = (service: AppService) =>
+    (service as unknown as { desktop: DesktopServices }).desktop;
+
+  it("marks a scan whose source failed as partial and retries within the hour", async () => {
+    const { repo, service } = setup([]);
+    const detectGames = vi.fn(async () => ({
+      games: [],
+      warnings: ["A Steam library could not be scanned."],
+      launchers: ["Steam"],
+      perLauncher: [],
+    }));
+    desktopOf(service).detectGames = detectGames;
+    await service.autoScan(Date.now());
+    expect(repo.meta(partialScanKey)).toBe(true);
+    await service.autoScan(Date.now() + 30 * 60_000);
+    expect(detectGames).toHaveBeenCalledTimes(1);
+    await service.autoScan(Date.now() + 61 * 60_000);
+    expect(detectGames).toHaveBeenCalledTimes(2);
+  });
+
+  it("a clean scan clears the partial mark", async () => {
+    const { repo, service } = setup([]);
+    repo.setMeta(partialScanKey, true);
+    await service.autoScan(Date.now());
+    expect(repo.meta(partialScanKey)).toBe(false);
+  });
+
+  it("reports a manual Rescan that joins a startup scan as manual", async () => {
+    let release = () => {};
+    const { repo, service, events } = setup(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve([]);
+        }),
+    );
+    const auto = service.autoScan(Date.now());
+    const manual = service.dispatch("detectGames", {});
+    await Promise.resolve();
+    release();
+    await Promise.all([auto, manual]);
+    expect(events.at(-1)).toMatchObject({ phase: "finished", auto: false });
+    expect(repo.activity()[0]?.label).toBe("Installed game scan completed");
+  });
+
+  it("asks the icon cache to prune after a scan", async () => {
+    const { service } = setup([game("Alpha", "C:\\Games\\Alpha")]);
+    const prune = vi.fn<(games: Game[]) => Promise<void>>(async () => {});
+    desktopOf(service).pruneIcons = prune;
+    await service.dispatch("detectGames", {});
+    expect(prune).toHaveBeenCalledTimes(1);
+    expect(prune.mock.calls[0]?.[0]).toHaveLength(1);
   });
 });

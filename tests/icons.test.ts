@@ -111,12 +111,46 @@ describe("exe icons", () => {
       image: async () => null,
     });
     expect(await failing.dataUrl(game({ path: install }))).toBeNull();
+  });
+
+  it("remembers that an oversized icon has no usable image instead of regenerating it", async () => {
+    const install = path.join(root, "Game");
+    await put(path.join(install, "Game.exe"));
+    const fileIcon = vi.fn(async () => Buffer.alloc(300_000));
     const huge = new GameIcons({
       dir: path.join(root, "cache2"),
-      fileIcon: async () => Buffer.alloc(300_000),
+      fileIcon,
       image: async () => null,
     });
-    expect(await huge.dataUrl(game({ path: install }))).toBeNull();
+    const g = game({ path: install });
+    expect(await huge.dataUrl(g)).toBeNull();
+    expect(await huge.dataUrl(g)).toBeNull();
+    expect(
+      await new GameIcons({
+        dir: path.join(root, "cache2"),
+        fileIcon,
+        image: async () => null,
+      }).dataUrl(g),
+    ).toBeNull();
+    expect(fileIcon).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats the shell's generic executable icon as no icon (letter fallback)", async () => {
+    const install = path.join(root, "Roblox");
+    await put(path.join(install, "RobloxPlayerBeta.exe"));
+    const generic = Buffer.from("generic-exe-icon");
+    const make = (icon: Buffer, dir: string) =>
+      new GameIcons({
+        dir: path.join(root, dir),
+        fileIcon: async () => icon,
+        image: async () => null,
+        genericIcon: async () => generic,
+      });
+    const g = game({ path: install });
+    expect(await make(generic, "c1").dataUrl(g)).toBeNull();
+    expect(
+      await make(Buffer.from("a real icon here"), "c2").dataUrl(g),
+    ).not.toBeNull();
   });
 });
 
@@ -235,5 +269,30 @@ describe("Steam launcher art", () => {
     const url = await service.dataUrl(game({ path: install, source: "steam" }));
     expect(image).not.toHaveBeenCalled();
     expect(decode(url)).toContain("Launcher.exe");
+  });
+});
+
+describe("prune", () => {
+  it("deletes cached PNGs no library game uses and keeps the current ones", async () => {
+    const install = path.join(root, "Game");
+    const exe = await put(path.join(install, "Game.exe"), "v1");
+    const gone = path.join(root, "Gone");
+    await put(path.join(gone, "Gone.exe"));
+    const { service } = icons();
+    const keep = game({ path: install, executablePath: exe });
+    const removed = game({ path: gone });
+    await service.dataUrl(keep);
+    await service.dataUrl(removed);
+    // A patched exe leaves a stale entry behind.
+    await utimes(exe, new Date(), new Date(Date.now() + 60_000));
+    await service.dataUrl(keep);
+    const cache = path.join(root, "cache");
+    expect(await readdir(cache)).toHaveLength(3);
+    await put(path.join(cache, "notes.txt"));
+    await service.prune([keep]);
+    const left = await readdir(cache);
+    expect(left).toHaveLength(2); // the current icon and the unrelated file
+    expect(left).toContain("notes.txt");
+    expect(await service.dataUrl(keep)).not.toBeNull();
   });
 });
