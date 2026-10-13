@@ -19,6 +19,7 @@ import {
   Modal,
 } from "../components/ui";
 import { desktopOnly, onEvent, request } from "../api";
+import { GameIcon } from "../components/GameIcon";
 import {
   modeMechanisms,
   type BoostMode,
@@ -373,6 +374,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
       )}
       {session && session.status !== "recovery-needed" && (
         <section className="session-surface" aria-label="Boost session">
+          {sessionGame && <GameIcon game={sessionGame} size={64} />}
           <h2>{sessionGame?.name ?? "Boosted game"}</h2>
           <p className="muted" role="status">
             {session.message}
@@ -879,20 +881,24 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
         <h2>Boost a running game</h2>
         {data.state.games.length ? (
           <>
-            <label className="field">
-              Game
-              <select
-                value={gameId}
-                disabled={!!session}
-                onChange={(e) => setGameId(e.target.value)}
-              >
-                {data.state.games.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="picker-row">
+              {/* A native <option> cannot hold an image, so the chosen game's icon sits beside the list. */}
+              {game && <GameIcon game={game} size={44} />}
+              <label className="field">
+                Game
+                <select
+                  value={gameId}
+                  disabled={!!session}
+                  onChange={(e) => setGameId(e.target.value)}
+                >
+                  {data.state.games.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <p className="muted">
               Mode for this game: {modes.find((m) => m.id === gameMode)?.label}
               {game?.boostMode === "global" ? " (global)" : ""}. Start the game

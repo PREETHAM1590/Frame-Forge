@@ -10,6 +10,7 @@ import {
   SlidersHorizontal,
   Gamepad2,
   Archive,
+  FolderSearch,
   Activity as ActivityIcon,
 } from "lucide-react";
 import {
@@ -23,11 +24,21 @@ import {
   statusTone,
 } from "../components/ui";
 import { request } from "../api";
+import { GameIcon } from "../components/GameIcon";
+import { useScan } from "../useScan";
 import { protectionChip } from "./Recovery";
 import type { RestoreStatus } from "../../shared/contracts";
 import type { ViewProps } from "../types";
-export function Dashboard({ data, navigate, preview }: ViewProps) {
+export function Dashboard({
+  data,
+  navigate,
+  preview,
+  run,
+  pending,
+}: ViewProps) {
   const h = data.hardware;
+  const { running, progress } = useScan(data);
+  const lastScan = data.scan.lastScanAt;
   const [restore, setRestore] = useState<RestoreStatus | null>(null);
   useEffect(() => {
     let active = true;
@@ -174,6 +185,36 @@ export function Dashboard({ data, navigate, preview }: ViewProps) {
               </div>
               <ArrowUpRight size={19} />
             </button>
+            <button
+              disabled={pending || running || data.mode === "demo"}
+              onClick={() => void run("detectGames", {}, "Game scan finished.")}
+            >
+              <span className="action-icon cyan">
+                <FolderSearch />
+              </span>
+              <div>
+                <strong>{running ? "Scanning for games…" : "Scan now"}</strong>
+                <p className="muted">
+                  {running
+                    ? progress
+                      ? `${progress.launcher} (${progress.done}/${progress.total}), ${progress.found} found so far`
+                      : "Looking through your launchers in the background"
+                    : data.mode === "demo"
+                      ? "Requires the desktop app"
+                      : lastScan
+                        ? `Find installed games. Last scan ${formatTime(lastScan)}`
+                        : "Find installed games and add them to your library"}
+                </p>
+                {running && (
+                  <progress
+                    aria-label="Game scan progress"
+                    max={progress?.total ?? 1}
+                    value={progress?.done ?? 0}
+                  />
+                )}
+              </div>
+              <ArrowUpRight size={19} />
+            </button>
             <button onClick={() => navigate("Restore & backups")}>
               <span className="action-icon amber">
                 <Archive />
@@ -190,9 +231,13 @@ export function Dashboard({ data, navigate, preview }: ViewProps) {
               </Badge>
             </button>
             <button onClick={() => navigate("Game Mode")}>
-              <span className="action-icon lime">
-                <Play />
-              </span>
+              {sessionGame ? (
+                <GameIcon game={sessionGame} size={40} />
+              ) : (
+                <span className="action-icon lime">
+                  <Play />
+                </span>
+              )}
               <div>
                 <strong>Game Mode</strong>
                 <p className="muted">

@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  Gamepad2,
   Plus,
   Search,
   FolderSearch,
@@ -16,7 +15,8 @@ import {
   type Detection,
   type Game,
 } from "../../shared/contracts";
-import { onEvent } from "../api";
+import { GameIcon } from "../components/GameIcon";
+import { useScan } from "../useScan";
 import type { ViewProps } from "../types";
 export { GameMode } from "./GameBooster";
 const modeNames: Record<Game["boostMode"], string> = {
@@ -34,23 +34,12 @@ export function Games({ data, run, pending }: ViewProps) {
   const [notes, setNotes] = useState("");
   const [remove, setRemove] = useState<Game | null>(null);
   const [scan, setScan] = useState<Detection | null>(null);
-  const [scanning, setScanning] = useState(false);
-  const [progress, setProgress] = useState<{
-    launcher: string;
-    done: number;
-    total: number;
-    found: number;
-  } | null>(null);
-  useEffect(
-    () =>
-      onEvent((event) => {
-        if (event.type === "scan-progress") setProgress(event);
-      }),
-    [],
-  );
+  const [manual, setScanning] = useState(false);
+  // Includes a scan started elsewhere (startup, Dashboard) so the library shows it too.
+  const { running, progress } = useScan(data);
+  const scanning = manual || running;
   async function rescan(folder: boolean) {
     setScanning(true);
-    setProgress(null);
     try {
       const result = folder
         ? await run("scanFolder", { confirmed: true })
@@ -59,7 +48,6 @@ export function Games({ data, run, pending }: ViewProps) {
       if (result && result.perLauncher.length) setScan(result);
     } finally {
       setScanning(false);
-      setProgress(null);
     }
   }
   const games = data.state.games.filter((g) =>
@@ -99,14 +87,14 @@ export function Games({ data, run, pending }: ViewProps) {
           />
         </div>
         <Button
-          disabled={pending || data.mode === "demo"}
+          disabled={pending || scanning || data.mode === "demo"}
           onClick={() => void rescan(false)}
         >
           <RefreshCw size={17} />
           Rescan
         </Button>
         <Button
-          disabled={pending || data.mode === "demo"}
+          disabled={pending || scanning || data.mode === "demo"}
           onClick={() => void rescan(true)}
         >
           <FolderOpen size={17} />
@@ -186,8 +174,7 @@ export function Games({ data, run, pending }: ViewProps) {
           {games.map((g) => (
             <article className="game-card" key={g.id}>
               <div className="game-art">
-                <Gamepad2 size={48} />
-                <span>{g.name.slice(0, 2).toUpperCase()}</span>
+                <GameIcon game={g} size={72} />
               </div>
               <div className="game-content">
                 <Badge tone="cyan">{sourceLabels[g.source]}</Badge>
@@ -238,7 +225,10 @@ export function Games({ data, run, pending }: ViewProps) {
           description="The booster mode applies on the Game Mode page while this game runs. Notes are app-only."
           onClose={() => setSelected(null)}
         >
-          <p className="setting-path">{selected.path}</p>
+          <div className="game-heading">
+            <GameIcon game={selected} size={56} />
+            <p className="setting-path">{selected.path}</p>
+          </div>
           <p className="muted">
             {selected.executablePath
               ? `Executable: ${selected.executablePath}`

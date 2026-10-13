@@ -1,4 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  shell,
+  type NativeImage,
+} from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { existsSync, mkdirSync } from "node:fs";
@@ -14,6 +22,7 @@ import {
 import { EventSchema } from "../shared/contracts.js";
 import { settingsTarget } from "./settingsPages.js";
 import { userDataOverride } from "./userData.js";
+import { GameIcons } from "./icons.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = !app.isPackaged && process.argv.includes("--dev");
 const rendererFile = path.join(here, "../../dist/index.html");
@@ -61,8 +70,30 @@ if (!app.requestSingleInstanceLock()) {
         process.platform === "win32" && existsSync(helper)
           ? new WindowsPlatform(helper)
           : new MockPlatform();
+      // Icons are shown at most ~96px; keep the cached PNGs small.
+      const png = (image: NativeImage) => {
+        if (image.isEmpty()) return null;
+        const { width, height } = image.getSize();
+        const scale = Math.min(1, 128 / Math.max(width, height));
+        return (
+          scale < 1
+            ? image.resize({
+                width: Math.round(width * scale),
+                height: Math.round(height * scale),
+                quality: "best",
+              })
+            : image
+        ).toPNG();
+      };
+      const icons = new GameIcons({
+        dir: path.join(app.getPath("userData"), "icons"),
+        fileIcon: async (exe) =>
+          png(await app.getFileIcon(exe, { size: "large" })),
+        image: async (file) => png(nativeImage.createFromPath(file)),
+      });
       const service = new AppService(repo, platform, {
         version: app.getVersion(),
+        gameIcon: (game) => icons.dataUrl(game),
         startupSupported: app.isPackaged,
         setStartup: (enabled) => {
           if (!app.isPackaged) {
@@ -204,6 +235,10 @@ if (!app.requestSingleInstanceLock()) {
         });
         window.on("closed", () => {
           window = null;
+        });
+        // Background scan once the UI is up; due-ness (first launch / interval / setting) is decided in the service.
+        window.webContents.once("did-finish-load", () => {
+          setTimeout(() => void service.autoScan(), 1500);
         });
         if (dev) void window.loadURL(allowedUrl);
         else void window.loadFile(rendererFile);

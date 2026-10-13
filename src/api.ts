@@ -93,6 +93,7 @@ function bootstrap(): Bootstrap {
     mode: "demo",
     startupSupported: false,
     boost: { session: null, available: false, watching: false },
+    scan: { running: false, lastScanAt: null },
   };
 }
 async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
@@ -205,6 +206,8 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
       break;
     case "cancel":
       return false;
+    case "gameIcon":
+      return null;
     case "addGame":
       throw new Error("The native file picker requires the desktop app.");
     case "detectGames":

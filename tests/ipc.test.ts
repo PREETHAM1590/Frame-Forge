@@ -38,6 +38,8 @@ const inputs: { [M in Method]: () => Request<M> } = {
     startup: false,
     notifications: true,
     diagnostics: false,
+    autoScan: true,
+    autoScanHours: 24,
   }),
   preview: () => ({ ids: ["mouse-precision"] }),
   confirm: () => ({ token: id(), confirmed: true }),
@@ -67,6 +69,7 @@ const inputs: { [M in Method]: () => Request<M> } = {
   runningProcesses: () => ({}),
   boostPowerPlan: () => ({ action: "create", confirmed: true }),
   removeGame: () => ({ id: id() }),
+  gameIcon: () => ({ id: id() }),
   profile: () => ({ id: id(), boostMode: "global", notes: "" }),
   savePreset: () => ({ name: "Mine", ids: ["mouse-precision"] }),
   removePreset: () => ({ id: id() }),
@@ -208,6 +211,8 @@ describe("IPC surface", () => {
       startup: true,
       notifications: true,
       diagnostics: false,
+      autoScan: true,
+      autoScanHours: 24,
     };
     repo.updateState({ ...repo.state(), settings });
     const service = new AppService(

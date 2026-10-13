@@ -81,7 +81,7 @@ const installDir = z
 function missing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === "ENOENT";
 }
-function within(directory: string, file: string): boolean {
+export function within(directory: string, file: string): boolean {
   const relative = path.relative(directory, file);
   return (
     relative !== ".." &&
