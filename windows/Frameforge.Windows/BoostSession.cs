@@ -128,10 +128,11 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
     public static void CreatePlan(IPowerStore power, Guid destination)
     {
         if (BuiltInPlans.Contains(destination) || power.Exists(destination)) throw new PlanNotCreatedException("Invalid destination for the new power plan. Nothing was changed.");
+        Win32Exception? refused = null;
         foreach (var source in new[] { HighPerformance, Ultimate })
         {
             try { power.Duplicate(source, destination, OwnedPlanName); }
-            catch (Win32Exception) when (!SafeExists(power, destination)) { continue; }
+            catch (Win32Exception error) when (!SafeExists(power, destination)) { refused = error; continue; }
             catch (Win32Exception error) { throw new InvalidOperationException($"Windows left an unverified copy of the plan ({Describe(error)}). Use Remove Frameforge plan to clean it up."); }
             try
             {
@@ -145,7 +146,9 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
                 throw new InvalidOperationException($"The new plan could not be verified ({Describe(error)}). Use Remove Frameforge plan to clean it up.");
             }
         }
-        throw new PlanNotCreatedException("Windows did not allow creating a High performance plan on this PC (common on Modern Standby devices). Nothing was changed.");
+        // Windows' own answer is shown so the user sees the real reason (Modern Standby PCs commonly refuse).
+        var reason = refused is null ? "" : $" Windows said: {refused.Message} (error {refused.NativeErrorCode}).";
+        throw new PlanNotCreatedException($"Windows did not allow creating a High performance plan on this PC (common on Modern Standby devices).{reason} Nothing was changed.");
     }
     private static bool SafeExists(IPowerStore power, Guid scheme) { try { return power.Exists(scheme); } catch (Win32Exception) { return true; } }
     // A copy left unnamed (helper killed between copy and naming) still carries a Windows source name, or none.

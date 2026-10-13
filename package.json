@@ -8,7 +8,7 @@
   "author": "Frameforge contributors",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "dev:desktop": "npm run build:electron && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
+    "dev:desktop": "npm run windows:ensure && npm run build:electron && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
     "build:electron": "tsc -p tsconfig.electron.json && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/electron/preload.cjs",
     "build": "npm run typecheck && vite build && npm run build:electron",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
@@ -20,9 +20,10 @@
     "windows:test": "dotnet test windows/Frameforge.Windows.Tests/Frameforge.Windows.Tests.csproj",
     "windows:publish": "dotnet publish windows/Frameforge.Windows/Frameforge.Windows.csproj -c Release -r win-x64 --self-contained true -o windows/publish",
     "package:win": "npm run windows:publish && npm run build && electron-builder --win nsis",
-    "start": "electron .",
+    "start": "npm run windows:ensure && electron .",
     "test:e2e": "playwright test",
-    "test:desktop": "node tools/desktop-smoke.mjs"
+    "test:desktop": "npm run windows:ensure && node tools/desktop-smoke.mjs",
+    "windows:ensure": "node tools/ensure-helper.mjs"
   },
   "dependencies": {
     "@fontsource/space-grotesk": "^5.2.10",

@@ -43,23 +43,25 @@ public class RestorePointsTests
     }
 
     [Fact]
-    public void SystemDriveOffIsProtectionDisabledBeforeCreating()
+    public void SystemDriveReadingOffIsAWarningNotABlock()
     {
+        // SPPClients is admin-only and unverified: Windows' own answer and the new sequence decide.
         var store = new FakeRestoreStore();
         store.Protection.Enqueue(false);
-        Assert.Equal("protection-disabled", new RestorePoints(store).Create("Name", false, store.Frequency).Outcome);
-        Assert.Empty(store.FrequencyDuringCreate);
+        var result = new RestorePoints(store).Create("Name", false, store.Frequency);
+        Assert.Single(store.FrequencyDuringCreate);
+        Assert.Equal("created", result.Outcome);
+        Assert.Equal(1, result.Point!.Sequence);
+        Assert.Equal("off", result.DriveCoverage);
+        Assert.Contains("may not cover", result.Message);
     }
 
     [Fact]
-    public void PointNotCoveringSystemDriveIsNotReportedAsCreated()
+    public void OnlyDisableSrIsPolicyDisabled()
     {
-        var store = new FakeRestoreStore();
-        store.Protection.Enqueue(null);
-        store.Protection.Enqueue(false);
-        var result = new RestorePoints(store).Create("Name", false, store.Frequency);
-        Assert.Equal("protection-disabled", result.Outcome);
-        Assert.Equal(1, result.Point!.Sequence);
+        Assert.False(WindowsRestoreStore.PolicyBlocksRestore(name => name == "DisableConfig" ? 1 : null));
+        Assert.True(WindowsRestoreStore.PolicyBlocksRestore(name => name == "DisableSR" ? 1 : null));
+        Assert.False(WindowsRestoreStore.PolicyBlocksRestore(_ => null));
     }
 
     [Fact]

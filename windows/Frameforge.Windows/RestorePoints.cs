@@ -83,8 +83,8 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
     public RestoreResult Create(string description, bool bypass, FrequencyState original)
     {
         if (store.PolicyDisabled()) return new(true, "System Restore is turned off by policy on this PC.", Outcome: "policy-disabled");
-        // A point is useless for whole-PC recovery unless the system drive itself is protected.
-        if (store.SystemDriveProtected() == false) return new(true, $"System Protection is off for {store.SystemDrive}.", Outcome: "protection-disabled", DriveCoverage: "off");
+        // The SPPClients reading is admin-only and its format is unverified, so a "false" here is a warning, not a block:
+        // Windows' own answer (below) and the new-sequence check decide, and coverage is reported after creating.
         if (bypass && store.ReadFrequency() != original) throw new InvalidOperationException("The restore point frequency changed. Retry the normal creation first.");
         var before = Sorted().FirstOrDefault()?.Sequence ?? 0;
         if (!bypass) return CreateCore(description, before, null);
@@ -109,7 +109,7 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
         if (created is not null)
             return store.SystemDriveProtected() switch
             {
-                false => new(true, $"Windows created restore point #{created.Sequence}, but System Protection is off for {store.SystemDrive}, so it does not cover the system drive.", Outcome: "protection-disabled", Point: created, DriveCoverage: "off"),
+                false => new(true, $"Windows created restore point #{created.Sequence}. Frameforge's check reads System Protection as off for {store.SystemDrive}, so this point may not cover the system drive.", Outcome: "created", Point: created, CreatedSequence: created.Sequence, DriveCoverage: "off"),
                 null => new(true, $"Windows restore point created and verified. {store.SystemDrive} coverage could not be confirmed.", Outcome: "created", Point: created, CreatedSequence: created.Sequence, DriveCoverage: "unknown"),
                 true => new(true, "Windows restore point created and verified.", Outcome: "created", Point: created, CreatedSequence: created.Sequence, DriveCoverage: "confirmed")
             };
@@ -303,8 +303,10 @@ public sealed class WindowsRestoreStore : IRestoreStore
     public bool PolicyDisabled()
     {
         using var key = Registry.LocalMachine.OpenSubKey(PolicyKey, false);
-        return key is not null && (key.GetValue("DisableSR") is 1 || key.GetValue("DisableConfig") is 1);
+        return key is not null && PolicyBlocksRestore(key.GetValue);
     }
+    // Only DisableSR turns System Restore off. DisableConfig merely hides the Configure UI; restore points still work.
+    public static bool PolicyBlocksRestore(Func<string, object?> read) => read("DisableSR") is 1;
     public int? SessionInterval()
     {
         using var key = Registry.LocalMachine.OpenSubKey(Key, false);

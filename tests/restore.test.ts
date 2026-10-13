@@ -307,6 +307,19 @@ describe("Windows restore points", () => {
     expect(after.systemDriveConfirmedAt).toBeNull();
     repo.close();
   });
+  it("keeps an unverified C: coverage warning next to a verified restore point", async () => {
+    const { repo, platform, restore } = setup();
+    const create = platform.restoreCreate.bind(platform);
+    platform.restoreCreate = async (name, bypass, original) => ({
+      ...(await create(name, bypass, original)),
+      driveCoverage: "off",
+    });
+    const result = await restore.create("Frameforge", false);
+    expect(result.outcome).toBe("created");
+    expect(result.message).toMatch(/created .* verified in the Windows list/);
+    expect(result.message).toMatch(/reads System Protection as off for C:/);
+    repo.close();
+  });
   it("reports the mock platform honestly", async () => {
     const repo = new Repository(":memory:");
     const restore = new RestorePointService(repo, new MockPlatform());

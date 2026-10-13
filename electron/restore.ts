@@ -264,6 +264,11 @@ export class RestorePointService {
       });
       if (point)
         message = `Restore point #${point.sequence} "${point.description}" created ${new Date(point.createdAt).toLocaleString()} and verified in the Windows list.`;
+      // Coverage is reported as the helper saw it; an unconfirmed or "off" reading must stay visible next to the success.
+      if (result.driveCoverage === "off")
+        message += ` Frameforge's check reads System Protection as off for ${status.systemDrive}, so this point may not cover the system drive. Check System Properties > System Protection.`;
+      else if (result.driveCoverage === "unknown")
+        message += ` Coverage of ${status.systemDrive} could not be confirmed.`;
     }
     if (result.outcome === "throttled") {
       this.lastThrottledAt = Date.now();

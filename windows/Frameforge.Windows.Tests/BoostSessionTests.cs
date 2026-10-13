@@ -346,7 +346,10 @@ public class BoostSessionTests
         Assert.False(power.Exists(owned));
         Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.DeletePlan(power, BoostSessionEngine.HighPerformance));
         var none = new FakePower(); none.Refused.Add(BoostSessionEngine.HighPerformance); none.Refused.Add(BoostSessionEngine.Ultimate);
-        Assert.Throws<PlanNotCreatedException>(() => BoostSessionEngine.CreatePlan(none, Guid.NewGuid()));
+        var refusal = Assert.Throws<PlanNotCreatedException>(() => BoostSessionEngine.CreatePlan(none, Guid.NewGuid()));
+        Assert.Contains("Windows said:", refusal.Message);
+        Assert.Contains("error 87", refusal.Message);
+        Assert.Contains("Nothing was changed", refusal.Message);
     }
     [Fact]
     public void DeleteRefusesBuiltInAndUserPlansAndNamingFailureLeavesNoCopy()
