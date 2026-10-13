@@ -10,7 +10,14 @@ import {
 } from "lucide-react";
 import { catalogue, presets, type Optimization } from "../../shared/catalogue";
 import type { OperationId } from "../../shared/contracts";
-import { PageTitle, Badge, Button, Modal, Empty } from "../components/ui";
+import {
+  PageTitle,
+  Badge,
+  Button,
+  Modal,
+  Empty,
+  LinkButton,
+} from "../components/ui";
 import type { ViewProps } from "../types";
 // The helper runs but a per-PC prerequisite (e.g. the High performance plan) is missing.
 const missingHere = (data: ViewProps["data"]) =>
@@ -218,7 +225,7 @@ export function Optimizations({
     </>
   );
 }
-export function Presets({ data, preview, run, pending }: ViewProps) {
+export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [ids, setIds] = useState<OperationId[]>([]);
@@ -283,18 +290,25 @@ export function Presets({ data, preview, run, pending }: ViewProps) {
               {missingHere(data) &&
                 p.ids.some((id) => !data.capabilities.includes(id)) && (
                   <span className="muted">
-                    Not available on this PC:{" "}
+                    Skipped — not available on this PC:{" "}
                     {p.ids
                       .filter((id) => !data.capabilities.includes(id))
                       .map((id) => catalogue.find((o) => o.id === id)?.name)
                       .join(", ")}
+                    .{" "}
+                    {p.ids.includes("power-plan") &&
+                      !data.capabilities.includes("power-plan") && (
+                        <LinkButton onClick={() => navigate("Game Mode")}>
+                          Create a High performance plan
+                        </LinkButton>
+                      )}
                   </span>
                 )}
               <Button
                 disabled={
                   pending ||
                   (missingHere(data) &&
-                    p.ids.some((id) => !data.capabilities.includes(id)))
+                    p.ids.every((id) => !data.capabilities.includes(id)))
                 }
                 onClick={() => preview(p.ids)}
               >

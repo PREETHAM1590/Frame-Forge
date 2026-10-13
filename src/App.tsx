@@ -18,7 +18,7 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
-import { request } from "./api";
+import { onEvent, request } from "./api";
 import { catalogue } from "../shared/catalogue";
 import type {
   Bootstrap,
@@ -30,7 +30,14 @@ import type {
   Activity,
 } from "../shared/contracts";
 import type { Page, ViewProps } from "./types";
-import { Button, Modal, Badge, Busy, formatTime } from "./components/ui";
+import {
+  Button,
+  Modal,
+  Badge,
+  Busy,
+  LinkButton,
+  formatTime,
+} from "./components/ui";
 import { Dashboard } from "./views/Dashboard";
 import { Optimizations, Presets } from "./views/Optimizations";
 import { Games, GameMode } from "./views/Games";
@@ -71,6 +78,8 @@ export default function App() {
   const [createPoint, setCreatePoint] = useState(false);
   const [noPoint, setNoPoint] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  // Preset items whose prerequisite is missing on this PC (e.g. no performance power plan); the rest still apply.
+  const [skipped, setSkipped] = useState<OperationId[]>([]);
   const load = useCallback(async () => {
     try {
       setData(await request("bootstrap", {}));
@@ -98,6 +107,31 @@ export default function App() {
       active = false;
     };
   }, []);
+  // One app-wide subscription keeps every page (Dashboard, library, banner) in step with the booster.
+  useEffect(
+    () =>
+      onEvent((event) => {
+        if (event.type !== "boost") return;
+        const s = event.session;
+        setData((old) =>
+          old
+            ? {
+                ...old,
+                boost: {
+                  ...old.boost,
+                  session: s.status === "ended" ? null : s,
+                },
+              }
+            : old,
+        );
+        // A finished session also wrote activity rows and may have changed saved state.
+        if (s.status === "ended" || s.status === "recovery-needed")
+          void request("bootstrap", {})
+            .then(setData)
+            .catch(() => undefined);
+      }),
+    [],
+  );
   useEffect(() => {
     document.documentElement.dataset.theme =
       data?.state.settings.theme ?? "dark";
@@ -153,7 +187,16 @@ export default function App() {
     setConfirmed(false);
     setNoPoint(null);
     setRestoreOffer(false);
-    if (!data || ids.some((id) => !data.capabilities.includes(id))) {
+    const canSkip = data?.mode === "desktop" && data.capabilities.length > 0;
+    const usable = canSkip
+      ? ids.filter((id) => data.capabilities.includes(id))
+      : ids;
+    setSkipped(usable.length ? ids.filter((id) => !usable.includes(id)) : []);
+    if (
+      !data ||
+      !usable.length ||
+      usable.some((id) => !data.capabilities.includes(id))
+    ) {
       if (data?.mode === "desktop" && data.capabilities.length)
         setPreviewError(
           "A prerequisite is not met on this PC; see Prerequisites in the optimization details.",
@@ -169,7 +212,7 @@ export default function App() {
         !restore.policyDisabled;
       setRestoreOffer(offer);
       setCreatePoint(offer);
-      setPreview(await request("preview", { ids }));
+      setPreview(await request("preview", { ids: usable }));
     } catch (e) {
       setPreviewError(e instanceof Error ? e.message : "Preview failed.");
     } finally {
@@ -200,7 +243,9 @@ export default function App() {
         }
       }
       if (withPoint || refresh) {
-        const fresh = await request("preview", { ids: selection });
+        const fresh = await request("preview", {
+          ids: selection.filter((id) => !skipped.includes(id)),
+        });
         if (!sameChanges(fresh.changes, preview.changes)) {
           setPreview(fresh);
           setConfirmed(false);
@@ -245,6 +290,29 @@ export default function App() {
         )}
       </div>
     );
+  // Explains the skipped preset items and points at the only in-app fix (Game Mode creates the missing plan).
+  const skippedNotice = skipped.length ? (
+    <p className="notice">
+      <AlertTriangle size={17} />
+      <span>
+        Skipped — not available on this PC:{" "}
+        {skipped
+          .map((id) => catalogue.find((o) => o.id === id)?.name)
+          .join(", ")}
+        . The other items in this selection are not affected.{" "}
+        {skipped.includes("power-plan") && (
+          <LinkButton
+            onClick={() => {
+              setSelection(null);
+              navigate("Game Mode");
+            }}
+          >
+            Create a High performance plan in Game Mode
+          </LinkButton>
+        )}
+      </span>
+    </p>
+  ) : null;
   const props: ViewProps = {
     data,
     pending: requestsPending > 0,
@@ -266,11 +334,14 @@ export default function App() {
   const recoveryRows = data.activity.filter(
     (a) => a.status === "recovery-needed",
   );
-  const recovery = recoveryRows.length;
-  // Restore point rows are resolved on Restore & backups, so send the user there.
-  const recoveryPage: Page = recoveryRows.every(restoreRecoveryRow)
-    ? "Restore & backups"
-    : "Activity";
+  const boostRecovery = data.boost.session?.status === "recovery-needed";
+  const recovery = recoveryRows.length + (boostRecovery ? 1 : 0);
+  // Restore point rows are resolved on Restore & backups; a booster session on Game Mode (Retry / Dismiss).
+  const recoveryPage: Page = recoveryRows.length
+    ? recoveryRows.every(restoreRecoveryRow)
+      ? "Restore & backups"
+      : "Activity"
+    : "Game Mode";
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
@@ -302,8 +373,11 @@ export default function App() {
             >
               <n.icon size={19} />
               <span>{n.name}</span>
-              {n.name === "Activity" && recovery > 0 && (
-                <Badge tone="red">{recovery}</Badge>
+              {n.name === "Activity" && recoveryRows.length > 0 && (
+                <Badge tone="red">{recoveryRows.length}</Badge>
+              )}
+              {n.name === "Game Mode" && boostRecovery && (
+                <Badge tone="red">1</Badge>
               )}
               {page === n.name && (
                 <ChevronRight className="nav-arrow" size={16} />
@@ -367,7 +441,9 @@ export default function App() {
             {recovery} operation{recovery === 1 ? "" : "s"} need recovery.
             {recoveryPage === "Activity"
               ? " Review saved snapshots."
-              : " Open Restore & backups."}
+              : recoveryPage === "Game Mode"
+                ? " Open Game Mode to retry or dismiss."
+                : " Open Restore & backups."}
             <ChevronRight size={17} />
           </button>
         )}
@@ -436,6 +512,7 @@ export default function App() {
               </Badge>
               <p>{result.message}</p>
               <code className="setting-path">{result.id}</code>
+              {skippedNotice}
               <Button
                 onClick={() => {
                   setSelection(null);
@@ -454,14 +531,21 @@ export default function App() {
                   return (
                     <div key={id}>
                       <h3>{item.name}</h3>
-                      <Badge tone={item.risk === "Low" ? "lime" : "amber"}>
-                        {item.risk} risk
-                      </Badge>
+                      {skipped.includes(id) ? (
+                        <Badge tone="amber">
+                          Skipped — not available on this PC
+                        </Badge>
+                      ) : (
+                        <Badge tone={item.risk === "Low" ? "lime" : "amber"}>
+                          {item.risk} risk
+                        </Badge>
+                      )}
                       <p className="muted">{item.description}</p>
                     </div>
                   );
                 })}
               </div>
+              {skippedNotice}
               {previewLoading ? (
                 <Busy label="Checking prerequisites and current values" />
               ) : preview ? (

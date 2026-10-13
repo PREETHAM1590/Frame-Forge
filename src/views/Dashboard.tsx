@@ -39,6 +39,9 @@ export function Dashboard({ data, navigate, preview }: ViewProps) {
     };
   }, []);
   const session = data.boost.session;
+  const sessionGame = data.state.games.find((g) => g.id === session?.gameId);
+  const cap = (m: string) => m.charAt(0).toUpperCase() + m.slice(1);
+  const booster = data.state.booster;
   const pointerReady = data.capabilities.includes("mouse-precision");
   const used = h.memoryBytes - h.freeMemoryBytes;
   const memoryPercent = h.memoryBytes
@@ -198,8 +201,8 @@ export function Dashboard({ data, navigate, preview }: ViewProps) {
                       ? "Requires the desktop app"
                       : "Windows helper missing"
                     : session
-                      ? `Session ${session.status}`
-                      : "No active session"}
+                      ? `${sessionGame?.name ?? "Boosted game"}: ${cap(session.mode)} mode, ${session.status}`
+                      : `Mode ${cap(booster.mode)}; auto-boost ${booster.autoBoost ? "on" : "off"}; no active session`}
                 </p>
               </div>
               <Badge tone={session ? statusTone(session.status) : "neutral"}>
