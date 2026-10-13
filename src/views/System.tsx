@@ -182,6 +182,48 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           disabled={pending}
           onChange={(diagnostics) => update({ diagnostics })}
         />
+        <Toggle
+          label="Scan for games automatically on startup"
+          description="Look for newly installed games in the background and add them to your library. Games you remove are not added back."
+          checked={settings.autoScan}
+          disabled={pending || data.mode === "demo"}
+          onChange={(autoScan) => update({ autoScan })}
+        />
+        {settings.autoScan && data.mode !== "demo" && (
+          <div className="setting-row">
+            <div>
+              <label htmlFor="scan-interval">Scan at most every</label>
+              <p className="muted">
+                A scan runs at start only when the last one is older than this.
+              </p>
+            </div>
+            <select
+              id="scan-interval"
+              value={settings.autoScanHours}
+              disabled={pending}
+              onChange={(e) =>
+                update({ autoScanHours: Number(e.target.value) })
+              }
+            >
+              {[
+                [6, "6 hours"],
+                [12, "12 hours"],
+                [24, "24 hours"],
+                [72, "3 days"],
+                [168, "7 days"],
+              ].map(([hours, label]) => (
+                <option key={hours} value={hours}>
+                  {label}
+                </option>
+              ))}
+              {![6, 12, 24, 72, 168].includes(settings.autoScanHours) && (
+                <option value={settings.autoScanHours}>
+                  {settings.autoScanHours} hours
+                </option>
+              )}
+            </select>
+          </div>
+        )}
       </section>
       <section className="settings-section">
         <h2>

@@ -38,6 +38,7 @@ import {
   LinkButton,
   formatTime,
 } from "./components/ui";
+import { clearGameIcons } from "./components/GameIcon";
 import { Dashboard } from "./views/Dashboard";
 import { Optimizations, Presets } from "./views/Optimizations";
 import { Games, GameMode } from "./views/Games";
@@ -122,6 +123,20 @@ export default function App() {
   useEffect(
     () =>
       onEvent((event) => {
+        // A finished scan may have added games; refresh the library and its icons.
+        if (event.type === "scan") {
+          if (event.phase === "started")
+            setData((old) =>
+              old ? { ...old, scan: { ...old.scan, running: true } } : old,
+            );
+          if (event.phase === "finished") {
+            clearGameIcons();
+            void request("bootstrap", {})
+              .then(setData)
+              .catch(() => undefined);
+          }
+          return;
+        }
         if (event.type !== "boost") return;
         const s = event.session;
         setData((old) =>

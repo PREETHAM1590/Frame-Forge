@@ -1626,3 +1626,70 @@ input[type="checkbox"] {
   font-size: 15px;
   margin-bottom: 6px;
 }
+.game-icon {
+  flex: none;
+  border-radius: 6px;
+  object-fit: contain;
+}
+.game-icon.placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 600;
+}
+.game-art .game-icon {
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.3);
+}
+.game-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.game-heading .setting-path {
+  margin: 0;
+  min-width: 0;
+}
+.action-list progress {
+  display: block;
+  width: min(260px, 100%);
+  margin-top: 8px;
+}
+.picker-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.picker-row .field {
+  flex: 1;
+}
+.session-surface .game-icon {
+  margin-bottom: 12px;
+}
+.removed-games {
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.removed-games summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.removed-games ul {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.removed-games li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.removed-games li > div {
+  min-width: 0;
+}

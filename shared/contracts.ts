@@ -19,6 +19,9 @@ export const SettingsSchema = z
     startup: z.boolean(),
     notifications: z.boolean(),
     diagnostics: z.boolean(),
+    /** Scan for installed games in the background at app start, at most once per interval. */
+    autoScan: z.boolean().default(true),
+    autoScanHours: z.number().int().min(1).max(720).default(24),
   })
   .strict();
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -214,6 +217,8 @@ export const defaultState: AppState = {
     startup: false,
     notifications: true,
     diagnostics: false,
+    autoScan: true,
+    autoScanHours: 24,
   },
   games: [],
   presets: [],
@@ -492,6 +497,24 @@ export const BootstrapSchema = z
         watching: z.boolean(),
       })
       .strict(),
+    /** Game scan status: a scan may already be running when the window loads. */
+    scan: z
+      .object({ running: z.boolean(), lastScanAt: z.string().nullable() })
+      .strict()
+      .default({ running: false, lastScanAt: null }),
+    /** Games the user removed; scans skip them until restored. */
+    removedGames: z
+      .array(
+        z
+          .object({
+            name: z.string().max(80),
+            path: z.string().max(2048),
+            source: GameSchema.shape.source,
+          })
+          .strict(),
+      )
+      .max(1000)
+      .default([]),
   })
   .strict();
 export type Bootstrap = z.infer<typeof BootstrapSchema>;
@@ -508,6 +531,11 @@ const Selection = z
       ),
   })
   .strict();
+export const GameIconSchema = z
+  .string()
+  .startsWith("data:image/png;base64,")
+  .max(300_000)
+  .nullable();
 export const requests = {
   bootstrap: Empty,
   refresh: Empty,
@@ -553,6 +581,10 @@ export const requests = {
     .object({ page: z.enum(["graphics", "startup", "network", "services"]) })
     .strict(),
   removeGame: z.object({ id: Id }).strict(),
+  // The renderer sends only a library id; the main process resolves and validates every path.
+  gameIcon: z.object({ id: Id }).strict(),
+  // Puts a removed game back (by its install path) and forgets the removal.
+  restoreGame: z.object({ path: z.string().min(1).max(2048) }).strict(),
   profile: z
     .object({
       id: Id,
@@ -596,6 +628,8 @@ export const responses = {
   runningProcesses: z.array(RunningProcessSchema).max(500),
   boostPowerPlan: BoostStatusSchema,
   removeGame: StateSchema,
+  gameIcon: GameIconSchema,
+  restoreGame: StateSchema,
   profile: StateSchema,
   savePreset: StateSchema,
   removePreset: StateSchema,
@@ -618,6 +652,15 @@ export const EventSchema = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ type: z.literal("boost"), session: BoostSessionSchema }).strict(),
+  // A whole-PC game scan began or ended; `added` is the number of new library games.
+  z
+    .object({
+      type: z.literal("scan"),
+      phase: z.enum(["started", "finished"]),
+      auto: z.boolean(),
+      added: z.number().int().nonnegative(),
+    })
+    .strict(),
 ]);
 export type AppEvent = z.infer<typeof EventSchema>;
 export type FrameforgeApi = Api & {

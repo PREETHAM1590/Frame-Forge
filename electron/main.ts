@@ -1,4 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  shell,
+  type NativeImage,
+} from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { existsSync, mkdirSync } from "node:fs";
@@ -14,6 +22,7 @@ import {
 import { EventSchema } from "../shared/contracts.js";
 import { settingsTarget } from "./settingsPages.js";
 import { userDataOverride } from "./userData.js";
+import { GameIcons, maxIconBytes } from "./icons.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = !app.isPackaged && process.argv.includes("--dev");
 const rendererFile = path.join(here, "../../dist/index.html");
@@ -61,8 +70,44 @@ if (!app.requestSingleInstanceLock()) {
         process.platform === "win32" && existsSync(helper)
           ? new WindowsPlatform(helper)
           : new MockPlatform();
+      // Icons are shown at most ~96px; keep the cached PNGs small.
+      // Scaled to fit 128px, then shrunk further until it is under the size the app serves.
+      const png = (image: NativeImage) => {
+        if (image.isEmpty()) return null;
+        const { width, height } = image.getSize();
+        let scale = Math.min(1, 128 / Math.max(width, height));
+        for (let i = 0; i < 6; i++, scale *= 0.7) {
+          const bytes = (
+            scale < 1
+              ? image.resize({
+                  width: Math.max(1, Math.round(width * scale)),
+                  height: Math.max(1, Math.round(height * scale)),
+                  quality: "best",
+                })
+              : image
+          ).toPNG();
+          if (bytes.length <= maxIconBytes) return bytes;
+        }
+        return null;
+      };
+      const iconDir = path.join(app.getPath("userData"), "icons");
+      const icons = new GameIcons({
+        dir: iconDir,
+        fileIcon: async (exe) =>
+          png(await app.getFileIcon(exe, { size: "large" })),
+        image: async (file) => png(nativeImage.createFromPath(file)),
+        // Windows answers a path that does not exist with its generic executable icon.
+        genericIcon: async () =>
+          png(
+            await app.getFileIcon(path.join(iconDir, "no-such-app.exe"), {
+              size: "large",
+            }),
+          ),
+      });
       const service = new AppService(repo, platform, {
         version: app.getVersion(),
+        gameIcon: (game) => icons.dataUrl(game),
+        pruneIcons: (games) => icons.prune(games),
         startupSupported: app.isPackaged,
         setStartup: (enabled) => {
           if (!app.isPackaged) {
@@ -204,6 +249,10 @@ if (!app.requestSingleInstanceLock()) {
         });
         window.on("closed", () => {
           window = null;
+        });
+        // Background scan once the UI is up; due-ness (first launch / interval / setting) is decided in the service.
+        window.webContents.once("did-finish-load", () => {
+          setTimeout(() => void service.autoScan(), 1500);
         });
         if (dev) void window.loadURL(allowedUrl);
         else void window.loadFile(rendererFile);
