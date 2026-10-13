@@ -67,6 +67,13 @@ export class AppService {
       if (this.engine.isBusy)
         throw new Error("Wait for the Windows operation to finish.");
     };
+    // Engine changes and restore requests both write Windows state; never overlap them.
+    const noRestoreInFlight = () => {
+      if (this.restorePoints.isBusy)
+        throw new Error(
+          "Wait for the System Restore request to finish before changing Windows settings.",
+        );
+    };
     this.handlers = {
       bootstrap: async () => this.bootstrap(),
       refresh: async () => this.refresh(),
@@ -96,9 +103,15 @@ export class AppService {
         return state;
       },
       preview: async ({ ids }) => this.engine.preview(ids),
-      confirm: async ({ token }) => this.engine.confirm(token),
+      confirm: async ({ token }) => {
+        noRestoreInFlight();
+        return this.engine.confirm(token);
+      },
       cancel: async () => this.engine.cancel(),
-      rollback: async ({ id }) => this.engine.rollback(id),
+      rollback: async ({ id }) => {
+        noRestoreInFlight();
+        return this.engine.rollback(id);
+      },
       backup: async ({ name }) => {
         guard();
         const result = this.repo.backup(name);

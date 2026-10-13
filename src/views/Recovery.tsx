@@ -616,7 +616,13 @@ export const restoreRecoveryRow = (a: Activity) =>
   !a.rollback &&
   a.label.startsWith("Restore point") &&
   (a.status === "running" || a.status === "recovery-needed");
-export function ActivityLog({ data, run, pending, navigate }: ViewProps) {
+export function ActivityLog({
+  data,
+  run,
+  pending,
+  restorePending,
+  navigate,
+}: ViewProps) {
   const [selected, setSelected] = useState<Activity | null>(null);
   const [filter, setFilter] = useState("All");
   const [clear, setClear] = useState(false);
@@ -710,7 +716,12 @@ export function ActivityLog({ data, run, pending, navigate }: ViewProps) {
           <div className="dialog-actions">
             <Button onClick={() => setSelected(null)}>Cancel</Button>
             <Button
-              disabled={pending}
+              disabled={pending || restorePending}
+              title={
+                restorePending
+                  ? "A System Restore request is waiting on Windows. Wait for it to finish before reverting."
+                  : undefined
+              }
               variant="primary"
               onClick={async () => {
                 const result = await run("rollback", {

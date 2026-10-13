@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { Repository } from "../electron/repository";
 import {
   MockPlatform,
@@ -23,6 +23,7 @@ class RestorePlatform extends MockPlatform {
   calls: { bypass: boolean; original: Frequency }[] = [];
   leaveBypass = false;
   duringCreate?: () => void;
+  gate?: Promise<void>;
   async restoreStatus(): Promise<PlatformRestoreStatus> {
     return {
       protection: "enabled",
@@ -35,6 +36,7 @@ class RestorePlatform extends MockPlatform {
     };
   }
   async restoreCreate(_name: string, bypass: boolean, original: Frequency) {
+    await this.gate;
     this.calls.push({ bypass, original });
     if (bypass) this.frequency = { existed: true, minutes: 0 };
     this.duringCreate?.();
@@ -398,5 +400,77 @@ describe("Windows restore points", () => {
         ?.message,
     ).toBe("Still working.");
     expect((await platform.restoreList()).available).toBe(false);
+  });
+  describe("engine and restore requests never overlap", () => {
+    const open = () => {
+      const repo = new Repository(":memory:");
+      const platform = new RestorePlatform();
+      platform.capabilities = ["capture-off"];
+      const service = new AppService(repo, platform, {
+        pickGame: async () => null,
+        detectGames: async () => ({
+          games: [],
+          warnings: [],
+          launchers: [],
+          perLauncher: [],
+        }),
+        scanFolder: async () => null,
+        setStartup: () => {},
+        version: "test",
+      });
+      return { repo, platform, service };
+    };
+    const gate = () => {
+      let release!: () => void;
+      const promise = new Promise<void>((r) => (release = r));
+      return { promise, release };
+    };
+    const point = { name: "Frameforge test", confirmed: true };
+    it("rejects apply and revert while a restore request is in flight", async () => {
+      const { repo, platform, service } = open();
+      const { token } = (await service.dispatch("preview", {
+        ids: ["capture-off"],
+      })) as { token: string };
+      const g = gate();
+      platform.gate = g.promise;
+      const create = service.dispatch("createRestorePoint", point);
+      await expect(
+        service.dispatch("confirm", { token, confirmed: true }),
+      ).rejects.toThrow(/System Restore request/);
+      await expect(
+        service.dispatch("rollback", {
+          id: crypto.randomUUID(),
+          confirmed: true,
+        }),
+      ).rejects.toThrow(/System Restore request/);
+      expect(platform.applied).toEqual([]);
+      g.release();
+      await create;
+      await expect(
+        service.dispatch("confirm", { token, confirmed: true }),
+      ).resolves.toBeTruthy();
+      repo.close();
+    });
+    it("rejects restore actions while an engine operation is running", async () => {
+      const { repo, platform, service } = open();
+      const { token } = (await service.dispatch("preview", {
+        ids: ["capture-off"],
+      })) as { token: string };
+      const g = gate();
+      vi.spyOn(platform, "apply").mockImplementation(() => g.promise);
+      const apply = service.dispatch("confirm", { token, confirmed: true });
+      for (const [method, input] of [
+        ["createRestorePoint", point],
+        ["enableSystemProtection", { confirmed: true }],
+        ["recoverRestoreFrequency", { confirmed: true }],
+      ] as const)
+        await expect(service.dispatch(method, input)).rejects.toThrow(
+          /Windows operation/,
+        );
+      expect(platform.calls).toEqual([]);
+      g.release();
+      await apply;
+      repo.close();
+    });
   });
 });

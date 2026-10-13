@@ -52,6 +52,8 @@ const elevatedMethods: ReadonlySet<Method> = new Set([
   "recoverRestoreFrequency",
   "openSystemRestore",
 ]);
+const restoreWait =
+  "A System Restore request is waiting on Windows. Wait for it to finish before changing Windows settings.";
 const changeKey = (changes: Preview["changes"]) =>
   JSON.stringify(changes.map((c) => [c.setting, c.before, c.after]));
 const sameChanges = (a: Preview["changes"], b: Preview["changes"]) =>
@@ -652,7 +654,8 @@ export default function App() {
                       </Button>
                       <Button
                         variant="danger"
-                        disabled={applying}
+                        disabled={applying || restoreRequests > 0}
+                        title={restoreRequests > 0 ? restoreWait : undefined}
                         onClick={() => void applyChanges(false, true)}
                       >
                         Apply without a restore point
@@ -676,8 +679,10 @@ export default function App() {
                     !confirmed ||
                     applying ||
                     previewLoading ||
-                    (restoreOffer && createPoint && restoreRequests > 0)
+                    (restoreOffer && createPoint && restoreRequests > 0) ||
+                    restoreRequests > 0
                   }
+                  title={restoreRequests > 0 ? restoreWait : undefined}
                   onClick={() =>
                     void applyChanges(restoreOffer && createPoint, false)
                   }
