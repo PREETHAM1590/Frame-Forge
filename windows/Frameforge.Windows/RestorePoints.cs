@@ -83,7 +83,7 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
     public RestoreResult Create(string description, bool bypass, FrequencyState original)
     {
         if (store.PolicyDisabled()) return new(true, "System Restore is turned off by policy on this PC.", Outcome: "policy-disabled");
-        // The SPPClients reading is admin-only and its format is unverified, so a "false" here is a warning, not a block:
+        // The SPP/Clients reading is admin-only and its format is unverified, so a "false" here is a warning, not a block:
         // Windows' own answer (below) and the new-sequence check decide, and coverage is reported after creating.
         if (bypass && store.ReadFrequency() != original) throw new InvalidOperationException("The restore point frequency changed. Retry the normal creation first.");
         var before = Sorted().FirstOrDefault()?.Sequence ?? 0;
