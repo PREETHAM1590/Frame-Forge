@@ -19,7 +19,7 @@ import { OperationEngine } from "./operations.js";
 import { BoostEngine } from "./booster.js";
 import { RestorePointService } from "./restore.js";
 import { LaunchSettingsService } from "./launchSettings.js";
-import type { DetectionResult } from "./games.js";
+import { within, type DetectionResult } from "./games.js";
 import { fallbackHardware, type Platform } from "./platform.js";
 import {
   dismissGame,
@@ -35,6 +35,8 @@ import {
 type Handlers = { [M in Method]: (input: Request<M>) => Promise<Response<M>> };
 export interface DesktopServices {
   pickGame: () => Promise<Game | null>;
+  /** Opens the native file dialog in the game's folder; the chosen, resolved .exe path or null when cancelled. */
+  pickExecutable?: (game: Game) => Promise<string | null>;
   detectGames: () => Promise<DetectionResult>;
   /** Opens the native folder dialog and scans the chosen folder; null when cancelled. */
   scanFolder: () => Promise<DetectionResult | null>;
@@ -385,6 +387,36 @@ export class AppService {
               ? { active: false, gameId: null }
               : state.gameMode,
         });
+      },
+      chooseExecutable: async ({ id }) => {
+        guard();
+        const game = this.repo.state().games.find((g) => g.id === id);
+        if (!game) throw new Error("Game not found");
+        if (this.repo.boostSession()?.gameId === id)
+          throw new Error("Stop Game Mode for this game first.");
+        // A saved prior value belongs to the program it was written for.
+        if (this.launch.hasRecords(id))
+          throw new Error(
+            "Revert this game's launch settings before changing its executable, so the saved prior values stay with the right program.",
+          );
+        const picked = await this.desktop.pickExecutable?.(game);
+        if (!picked) return null;
+        guard();
+        if (game.path && !within(game.path, picked))
+          throw new Error(
+            `Choose the game's executable inside its folder (${game.path}).`,
+          );
+        const state = this.repo.state();
+        const chosen = { ...game, executablePath: picked };
+        this.repo.updateState({
+          ...state,
+          games: state.games.map((g) => (g.id === id ? chosen : g)),
+        });
+        this.log(
+          "Game executable chosen",
+          `${game.name}: launch settings can now use ${path.basename(picked)}.`,
+        );
+        return chosen;
       },
       gameIcon: async ({ id }) => {
         const game = this.repo.state().games.find((g) => g.id === id);

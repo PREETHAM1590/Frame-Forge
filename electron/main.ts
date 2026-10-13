@@ -163,6 +163,17 @@ if (!app.requestSingleInstanceLock()) {
           return scanGameFolder(result.filePaths[0]);
         },
         notify: (event) => window?.webContents.send("frameforge:event", event),
+        pickExecutable: async (game) => {
+          if (!window) return null;
+          const result = await dialog.showOpenDialog(window, {
+            title: `Choose the executable of ${game.name}`,
+            defaultPath: game.path || undefined,
+            properties: ["openFile"],
+            filters: [{ name: "Windows executable", extensions: ["exe"] }],
+          });
+          if (result.canceled || !result.filePaths[0]) return null;
+          return safeExecutable(result.filePaths[0]);
+        },
         pickGame: async () => {
           if (!window) return null;
           const result = await dialog.showOpenDialog(window, {

@@ -1364,6 +1364,27 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
         {data.mode === "demo" && (
           <p className="muted">Launch settings require the desktop app.</p>
         )}
+        {data.mode !== "demo" && game && launch && !launch.executable && (
+          <div className="notice">
+            <Info size={18} />
+            <div>
+              <p>
+                Frameforge does not know which program starts {game.name}, so
+                launch settings are off. Choose its .exe (inside the game's
+                folder) to turn them on.
+              </p>
+              <Button
+                disabled={pending}
+                onClick={async () => {
+                  const chosen = await run("chooseExecutable", { id: gameId });
+                  if (chosen) setLaunchTick((n) => n + 1);
+                }}
+              >
+                Choose the game's .exe…
+              </Button>
+            </div>
+          </div>
+        )}
         {data.mode !== "demo" && game && (
           <div className="toolbar">
             <Button

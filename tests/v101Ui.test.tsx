@@ -575,3 +575,44 @@ describe("settings and system wording", () => {
     expect(screen.queryByText(/Available in the installed app\./)).toBeNull();
   });
 });
+describe("launch settings without a known executable", () => {
+  it("offers to choose the .exe and re-reads the settings afterwards", async () => {
+    const h = harness({
+      launch: {
+        gpuPreference: {
+          state: "unsupported",
+          canRevert: false,
+          detail: "Frameforge does not know this game's executable.",
+        },
+        fullscreenOptimizations: { state: "unsupported", canRevert: false },
+      },
+    });
+    let chosen = false;
+    h.install({
+      launchSettings: (input: { gameId: string }) => ({
+        gameId: input.gameId,
+        executable: chosen ? "C:/Games/Alpha/game.exe" : null,
+        settings: [],
+      }),
+      chooseExecutable: () => {
+        chosen = true;
+        return h.model.games[0];
+      },
+    });
+    await openGameMode();
+    const button = await screen.findByRole("button", {
+      name: /Choose the game's .exe…/,
+    });
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(
+        h.calls.find((c) => c.method === "chooseExecutable")?.input,
+      ).toEqual({ id: h.model.games[0]!.id }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /Choose the game's .exe…/ }),
+      ).toBeNull(),
+    );
+  });
+});

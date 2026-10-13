@@ -427,6 +427,19 @@ public class V101Tests
         Assert.False(without.Mechanisms.Single(c => c.Id == "standbyPurge").Available);
     }
 
+    // The Node side validates every field strictly: an optional member must be left out, never written as null.
+    [Fact]
+    public void CapabilitiesSerializeTheWayNodeParsesThem()
+    {
+        var caps = BoostSessionEngine.Capabilities(new Power(), new Timer(null, new(true, false)), 12, new MemoryStore(), null);
+        var json = JsonSerializer.Serialize(caps, HelperJson.Options);
+        Assert.DoesNotContain("\"code\":null", json);
+        Assert.DoesNotContain("\"code\"", json);
+        Assert.Contains("\"timerGlobal\":{\"eligible\":true,\"enabled\":false}", json);
+        Assert.Equal("{\"id\":\"gameBarCapture\",\"available\":true,\"detail\":\"d\",\"active\":true,\"code\":\"policy\"}", JsonSerializer.Serialize(new Capability("gameBarCapture", true, "d", true, "policy"), HelperJson.Options));
+        Assert.DoesNotContain("timerGlobal", JsonSerializer.Serialize(new BoostCapabilities(1, []), HelperJson.Options));
+    }
+
     // ---- timer resolution on Windows 11 ----
     [Fact]
     public void TheTimerCapabilityExplainsWhatIsMissingAndWhatToDo()

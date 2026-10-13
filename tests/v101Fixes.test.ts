@@ -8,6 +8,7 @@ import { AppService } from "../electron/service";
 import {
   BoostSessionSchema,
   GameSchema,
+  HelperResult,
   type ProcessTarget,
 } from "../shared/contracts";
 const target: ProcessTarget = {
@@ -193,5 +194,90 @@ describe("F3: an expected network refusal is not a failed request", () => {
     ).toBe(true);
     expect(labels.some((l) => l.startsWith("Request failed"))).toBe(false);
     repo.close();
+  });
+});
+describe("helper capability JSON", () => {
+  it("parses exactly what the helper writes, with optional members left out", () => {
+    // Same shape as V101Tests.CapabilitiesSerializeTheWayNodeParsesThem.
+    const line = `{"ok":true,"message":"x","capabilities":{"logicalCpus":12,"mechanisms":[{"id":"gameBarCapture","available":true,"detail":"d","active":true,"code":"policy"},{"id":"standbyPurge","available":true,"detail":"d","active":false}],"topology":null,"timerGlobal":{"eligible":true,"enabled":false}}}`;
+    const parsed = HelperResult.parse(JSON.parse(line));
+    expect(parsed.capabilities?.mechanisms[0]?.code).toBe("policy");
+    expect(parsed.capabilities?.timerGlobal).toEqual({
+      eligible: true,
+      enabled: false,
+    });
+    // A null member is rejected loudly, which is how the real helper once made every capability look unavailable.
+    expect(
+      HelperResult.safeParse({
+        ...JSON.parse(line),
+        capabilities: {
+          logicalCpus: 1,
+          mechanisms: [
+            {
+              id: "gameMode",
+              available: true,
+              detail: "d",
+              active: false,
+              code: null,
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
+});
+describe("choosing a game's executable for launch settings", () => {
+  const make = (picked: string | null) => {
+    const { repo, game } = seed("balanced");
+    repo.updateState({
+      ...repo.state(),
+      games: [{ ...game, path: "C:/Games/Test", executablePath: null }],
+    });
+    const service = new AppService(repo, new Platform(), {
+      ...desktop,
+      pickExecutable: async () => picked,
+    });
+    return { repo, game, service };
+  };
+  it("saves an executable inside the game's folder and logs it", async () => {
+    const { repo, game, service } = make("C:/Games/Test/bin/game.exe");
+    const chosen = (await service.dispatch("chooseExecutable", {
+      id: game.id,
+    })) as { executablePath: string };
+    expect(chosen.executablePath).toBe("C:/Games/Test/bin/game.exe");
+    expect(repo.state().games[0]?.executablePath).toBe(
+      "C:/Games/Test/bin/game.exe",
+    );
+    expect(
+      repo.activity().some((a) => a.label === "Game executable chosen"),
+    ).toBe(true);
+    repo.close();
+  });
+  it("refuses an executable outside the folder, a cancelled dialog changes nothing, and a saved launch value blocks it", async () => {
+    const outside = make("C:/Elsewhere/other.exe");
+    await expect(
+      outside.service.dispatch("chooseExecutable", { id: outside.game.id }),
+    ).rejects.toThrow(/inside its folder/);
+    expect(outside.repo.state().games[0]?.executablePath).toBeNull();
+    const cancelled = make(null);
+    expect(
+      await cancelled.service.dispatch("chooseExecutable", {
+        id: cancelled.game.id,
+      }),
+    ).toBeNull();
+    const saved = make("C:/Games/Test/game.exe");
+    saved.repo.setMeta(`launch:${saved.game.id}:gpuPreference`, {
+      exe: "C:/Games/Test/old.exe",
+      existed: false,
+      value: null,
+      applied: "GpuPreference=2;",
+      at: new Date().toISOString(),
+    });
+    await expect(
+      saved.service.dispatch("chooseExecutable", { id: saved.game.id }),
+    ).rejects.toThrow(/Revert this game's launch settings/);
+    await expect(
+      saved.service.dispatch("chooseExecutable", { id: crypto.randomUUID() }),
+    ).rejects.toThrow(/Game not found/);
   });
 });

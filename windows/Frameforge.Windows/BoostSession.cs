@@ -39,10 +39,10 @@ public record Ended(string Event, string Reason, [property: JsonIgnore(Condition
 public record ProcInfo(ProcessTarget Target, int SessionId, string? Sid, bool Critical);
 // Active: the mechanism's effect is already in place on this PC (for example Game Mode already on).
 // Code: a stable reason for the display, for example "policy" when Windows policy already does what the mechanism would do.
-public record Capability(string Id, bool Available, string Detail, bool Active = false, string? Code = null);
+public record Capability(string Id, bool Available, string Detail, bool Active = false, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Code = null);
 // Windows 11 only lets a timer request reach other programs when GlobalTimerResolutionRequests is 1. Eligible: this Windows build has the setting.
 public record TimerGlobal(bool Eligible, bool Enabled);
-public record BoostCapabilities(int LogicalCpus, Capability[] Mechanisms, CpuTopology? Topology = null, TimerGlobal? TimerGlobal = null);
+public record BoostCapabilities(int LogicalCpus, Capability[] Mechanisms, CpuTopology? Topology = null, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TimerGlobal? TimerGlobal = null);
 public record ProcessEntry(string Image, int Pid, bool Protected);
 // Reported as code "plan-not-created": the helper verified no plan copy exists, so the recorded GUID can be dropped.
 public sealed class PlanNotCreatedException(string message) : InvalidOperationException(message);

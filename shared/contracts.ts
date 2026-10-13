@@ -784,6 +784,8 @@ export const requests = {
     .object({ page: z.enum(["graphics", "startup", "network", "services"]) })
     .strict(),
   removeGame: z.object({ id: Id }).strict(),
+  // Native file dialog, opened by the main process: picks the .exe of a library game that has none (launch settings need it).
+  chooseExecutable: z.object({ id: Id }).strict(),
   // The renderer sends only a library id; the main process resolves and validates every path.
   gameIcon: z.object({ id: Id }).strict(),
   // Puts a removed game back (by its install path) and forgets the removal.
@@ -836,6 +838,7 @@ export const responses = {
   boostPowerPlan: BoostStatusSchema,
   boostTimerGlobal: BoostStatusSchema,
   removeGame: StateSchema,
+  chooseExecutable: GameSchema.nullable(),
   gameIcon: GameIconSchema,
   restoreGame: StateSchema,
   profile: StateSchema,

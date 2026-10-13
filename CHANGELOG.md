@@ -10,6 +10,7 @@
 - **Game Bar capture blocked by policy** now reads "already off by policy" instead of looking like a missing feature.
 - **Launch at sign-in** says "Available in the installed app" in development builds; it stays on in the installed app.
 - Readings Frameforge cannot take (temperatures, FPS) now say why and what to use instead.
+- **Launch settings for games found by a scan without a known .exe** (Steam, Riot and similar) are no longer a dead end: Game Mode shows **Choose the game's .exe…**, which opens a file dialog in the game's folder and saves the choice.
 
 ### Fixes
 

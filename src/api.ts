@@ -213,6 +213,8 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
       throw new Error("Removed games are tracked by the desktop app.");
     case "gameIcon":
       return null;
+    case "chooseExecutable":
+      throw new Error("The native file picker requires the desktop app.");
     case "addGame":
       throw new Error("The native file picker requires the desktop app.");
     case "detectGames":
