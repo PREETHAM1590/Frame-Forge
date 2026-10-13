@@ -320,6 +320,8 @@ export const BoostSessionSchema = z
     samples: z.array(SampleSchema).max(200).default([]),
     // True when the session did not do what was asked (start failed, a report was rejected, a revert failed).
     failed: z.boolean().default(false),
+    // True when the session ended abnormally (helper crash, rejected report, failed start), whatever else failed earlier.
+    abnormal: z.boolean().default(false),
   })
   .strict();
 export type BoostSession = z.infer<typeof BoostSessionSchema>;

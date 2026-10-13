@@ -250,6 +250,7 @@ export class BoostEngine {
         mechanisms: [],
         samples: [],
         failed: false,
+        abnormal: false,
       },
       captured,
     );
@@ -289,9 +290,11 @@ export class BoostEngine {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        clearTimeout(stopTimer);
         resolve(result);
       };
       const timer = setTimeout(() => channel.kill(), this.timeouts.start);
+      let stopTimer: NodeJS.Timeout | undefined;
       channel.on("event", (raw) => {
         if (this.live !== live) return;
         const isCapture =
@@ -308,6 +311,7 @@ export class BoostEngine {
               : `the session helper sent a report Frameforge could not read${live.ready ? " during the session" : ""}, so the boost was stopped`;
             // From here the stop timeout governs; the start timer must not kill the helper mid-revert.
             clearTimeout(timer);
+            stopTimer = setTimeout(() => channel.kill(), this.timeouts.stop);
             this.update(live, {
               message: `Stopping and restoring: ${live.abortReason}.`,
             });
@@ -407,6 +411,7 @@ export class BoostEngine {
         this.update(live, {
           status: "recovery-needed",
           failed: true,
+          abnormal: true,
           message:
             "The session helper stopped unexpectedly. Restoring the saved state.",
         });
@@ -469,6 +474,7 @@ export class BoostEngine {
     this.update(live, {
       status: failed ? "recovery-needed" : "ended",
       failed: failed > 0 || !!live.aborted || reason === "start-failed",
+      abnormal: !!live.aborted || reason === "start-failed",
       endedAt: failed ? null : now.toISOString(),
       mechanisms: [...live.session.mechanisms, ...reverts].slice(-400),
       message: incomplete
@@ -532,8 +538,7 @@ export class BoostEngine {
       const remaining = pendingCaptures(captured, reverts);
       // A session that ended abnormally (helper crash, rejected report) stays failed even when recovery succeeds;
       // one that only had failed reverts is resolved once they are restored.
-      const abnormal =
-        session.failed && !session.mechanisms.some((m) => m.state === "failed");
+      const abnormal = session.abnormal;
       const result = this.save(
         {
           ...session,

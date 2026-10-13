@@ -442,6 +442,63 @@ describe("game booster sessions", () => {
     expect(repo.activity()[0]).toMatchObject({ status: "failed" });
     repo.close();
   });
+  it("nm2-2: an aborted start whose helper hangs after stop is killed by the stop timer", async () => {
+    const { repo, game, platform } = setup();
+    const engine = new BoostEngine(repo, platform, () => {}, {
+      start: 1000,
+      stop: 30,
+    });
+    platform.onSpawn = (session) => {
+      session.onSend = ({ command }) => {
+        if (command === "start") {
+          session.line({
+            event: "captured",
+            mechanism: "priority",
+            prior: priorityCapture,
+          });
+          session.line({ event: "not-a-real-event" });
+        }
+        // The helper never answers "stop".
+      };
+    };
+    const result = await engine.start(game.id, "manual");
+    expect(platform.sessions[0]!.killed).toBe(true);
+    expect(result).toMatchObject({ failed: true });
+    // Not busy: a following operation runs instead of queueing forever.
+    await expect(engine.recover()).resolves.toBeDefined();
+    repo.close();
+  });
+  it("nm2-2: a crash after an early mechanism failure is still reported as abnormal", async () => {
+    const { repo, game, platform } = setup();
+    const events: { failed: boolean; message: string }[] = [];
+    const engine = new BoostEngine(repo, platform, (s) => events.push(s), {
+      start: 1000,
+      stop: 1000,
+    });
+    platform.onSpawn = (session) => {
+      session.onSend = ({ command }) => {
+        if (command === "start") {
+          session.line({
+            event: "failed",
+            mechanism: "gameMode",
+            detail: "could not apply",
+          });
+          session.line({
+            event: "captured",
+            mechanism: "priority",
+            prior: priorityCapture,
+          });
+          session.line({ event: "ready" });
+        }
+      };
+    };
+    await engine.start(game.id, "manual");
+    platform.sessions[0]!.kill();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(events.at(-1)).toMatchObject({ failed: true });
+    expect(events.at(-1)?.message).toMatch(/did not finish normally/);
+    repo.close();
+  });
   it("nm2-3: a revert that reports no results is never shown as restored", async () => {
     const { repo, game, platform, engine } = setup();
     platform.onSpawn = (session) => {
