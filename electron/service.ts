@@ -13,6 +13,7 @@ import {
   type Activity,
   type AppEvent,
 } from "../shared/contracts.js";
+import { upsertPreset } from "../shared/catalogue.js";
 import { Repository } from "./repository.js";
 import { OperationEngine } from "./operations.js";
 import { BoostEngine } from "./booster.js";
@@ -248,12 +249,12 @@ export class AppService {
           ),
         });
       },
-      savePreset: async ({ name, ids }) => {
+      savePreset: async (input) => {
         guard();
         const state = this.repo.state();
         return this.repo.updateState({
           ...state,
-          presets: [...state.presets, { id: randomUUID(), name, ids }],
+          presets: upsertPreset(state.presets, input, randomUUID),
         });
       },
       removePreset: async ({ id }) => {

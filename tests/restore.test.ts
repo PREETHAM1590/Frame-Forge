@@ -344,6 +344,21 @@ describe("Windows restore points", () => {
     );
     repo.close();
   });
+  it("marks a declined administrator prompt on the restore point list as cancelled", async () => {
+    const platform = new WindowsPlatform("unused.exe");
+    Object.assign(platform, {
+      call: async () => ({
+        ok: true,
+        message: "Administrator approval was declined. Nothing was changed.",
+        code: "elevation-cancelled",
+      }),
+    });
+    expect(await platform.restoreList()).toMatchObject({
+      available: false,
+      cancelled: true,
+      points: [],
+    });
+  });
   it("treats an elevated request that is still running as pending, not a crash", async () => {
     const platform = new WindowsPlatform("unused.exe");
     // The any-drive hint says "enabled"; a pending request must not inherit it.

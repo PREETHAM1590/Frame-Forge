@@ -15,6 +15,7 @@ import {
   type Request,
   type Response,
 } from "../shared/contracts";
+import { upsertPreset } from "../shared/catalogue";
 const storageKey = "frameforge-demo-v1";
 export const desktopOnly = "Game booster requires the desktop app.";
 let state: AppState = structuredClone(defaultState);
@@ -127,7 +128,7 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
       const data = requests.savePreset.parse(input);
       state = {
         ...state,
-        presets: [...state.presets, { ...data, id: crypto.randomUUID() }],
+        presets: upsertPreset(state.presets, data, () => crypto.randomUUID()),
       };
       result = state;
       break;

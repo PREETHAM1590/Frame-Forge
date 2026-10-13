@@ -402,6 +402,8 @@ export const RestorePointsSchema = z
     available: z.boolean(),
     message: z.string().max(1000),
     createdSequence: z.number().int().nonnegative().nullable(),
+    /** True when the user declined the administrator prompt (not an error). */
+    cancelled: z.boolean().optional(),
   })
   .strict();
 export type RestorePoints = z.infer<typeof RestorePointsSchema>;
@@ -559,7 +561,10 @@ export const requests = {
       notes: GameSchema.shape.notes,
     })
     .strict(),
-  savePreset: z.object({ name: Name, ids: Selection.shape.ids }).strict(),
+  // With an id, the saved custom preset is updated in place; without, a new one is added.
+  savePreset: z
+    .object({ id: Id.optional(), name: Name, ids: Selection.shape.ids })
+    .strict(),
   removePreset: z.object({ id: Id }).strict(),
   clearActivity: z.object({ confirmed: z.literal(true) }).strict(),
 };

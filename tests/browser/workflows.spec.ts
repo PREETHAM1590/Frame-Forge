@@ -44,6 +44,15 @@ test("desktop browser workflows and persistence", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "My input preset" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Edit My input preset" }).click();
+  await page.getByLabel("Preset name").fill("my INPUT preset renamed");
+  await page.getByRole("button", { name: "Save preset" }).click();
+  await expect(
+    page.getByRole("heading", { name: "my INPUT preset renamed" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "My input preset", exact: true }),
+  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Restore & backups", exact: true })
     .click();

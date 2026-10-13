@@ -13,6 +13,7 @@ import {
 import {
   PageTitle,
   Button,
+  Busy,
   Badge,
   Empty,
   Modal,
@@ -53,7 +54,37 @@ export function protectionChip(
     return { text: "Protection off", tone: "red" };
   return { text: "Protection state unknown", tone: "neutral" };
 }
-function WindowsRestore({ data, run, pending }: ViewProps) {
+type ElevatedAction = "list" | "open" | "recover" | "anyway";
+// What each elevating action tells the user before Windows shows its administrator prompt.
+const elevationCopy: Record<
+  ElevatedAction,
+  { title: string; why: string; go: string }
+> = {
+  list: {
+    title: "Load restore points?",
+    why: "Windows only lets administrators list restore points. Windows will show an administrator prompt (UAC). Approve it to see the list, or decline and nothing changes.",
+    go: "Continue to administrator prompt",
+  },
+  open: {
+    title: "Open Windows System Restore?",
+    why: "Windows System Restore runs as administrator. Windows will show an administrator prompt before it opens. Frameforge does not restore anything itself.",
+    go: "Continue to administrator prompt",
+  },
+  recover: {
+    title: "Restore the original restore point limit?",
+    why: "Changing the Windows restore point limit needs administrator rights. Windows will show an administrator prompt (UAC). Decline it and the limit stays as it is.",
+    go: "Continue to administrator prompt",
+  },
+  anyway: {
+    title: "Create a restore point anyway?",
+    why: "This temporarily lifts the Windows once-per-day restore point limit, creates the point, then puts the limit back. Windows will show an administrator prompt (UAC) and creating the point can take a few minutes.",
+    go: "Continue to administrator prompt",
+  },
+};
+function WindowsRestore({ data, run, pending, restorePending }: ViewProps) {
+  const [confirm, setConfirm] = useState<ElevatedAction | null>(null);
+  // Only restore actions wait on the administrator prompt; the rest of the app stays usable.
+  const locked = pending || restorePending;
   const [status, setStatus] = useState<RestoreStatus | null>(null);
   const [statusError, setStatusError] = useState("");
   const [name, setName] = useState<string | null>(null);
@@ -112,6 +143,23 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
     if (output) setResult(output);
     await refresh();
   }
+  // The Windows administrator prompt appears only after the user confirmed in the dialog above.
+  async function elevate(action: ElevatedAction) {
+    if (action === "list") {
+      const output = await run("restorePoints", {});
+      if (output) setPoints(output);
+      await refresh();
+    } else if (action === "open") {
+      setOpenFailed((await run("openSystemRestore", {})) === false);
+    } else if (action === "recover") {
+      const output = await run(
+        "recoverRestoreFrequency",
+        { confirmed: true },
+        "Restore point frequency checked.",
+      );
+      if (output) setStatus(output);
+    } else await create(lastName, true);
+  }
   const validName = name !== null && RestoreDescription.safeParse(name).success;
   return (
     <section className="settings-section">
@@ -140,17 +188,7 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
             A temporary change to the Windows restore point limit was not
             confirmed as undone.
             <div className="restore-actions">
-              <Button
-                disabled={pending}
-                onClick={async () => {
-                  const output = await run(
-                    "recoverRestoreFrequency",
-                    { confirmed: true },
-                    "Restore point frequency checked.",
-                  );
-                  if (output) setStatus(output);
-                }}
-              >
+              <Button disabled={locked} onClick={() => setConfirm("recover")}>
                 <RotateCcw size={16} />
                 Restore the original limit
               </Button>
@@ -165,7 +203,7 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
             Windows may still be creating a restore point requested earlier.
             Check again, or use Load restore points to verify it.
             <div className="restore-actions">
-              <Button disabled={pending} onClick={() => void refresh()}>
+              <Button disabled={locked} onClick={() => void refresh()}>
                 <RotateCcw size={16} />
                 Check again
               </Button>
@@ -177,32 +215,35 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
         <Button
           variant="primary"
           aria-describedby={blocked ? "restore-blocked" : undefined}
-          disabled={pending || !!blocked || !status}
+          disabled={locked || !!blocked || !status}
           onClick={openNameDialog}
         >
           <Plus size={17} />
           Create restore point
         </Button>
         <Button
-          disabled={pending || !!blocked}
-          onClick={async () => {
-            const output = await run("restorePoints", {});
-            if (output) setPoints(output);
-            await refresh();
-          }}
+          disabled={locked || !!blocked}
+          onClick={() => setConfirm("list")}
         >
           Load restore points
         </Button>
         <Button
-          disabled={pending || data.mode === "demo"}
-          onClick={async () =>
-            setOpenFailed((await run("openSystemRestore", {})) === false)
-          }
+          disabled={locked || data.mode === "demo"}
+          onClick={() => setConfirm("open")}
         >
           <ArrowUpRight size={16} />
           Open Windows System Restore
         </Button>
       </div>
+      {restorePending && (
+        <div className="notice" role="status">
+          <Busy label="Waiting for administrator approval…" />
+          <span>
+            Approve or decline the Windows prompt. Nothing else in Frameforge is
+            blocked while you decide.
+          </span>
+        </div>
+      )}
       {blocked && (
         <p className="muted" id="restore-blocked">
           {blocked}
@@ -226,8 +267,8 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
               <div className="restore-actions">
                 <Button
                   variant="danger"
-                  disabled={pending}
-                  onClick={() => void create(lastName, true)}
+                  disabled={locked}
+                  onClick={() => setConfirm("anyway")}
                 >
                   Create anyway (temporarily lifts the limit, then restores it)
                 </Button>
@@ -237,7 +278,7 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
               result.outcome === "failed") && (
               <div className="restore-actions">
                 <Button
-                  disabled={pending || !!status?.configLocked}
+                  disabled={locked || !!status?.configLocked}
                   aria-describedby={
                     status?.configLocked ? "enable-locked" : undefined
                   }
@@ -256,7 +297,13 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
           </div>
         </div>
       )}
-      {points &&
+      {points?.cancelled ? (
+        <div className="notice" role="status">
+          <Info size={18} />
+          {points.message}
+        </div>
+      ) : (
+        points &&
         (points.available && points.points.length ? (
           <div className="table-wrap">
             <table>
@@ -280,7 +327,30 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
           </div>
         ) : (
           <p className="muted">{points.message}</p>
-        ))}
+        ))
+      )}
+      {confirm && (
+        <Modal
+          title={elevationCopy[confirm].title}
+          description={elevationCopy[confirm].why}
+          onClose={() => setConfirm(null)}
+        >
+          <div className="dialog-actions">
+            <Button onClick={() => setConfirm(null)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={locked}
+              onClick={() => {
+                const action = confirm;
+                setConfirm(null);
+                void elevate(action);
+              }}
+            >
+              {elevationCopy[confirm].go}
+            </Button>
+          </div>
+        </Modal>
+      )}
       {name !== null && (
         <Modal
           title="Create Windows restore point"
@@ -325,7 +395,7 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
               <Button
                 type="submit"
                 variant="primary"
-                disabled={pending || !validName}
+                disabled={locked || !validName}
               >
                 Create restore point
               </Button>
@@ -343,7 +413,7 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
             <Button onClick={() => setEnabling(false)}>Cancel</Button>
             <Button
               variant="primary"
-              disabled={pending}
+              disabled={locked}
               onClick={async () => {
                 setEnabling(false);
                 const output = await run("enableSystemProtection", {

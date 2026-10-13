@@ -44,6 +44,14 @@ import { Games, GameMode } from "./views/Games";
 import { Backups, ActivityLog, restoreRecoveryRow } from "./views/Recovery";
 import { System, Settings } from "./views/System";
 const dayMs = 24 * 60 * 60 * 1000;
+// These can sit behind a Windows administrator prompt for minutes, so they must not lock the rest of the app.
+const elevatedMethods: ReadonlySet<Method> = new Set([
+  "createRestorePoint",
+  "restorePoints",
+  "enableSystemProtection",
+  "recoverRestoreFrequency",
+  "openSystemRestore",
+]);
 const changeKey = (changes: Preview["changes"]) =>
   JSON.stringify(changes.map((c) => [c.setting, c.before, c.after]));
 const sameChanges = (a: Preview["changes"], b: Preview["changes"]) =>
@@ -65,6 +73,7 @@ export default function App() {
   const [page, setPage] = useState<Page>("Dashboard");
   const [mobile, setMobile] = useState(false);
   const [requestsPending, setRequestsPending] = useState(0);
+  const [restoreRequests, setRestoreRequests] = useState(0);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(
     null,
   );
@@ -149,7 +158,10 @@ export default function App() {
     input: Request<M>,
     message?: string,
   ): Promise<Response<M> | undefined> {
-    setRequestsPending((n) => n + 1);
+    const setCount = elevatedMethods.has(method)
+      ? setRestoreRequests
+      : setRequestsPending;
+    setCount((n) => n + 1);
     try {
       const output = await request(method, input);
       const fresh = await request("bootstrap", {});
@@ -160,18 +172,32 @@ export default function App() {
       );
       if (message && fresh.state.settings.notifications)
         setNotice({ text: message, error: false });
+      // The page that asked may be gone by the time the administrator prompt is answered.
+      const declined = output as { cancelled?: boolean; outcome?: string };
+      if (
+        elevatedMethods.has(method) &&
+        (declined.cancelled || declined.outcome === "elevation-cancelled")
+      )
+        setNotice({
+          text: "Administrator approval was declined. Nothing was changed.",
+          error: false,
+        });
       return output;
     } catch (e) {
+      const message =
+        e instanceof Error
+          ? e.message
+          : "The request failed. Retry the action.";
       setNotice({
         text:
-          e instanceof Error
-            ? e.message
-            : "The request failed. Retry the action.",
+          elevatedMethods.has(method) && message.includes("timed out")
+            ? "Windows did not get an administrator answer in time. Nothing was changed; try again when you can approve the prompt."
+            : message,
         error: true,
       });
       return undefined;
     } finally {
-      setRequestsPending((n) => n - 1);
+      setCount((n) => n - 1);
     }
   }
   function navigate(next: Page) {
@@ -316,6 +342,7 @@ export default function App() {
   const props: ViewProps = {
     data,
     pending: requestsPending > 0,
+    restorePending: restoreRequests > 0,
     run,
     navigate,
     preview: (ids) => void openPreview(ids),
@@ -585,6 +612,13 @@ export default function App() {
                       Create a Windows restore point first
                     </label>
                   )}
+                  {restoreOffer && createPoint && restoreRequests > 0 && (
+                    <p className="muted" role="status">
+                      Waiting for another Windows restore request to finish
+                      (Restore & backups). Untick the restore point to apply
+                      now.
+                    </p>
+                  )}
                   <label className="confirm-check">
                     <input
                       type="checkbox"
@@ -638,7 +672,11 @@ export default function App() {
                 <Button
                   variant="primary"
                   disabled={
-                    !preview || !confirmed || applying || previewLoading
+                    !preview ||
+                    !confirmed ||
+                    applying ||
+                    previewLoading ||
+                    (restoreOffer && createPoint && restoreRequests > 0)
                   }
                   onClick={() =>
                     void applyChanges(restoreOffer && createPoint, false)

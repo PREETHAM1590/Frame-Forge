@@ -7,8 +7,14 @@ import {
   Check,
   Plus,
   Trash2,
+  Pencil,
 } from "lucide-react";
-import { catalogue, presets, type Optimization } from "../../shared/catalogue";
+import {
+  catalogue,
+  presetNameTaken,
+  presets,
+  type Optimization,
+} from "../../shared/catalogue";
 import type { OperationId } from "../../shared/contracts";
 import {
   PageTitle,
@@ -226,9 +232,30 @@ export function Optimizations({
   );
 }
 export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
-  const [creating, setCreating] = useState(false);
+  // `editing` is the saved preset's id, or "new" for a fresh one; null when the builder is closed.
+  const [editing, setEditing] = useState<string | "new" | null>(null);
+  const [removing, setRemoving] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const [name, setName] = useState("");
   const [ids, setIds] = useState<OperationId[]>([]);
+  const openBuilder = (preset?: {
+    id: string;
+    name: string;
+    ids: OperationId[];
+  }) => {
+    setName(preset?.name ?? "");
+    setIds(preset ? [...preset.ids] : []);
+    setEditing(preset?.id ?? "new");
+  };
+  const clash =
+    editing !== null &&
+    !!name.trim() &&
+    presetNameTaken(
+      data.state.presets,
+      name,
+      editing === "new" ? undefined : editing,
+    );
   const all = [
     ...presets.map((p) => ({
       id: p.name,
@@ -249,7 +276,7 @@ export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
         title="Presets"
         subtitle="A starting point for your setup. Review every change before applying."
         action={
-          <Button onClick={() => setCreating(true)}>
+          <Button onClick={() => openBuilder()}>
             <Plus size={17} />
             Custom preset
           </Button>
@@ -275,17 +302,26 @@ export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
             </div>
             <div className="preset-controls">
               {p.custom && (
-                <button
-                  className="icon-button"
-                  title="Remove preset"
-                  aria-label={`Remove ${p.name}`}
-                  disabled={pending}
-                  onClick={() =>
-                    void run("removePreset", { id: p.id }, "Preset removed.")
-                  }
-                >
-                  <Trash2 size={17} />
-                </button>
+                <>
+                  <button
+                    className="icon-button"
+                    title="Edit preset"
+                    aria-label={`Edit ${p.name}`}
+                    disabled={pending}
+                    onClick={() => openBuilder(p)}
+                  >
+                    <Pencil size={17} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    title="Remove preset"
+                    aria-label={`Remove ${p.name}`}
+                    disabled={pending}
+                    onClick={() => setRemoving({ id: p.id, name: p.name })}
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </>
               )}
               {missingHere(data) &&
                 p.ids.some((id) => !data.capabilities.includes(id)) && (
@@ -319,22 +355,55 @@ export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
           </article>
         ))}
       </div>
-      {creating && (
+      {removing && (
         <Modal
-          title="Custom preset"
-          description="Save a selection. Creating a preset does not change Windows."
-          onClose={() => setCreating(false)}
+          title={`Delete "${removing.name}"?`}
+          description="This removes the saved preset from Frameforge. It does not change Windows."
+          onClose={() => setRemoving(null)}
+        >
+          <div className="dialog-actions">
+            <Button onClick={() => setRemoving(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              disabled={pending}
+              onClick={async () => {
+                if (
+                  await run(
+                    "removePreset",
+                    { id: removing.id },
+                    "Preset removed.",
+                  )
+                )
+                  setRemoving(null);
+              }}
+            >
+              Delete preset
+            </Button>
+          </div>
+        </Modal>
+      )}
+      {editing !== null && (
+        <Modal
+          title={editing === "new" ? "Custom preset" : "Edit custom preset"}
+          description={
+            editing === "new"
+              ? "Save a selection. Creating a preset does not change Windows."
+              : "Change the name or items. Saving updates this preset and does not change Windows."
+          }
+          onClose={() => setEditing(null)}
         >
           <form
             onSubmit={async (e) => {
               e.preventDefault();
               const result = await run(
                 "savePreset",
-                { name, ids },
+                editing === "new"
+                  ? { name: name.trim(), ids }
+                  : { id: editing, name: name.trim(), ids },
                 "Preset saved.",
               );
               if (result) {
-                setCreating(false);
+                setEditing(null);
                 setName("");
                 setIds([]);
               }
@@ -347,9 +416,17 @@ export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
                 value={name}
                 maxLength={80}
                 required
+                aria-invalid={clash}
+                aria-describedby={clash ? "preset-name-error" : undefined}
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
+            {clash && (
+              <p className="muted" id="preset-name-error" role="alert">
+                A preset named &quot;{name.trim()}&quot; already exists. Choose
+                a different name.
+              </p>
+            )}
             <div className="check-list">
               {catalogue
                 .filter((o) => o.supported)
@@ -372,12 +449,12 @@ export function Presets({ data, preview, run, pending, navigate }: ViewProps) {
                 ))}
             </div>
             <div className="dialog-actions">
-              <Button type="button" onClick={() => setCreating(false)}>
+              <Button type="button" onClick={() => setEditing(null)}>
                 Cancel
               </Button>
               <Button
                 variant="primary"
-                disabled={pending || !ids.length || !name.trim()}
+                disabled={pending || !ids.length || !name.trim() || clash}
                 type="submit"
               >
                 Save preset

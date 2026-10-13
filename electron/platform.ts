@@ -350,6 +350,7 @@ export class WindowsPlatform implements Platform {
       available: !cancelled(result) && result.available === true,
       message: result.message,
       createdSequence: null,
+      ...(cancelled(result) && { cancelled: true }),
     };
   }
   async restoreCreate(

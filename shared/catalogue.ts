@@ -1,4 +1,4 @@
-import type { OperationId, Request } from "./contracts.js";
+import type { AppState, OperationId, Request } from "./contracts.js";
 export interface Optimization {
   id: OperationId;
   name: string;
@@ -170,3 +170,34 @@ export const presets = [
     ids: ["mouse-precision", "capture-off", "power-plan"],
   },
 ] as const;
+
+/** Preset names are unique, case-insensitively, across built-in and custom presets. */
+export const presetNameTaken = (
+  list: AppState["presets"],
+  name: string,
+  exceptId?: string,
+) => {
+  const key = name.trim().toLowerCase();
+  return (
+    presets.some((p) => p.name.toLowerCase() === key) ||
+    list.some((p) => p.id !== exceptId && p.name.toLowerCase() === key)
+  );
+};
+/** Saves a custom preset: updates in place when `id` is given, otherwise appends. Throws on a name clash. */
+export function upsertPreset(
+  list: AppState["presets"],
+  input: { id?: string; name: string; ids: OperationId[] },
+  newId: () => string,
+): AppState["presets"] {
+  const name = input.name.trim();
+  if (presetNameTaken(list, name, input.id))
+    throw new Error(
+      `A preset named "${name}" already exists. Choose a different name.`,
+    );
+  if (!input.id) return [...list, { id: newId(), name, ids: input.ids }];
+  if (!list.some((p) => p.id === input.id))
+    throw new Error("Preset not found. It may have been removed.");
+  return list.map((p) =>
+    p.id === input.id ? { id: p.id, name, ids: input.ids } : p,
+  );
+}
