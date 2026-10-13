@@ -70,6 +70,7 @@ export default function App() {
   const [restoreOffer, setRestoreOffer] = useState(false);
   const [createPoint, setCreatePoint] = useState(false);
   const [noPoint, setNoPoint] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
       setData(await request("bootstrap", {}));
@@ -147,6 +148,7 @@ export default function App() {
   async function openPreview(ids: OperationId[]) {
     setSelection(ids);
     setPreview(null);
+    setPreviewError(null);
     setResult(null);
     setConfirmed(false);
     setNoPoint(null);
@@ -163,10 +165,7 @@ export default function App() {
       setCreatePoint(offer);
       setPreview(await request("preview", { ids }));
     } catch (e) {
-      setNotice({
-        text: e instanceof Error ? e.message : "Preview failed.",
-        error: true,
-      });
+      setPreviewError(e instanceof Error ? e.message : "Preview failed.");
     } finally {
       setPreviewLoading(false);
     }
@@ -507,11 +506,14 @@ export default function App() {
                   </label>
                 </>
               ) : (
-                <div className="notice">
+                <div
+                  className="notice"
+                  role={previewError ? "alert" : undefined}
+                >
                   <AlertTriangle size={18} />
-                  These Windows changes are unavailable on this installation.
-                  This is a review only. Launch the desktop app with its
-                  published Windows helper to check prerequisites.
+                  {previewError
+                    ? `Preview not available: ${previewError} Nothing was changed.`
+                    : "These Windows changes are unavailable on this installation. This is a review only. Launch the desktop app with its published Windows helper to check prerequisites."}
                 </div>
               )}
               {noPoint && (

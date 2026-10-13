@@ -41,7 +41,7 @@ public static class HardwareDiscovery
             os = $"{system?.GetValueOrDefault("Caption")} {system?.GetValueOrDefault("Version")}",
             drives,
             // WMI offers no reliable monitor-to-adapter join, so names and active modes are listed separately.
-            displays = monitors.Select(m => Edid(m.GetValueOrDefault("UserFriendlyName")) ?? Edid(m.GetValueOrDefault("ManufacturerName")) ?? "Unnamed display")
+            displays = monitors.Select(m => Edid(m.GetValueOrDefault("UserFriendlyName")) ?? (Edid(m.GetValueOrDefault("ManufacturerName")) is { } maker ? $"{maker} display (no model name)" : "Unnamed display"))
                 .Concat(gpu.Where(g => g.GetValueOrDefault("CurrentHorizontalResolution") is not null).Select(g =>
                     $"{g.GetValueOrDefault("CurrentHorizontalResolution")} x {g.GetValueOrDefault("CurrentVerticalResolution")} @ {g.GetValueOrDefault("CurrentRefreshRate")} Hz on {g.GetValueOrDefault("Name")}"))
                 .ToArray(),
