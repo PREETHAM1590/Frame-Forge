@@ -9,6 +9,7 @@ import {
   Plus,
   Trash2,
   ListRestart,
+  Wifi,
 } from "lucide-react";
 import {
   PageTitle,
@@ -27,6 +28,7 @@ import {
   type CustomMechanisms,
   type MechanismId,
   type MechanismResult,
+  type NetworkCheck,
   type Response,
   type RunningProcess,
 } from "../../shared/contracts";
@@ -36,19 +38,20 @@ const modes: { id: BoostMode; label: string; summary: string }[] = [
   {
     id: "balanced",
     label: "Balanced",
-    summary: "Windows Game Mode and Above normal game priority.",
+    summary:
+      "Windows Game Mode, Above normal game priority, Game Bar capture off for the session, power-throttling opt-out for the game and, on PCs with two GPUs, the high-performance GPU preference.",
   },
   {
     id: "performance",
     label: "Performance",
     summary:
-      "Adds High priority, a performance power plan and lowers selected background apps.",
+      "Adds High priority, a performance power plan, lowering selected background apps and, on hybrid CPUs, steering the game to the performance cores.",
   },
   {
     id: "competitive",
     label: "Competitive",
     summary:
-      "Adds suspending selected background apps and a finer timer where Windows supports it.",
+      "Adds suspending selected background apps, a finer timer where Windows supports it, plugged-in core unparking and pausing a short list of safe Windows services (Windows asks for administrator approval at the start and at the end).",
   },
   {
     id: "custom",
@@ -66,7 +69,27 @@ const labels: Record<MechanismId, string> = {
   closeBackground: "Close background apps",
   timerResolution: "High timer resolution",
   standbyPurge: "Standby list purge",
+  pauseServices: "Pause Windows services",
+  gameBarCapture: "Game Bar capture off",
+  smartCores: "Smart core targeting",
+  coreParking: "Disable core parking",
+  powerThrottling: "Power throttling opt-out",
+  gpuPreference: "High-performance GPU preference",
+  fullscreenOptimizations: "Fullscreen optimizations off",
 };
+// Mechanisms whose "can't do it here" state is a property of this PC or Windows build, not a missing prerequisite.
+const unsupportedWhenUnavailable = new Set<MechanismId>([
+  "timerResolution",
+  "smartCores",
+  "coreParking",
+  "powerThrottling",
+  "gpuPreference",
+]);
+// Windows reads these when the game starts, so a game that is already running keeps its current setting.
+const nextLaunch = new Set<MechanismId>([
+  "gpuPreference",
+  "fullscreenOptimizations",
+]);
 const tones: Record<
   MechanismResult["state"],
   "lime" | "amber" | "red" | "neutral" | "cyan"
@@ -103,6 +126,13 @@ function enabled(m: CustomMechanisms): Entry[] {
     m.suspendBackground && { id: "suspendBackground" },
     m.closeBackground && { id: "closeBackground", note: "not reopened" },
     m.timerResolution && { id: "timerResolution" },
+    m.powerThrottling && { id: "powerThrottling" },
+    m.gameBarCapture && { id: "gameBarCapture" },
+    m.smartCores && { id: "smartCores" },
+    m.coreParking && { id: "coreParking" },
+    m.gpuPreference && { id: "gpuPreference" },
+    m.fullscreenOptimizations && { id: "fullscreenOptimizations" },
+    m.pauseServices && { id: "pauseServices", note: "administrator prompt" },
   ];
   return list.filter((x): x is Entry => !!x);
 }
@@ -138,20 +168,33 @@ function onThisPc(
   if (!cap.available)
     return {
       tone: "amber",
-      label: id === "timerResolution" ? "unsupported" : "unavailable",
+      label: unsupportedWhenUnavailable.has(id) ? "unsupported" : "unavailable",
       reason: cap.detail,
     };
   if (cap.active)
     return { tone: "neutral", label: "already on", reason: cap.detail };
   return {
     tone: "lime",
-    label: "applies",
+    label: nextLaunch.has(id)
+      ? "applies (next launch)"
+      : id === "pauseServices"
+        ? "applies (asks for admin)"
+        : "applies",
     reason:
       id === "priority"
         ? `${note}; skipped if the game already runs higher.`
-        : (note ?? cap.detail),
+        : id === "pauseServices"
+          ? cap.detail
+          : (note ?? cap.detail),
   };
 }
+const referenceTargets = [
+  { host: "1.1.1.1", label: "Cloudflare DNS" },
+  { host: "8.8.8.8", label: "Google DNS" },
+  { host: "9.9.9.9", label: "Quad9 DNS" },
+];
+const hostPattern =
+  /^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|[0-9A-Fa-f:.]+)$/;
 // Suggested background apps; voice chat, capture and launchers are never suggested.
 const suggestions: [RegExp, Background[number]["action"], string][] = [
   [
@@ -184,6 +227,11 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
   const [gameId, setGameId] = useState(data.state.games[0]?.id ?? "");
   const [now, setNow] = useState(0);
   const [confirmPlan, setConfirmPlan] = useState(false);
+  const [confirmServices, setConfirmServices] = useState(false);
+  const [netHost, setNetHost] = useState("");
+  const [netBusy, setNetBusy] = useState(false);
+  const [netResult, setNetResult] = useState<NetworkCheck | null>(null);
+  const [netError, setNetError] = useState("");
   // Mechanism results already logged for the current session (events carry the whole session).
   const logged = useRef({ id: "", last: "", status: "" });
   const refresh = useCallback(
@@ -297,6 +345,45 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
           : pending
             ? "Wait for the current request."
             : "");
+  // Whether the boost about to start will pause services: that is the one step that opens an administrator prompt.
+  const gameMechanisms =
+    gameMode === "off"
+      ? null
+      : gameMode === "custom"
+        ? config.custom
+        : modeMechanisms[gameMode];
+  const willPauseServices =
+    !!gameMechanisms?.pauseServices && cap("pauseServices")?.available === true;
+  const startBoost = async () => {
+    const result = await run("boostStart", {
+      gameId,
+      confirmed: true,
+    });
+    if (result)
+      setOutcome({
+        text: result.message,
+        error: result.status !== "active",
+      });
+  };
+  const hostTrimmed = netHost.trim();
+  const hostValid =
+    hostTrimmed.length > 0 &&
+    hostTrimmed.length <= 253 &&
+    hostPattern.test(hostTrimmed);
+  const checkNetwork = async (host: string) => {
+    setNetBusy(true);
+    setNetError("");
+    setNetResult(null);
+    try {
+      setNetResult(await request("networkCheck", { host, count: 10 }));
+    } catch (error) {
+      setNetError(
+        error instanceof Error ? error.message : "The network check failed.",
+      );
+    } finally {
+      setNetBusy(false);
+    }
+  };
   const sample = session?.samples.at(-1);
   const minutes =
     session && now
@@ -454,6 +541,34 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
           global” in the library use this mode. The cards show what each mode
           does on this PC right now.
         </p>
+        {caps?.topology && (
+          <p className="muted" aria-label="Detected CPU layout">
+            CPU layout: {caps.topology.summary}
+            {caps.topology.dualCcdX3d
+              ? " Dual-CCD Ryzen X3D: Frameforge leaves your game's cores and core parking alone."
+              : ""}
+          </p>
+        )}
+        {mechanisms.pauseServices && (
+          <div className="notice">
+            <Info size={18} />
+            <div>
+              <p>
+                <strong>Pausing services needs administrator approval.</strong>{" "}
+                Frameforge stops (never disables) a short list of background
+                Windows services for the session and starts them again at the
+                end. Windows shows one approval prompt when the boost starts and
+                one when it ends. If you decline the first, the rest of the
+                boost still runs and no service is touched. Auto-boost never
+                shows the prompt, so services are only paused when you start a
+                boost yourself. Windows, audio, network, input, security,
+                Windows Update, anti-cheat and GPU services are never touched.
+                If Frameforge is closed unexpectedly, paused services return
+                when Windows restarts, or sooner with Retry recovery.
+              </p>
+            </div>
+          </div>
+        )}
         <div className="mode-grid">
           {modes
             .filter((m) => m.id !== "off")
@@ -466,7 +581,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                 plan: onThisPc(entry, cap(entry.id), config.background),
               }));
               const applies = plans.filter(
-                (p) => p.plan.label === "applies",
+                (p) => p.plan.tone === "lime",
               ).length;
               return (
                 <article
@@ -666,6 +781,98 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
             checked={config.custom.timerResolution}
             disabled={pending || cap("timerResolution")?.available === false}
             onChange={(v) => void setCustom({ timerResolution: v })}
+          />
+          <Toggle
+            label="Game Bar capture off"
+            description={
+              cap("gameBarCapture")?.detail ??
+              "Turns off background recording and capture for the session. Game Mode stays on and the Game Bar app stays installed, which AMD X3D game detection needs."
+            }
+            checked={config.custom.gameBarCapture}
+            disabled={pending}
+            onChange={(v) => void setCustom({ gameBarCapture: v })}
+          />
+          <Toggle
+            label="Power throttling opt-out"
+            description={
+              cap("powerThrottling")?.available === false
+                ? `Unsupported: ${cap("powerThrottling")!.detail}`
+                : "Asks Windows not to treat the game as efficiency (EcoQoS) work. Applies to the game process only."
+            }
+            checked={config.custom.powerThrottling}
+            disabled={
+              pending ||
+              (cap("powerThrottling")?.available === false &&
+                !config.custom.powerThrottling)
+            }
+            onChange={(v) => void setCustom({ powerThrottling: v })}
+          />
+          <Toggle
+            label="Smart core targeting"
+            description={
+              cap("smartCores")?.available === false
+                ? `Unsupported: ${cap("smartCores")!.detail}`
+                : `Steers the game to the performance cores of a hybrid CPU with CPU sets. ${cap("smartCores")?.detail ?? "Checking this PC…"}`
+            }
+            checked={config.custom.smartCores}
+            disabled={
+              pending ||
+              (cap("smartCores")?.available === false &&
+                !config.custom.smartCores)
+            }
+            onChange={(v) => void setCustom({ smartCores: v })}
+          />
+          <Toggle
+            label="Disable core parking"
+            description={
+              cap("coreParking")?.available === false
+                ? `Unsupported: ${cap("coreParking")!.detail}`
+                : `Raises the plugged-in minimum of unparked cores to 100% for the session and restores your value. Battery settings are not changed. ${cap("coreParking")?.detail ?? "Checking this PC…"}`
+            }
+            checked={config.custom.coreParking}
+            disabled={
+              pending ||
+              (cap("coreParking")?.available === false &&
+                !config.custom.coreParking)
+            }
+            onChange={(v) => void setCustom({ coreParking: v })}
+          />
+          <Toggle
+            label="High-performance GPU preference"
+            description={
+              cap("gpuPreference")?.available === false
+                ? `Unsupported: ${cap("gpuPreference")!.detail}`
+                : "Sets the game's GPU preference (for PCs with two GPUs). Windows reads it when the game starts its graphics, so it affects a game that starts during the session; it is removed when the session ends."
+            }
+            checked={config.custom.gpuPreference}
+            disabled={
+              pending ||
+              (cap("gpuPreference")?.available === false &&
+                !config.custom.gpuPreference)
+            }
+            onChange={(v) => void setCustom({ gpuPreference: v })}
+          />
+          <Toggle
+            label="Pause Windows services (asks for administrator approval)"
+            description={
+              cap("pauseServices")?.available === false
+                ? `Unavailable: ${cap("pauseServices")!.detail}`
+                : `Stops a short list of safe background services for the session, then restarts them. Windows shows an approval prompt when the boost starts and when it ends; declining the first one skips only this step. Start types are never changed. Printing is unavailable while Print Spooler is paused. ${cap("pauseServices")?.detail ?? "Checking this PC…"}`
+            }
+            checked={config.custom.pauseServices}
+            disabled={
+              pending ||
+              (cap("pauseServices")?.available === false &&
+                !config.custom.pauseServices)
+            }
+            onChange={(v) => void setCustom({ pauseServices: v })}
+          />
+          <Toggle
+            label="Fullscreen optimizations off (advanced, opt-in)"
+            description="Turns off Windows' fullscreen optimizations for the game's executable for the session. Windows reads it when the game starts. Some games lose Auto HDR, variable refresh rate or windowed-game latency improvements. Not part of any preset mode."
+            checked={config.custom.fullscreenOptimizations}
+            disabled={pending}
+            onChange={(v) => void setCustom({ fullscreenOptimizations: v })}
           />
           <Toggle
             label="Limit game to selected CPUs"
@@ -902,17 +1109,9 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
               variant="primary"
               disabled={!!startReason}
               title={startReason || undefined}
-              onClick={async () => {
-                const result = await run("boostStart", {
-                  gameId,
-                  confirmed: true,
-                });
-                if (result)
-                  setOutcome({
-                    text: result.message,
-                    error: result.status !== "active",
-                  });
-              }}
+              onClick={() =>
+                willPauseServices ? setConfirmServices(true) : void startBoost()
+              }
             >
               <Play size={17} /> Start boost
             </Button>
@@ -929,6 +1128,134 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
               </Button>
             }
           />
+        )}
+      </section>
+      {confirmServices && (
+        <Modal
+          title="Pause Windows services for this boost?"
+          description="This mode pauses a short list of background services, which needs administrator approval."
+          onClose={() => setConfirmServices(false)}
+        >
+          <p className="muted">
+            Windows will show an administrator prompt now, and another one when
+            the boost ends so the services can be restarted. Declining the first
+            prompt only skips this step; everything else in the mode still runs.
+            Frameforge stops these services and never disables them:{" "}
+            {cap("pauseServices")?.detail}
+          </p>
+          <div className="dialog-actions">
+            <Button onClick={() => setConfirmServices(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={pending}
+              onClick={() => {
+                setConfirmServices(false);
+                void startBoost();
+              }}
+            >
+              Continue
+            </Button>
+          </div>
+        </Modal>
+      )}
+      <section className="booster-section" aria-label="Network check">
+        <h2>
+          <Wifi size={18} /> Network check
+        </h2>
+        <p className="muted">
+          Diagnostics only: sends 10 ICMP pings to one host and reports latency,
+          jitter and packet loss. Nothing on your PC is changed. It measures the
+          path to that host, not your game traffic, and some hosts ignore pings.
+          Enter the address of your game server or region if you know it; the
+          buttons are public reference targets, not game servers.
+        </p>
+        <div className="toolbar">
+          <label className="field">
+            Host name or IP address
+            <input
+              type="text"
+              value={netHost}
+              maxLength={253}
+              placeholder="example.com or 203.0.113.5"
+              disabled={netBusy}
+              onChange={(e) => setNetHost(e.target.value)}
+            />
+          </label>
+          <Button
+            variant="primary"
+            disabled={
+              netBusy || !hostValid || !!unavailable || data.mode === "demo"
+            }
+            title={
+              unavailable ||
+              (!hostValid
+                ? "Enter a valid host name or IP address."
+                : undefined)
+            }
+            onClick={() => void checkNetwork(hostTrimmed)}
+          >
+            {netBusy ? "Checking…" : "Check network"}
+          </Button>
+        </div>
+        <div className="booster-chips" aria-label="Reference targets">
+          {referenceTargets.map((t) => (
+            <Button
+              key={t.host}
+              disabled={netBusy || !!unavailable}
+              title={unavailable || `Ping ${t.host} (${t.label}).`}
+              onClick={() => {
+                setNetHost(t.host);
+                void checkNetwork(t.host);
+              }}
+            >
+              {t.label} ({t.host})
+            </Button>
+          ))}
+        </div>
+        {netError && (
+          <p className="notice" role="alert" data-error="true">
+            {netError}
+          </p>
+        )}
+        {netResult && (
+          <div role="status" aria-label="Network check result">
+            <ul className="mechanism-list">
+              <li>
+                <span>Host</span>
+                <strong>
+                  {netResult.host}
+                  {netResult.address ? ` (${netResult.address})` : ""}
+                </strong>
+              </li>
+              <li>
+                <span>Replies</span>
+                <strong>
+                  {netResult.received} of {netResult.sent}
+                </strong>
+              </li>
+              <li>
+                <span>Packet loss</span>
+                <strong>{netResult.lossPercent}%</strong>
+              </li>
+              <li>
+                <span>Latency (min / avg / max)</span>
+                <strong>
+                  {netResult.avgMs === null
+                    ? "no replies"
+                    : `${netResult.minMs} / ${netResult.avgMs} / ${netResult.maxMs} ms`}
+                </strong>
+              </li>
+              <li>
+                <span>Jitter</span>
+                <strong>
+                  {netResult.jitterMs === null
+                    ? "n/a"
+                    : `${netResult.jitterMs} ms`}
+                </strong>
+              </li>
+            </ul>
+            <p className="muted">{netResult.message}</p>
+          </div>
         )}
       </section>
       {log.length > 0 && (
