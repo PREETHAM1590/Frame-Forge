@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace Frameforge.Windows;
 
-public record AdminReply(bool Ok, string Message, CapturedValue[]? Values = null, bool Verified = false);
+public record AdminReply(bool Ok, string Message, CapturedValue[]? Values = null, bool Verified = false, string? Note = null);
 
 /// <summary>
 /// GC-7 for machine optimizations: the helper starts itself with the runas verb and reads a validated result file. The request travels as
@@ -45,7 +45,7 @@ public sealed class WindowsAdminGateway(TimeSpan? childWait = null) : IAdminGate
             try { reply = JsonSerializer.Deserialize<AdminReply>(text, HelperJson.Options); } catch (JsonException) { reply = null; }
             if (reply is null) throw new InvalidOperationException("Unreadable administrator result.");
             if (!reply.Ok) throw new InvalidOperationException(reply.Message);
-            return new(reply.Values, reply.Verified);
+            return new(reply.Values, reply.Verified, reply.Note);
         }
         finally { if (!keep) { try { File.Delete(resultPath); } catch (IOException) { } catch (UnauthorizedAccessException) { } } }
     }
@@ -61,7 +61,7 @@ public sealed class WindowsAdminGateway(TimeSpan? childWait = null) : IAdminGate
         {
             var request = JsonSerializer.Deserialize<AdminRequest>(argv[1], HelperJson.Options) ?? throw new InvalidOperationException("Missing request.");
             var result = AdminCommands.Execute(request, new RegistryOperations(new WindowsRegistryStore(), new WindowsFacts()));
-            reply = new(true, "Done.", result.Values, result.Verified);
+            reply = new(true, "Done.", result.Values, result.Verified, result.Note);
         }
         catch (Exception error) when (error is InvalidOperationException or JsonException) { reply = new(false, error is JsonException ? "Invalid administrator request." : error.Message); }
         catch (Exception) { reply = new(false, "Windows could not complete the request. Check permissions."); }

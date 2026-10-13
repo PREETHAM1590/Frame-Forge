@@ -9,7 +9,14 @@ export type Category =
 /** standard: current user, no admin. advanced: machine setting or boot store, off by default. security: lowers protection, extra guardrails. */
 export type Tier = "standard" | "advanced" | "security";
 /** What the person has to do after applying (or rolling back) before Windows reads the new value. */
-export type Restart = "none" | "explorer" | "signout" | "reboot";
+export type Restart =
+  | "none"
+  | "wallpaper"
+  | "browser"
+  | "signin"
+  | "explorer"
+  | "signout"
+  | "reboot";
 export const categories: Category[] = [
   "FPS & Latency",
   "Privacy",
@@ -19,6 +26,9 @@ export const categories: Category[] = [
 ];
 export const restartText: Record<Restart, string> = {
   none: "Takes effect without a restart.",
+  wallpaper: "Applies the next time a wallpaper is set.",
+  browser: "Close and reopen Edge and Chrome for the policy to apply.",
+  signin: "Takes effect the next time you sign in.",
   explorer:
     "Restart Windows Explorer (or sign out and in) for Windows to show the change.",
   signout: "Sign out and back in for Windows to read the change.",
@@ -447,6 +457,7 @@ export const catalogue: Optimization[] = [
       "Stops Windows compressing JPEG wallpapers (quality 100 instead of 85).",
     reason: "Applies the next time a wallpaper is set.",
     settings: ["HKCU\\Control Panel\\Desktop: JPEGImportQuality = 100 (DWORD)"],
+    restart: "wallpaper",
     rollback: exact(),
   }),
   item({
@@ -513,6 +524,7 @@ export const catalogue: Optimization[] = [
     settings: [
       "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run: OneDrive (deleted; the exact command line is captured)",
     ],
+    restart: "signin",
     rollback: exact("Puts the exact original command line back."),
   }),
   adv({
@@ -530,6 +542,7 @@ export const catalogue: Optimization[] = [
       "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge: BackgroundModeEnabled = 0, StartupBoostEnabled = 0 (DWORD)",
       "HKLM\\SOFTWARE\\Policies\\Google\\Chrome: BackgroundModeEnabled = 0 (DWORD)",
     ],
+    restart: "browser",
     rollback: exact("Removes the policy keys this change created."),
   }),
   adv({
@@ -546,6 +559,7 @@ export const catalogue: Optimization[] = [
       "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge: HardwareAccelerationModeEnabled = 0",
       "HKLM\\SOFTWARE\\Policies\\Google\\Chrome: HardwareAccelerationModeEnabled = 0",
     ],
+    restart: "browser",
     rollback: exact("Removes the policy keys this change created."),
   }),
 
@@ -756,9 +770,9 @@ export const catalogue: Optimization[] = [
     name: "Turn off Microsoft Defender Antivirus",
     impact: "Malware protection",
     description:
-      "Sets the Defender policies that turn off the antivirus and real-time protection.",
+      "Writes the Defender policies for turning off the antivirus and real-time protection. The effect is not guaranteed: current Defender platforms ignore DisableAntiSpyware, and real-time protection can stay on.",
     reason:
-      "Documented Defender policies DisableAntiSpyware and DisableRealtimeMonitoring. Blocked by Windows while Tamper Protection is on.",
+      "Documented Defender policies DisableAntiSpyware and DisableRealtimeMonitoring; only the real-time monitoring policy matters on current Windows, and Tamper Protection must be off. Frameforge confirms that the policy values were written and shows what Defender itself reports before and after (read-only); it does not confirm that Defender is actually off. Check Windows Security afterwards.",
     consequence:
       "Your PC will no longer be protected from viruses and ransomware by Windows. Only do this if another antivirus replaces it.",
     settings: [
@@ -796,7 +810,7 @@ export const catalogue: Optimization[] = [
     description:
       "Turns off virtualization-based security and the Hyper-V hypervisor launch.",
     reason:
-      "DeviceGuard policy keys plus bcdedit hypervisorlaunchtype off. Windows may keep it on if it is locked by UEFI; the result is verified after the restart, not assumed. Hyper-V, WSL 2 and Windows Sandbox stop working.",
+      "DeviceGuard policy keys plus bcdedit hypervisorlaunchtype off. Windows may keep it on if it is locked by UEFI. Frameforge re-reads the registry values when it opens or refreshes and flags a change, but it does not confirm from here that VBS or the hypervisor is really off; check Windows Security > Device security after restarting. Hyper-V, WSL 2 and Windows Sandbox stop working.",
     consequence:
       "Removes a layer that blocks kernel-level malware and vulnerable drivers. Virtual machines using Hyper-V, WSL 2 and Windows Sandbox will not start.",
     settings: [
@@ -899,7 +913,7 @@ export const catalogue: Optimization[] = [
     description:
       "Sets the UCPD driver's start type to disabled so other tools can change default apps and file associations.",
     reason:
-      "The driver's service Start value is 4 (disabled). Windows may re-enable it through a scheduled task; Frameforge reports that after verification instead of claiming success.",
+      "The driver's service Start value is 4 (disabled). Windows may re-enable it through a scheduled task. Frameforge re-reads the Start value when it opens or refreshes and flags a change, but it does not check the driver itself.",
     consequence:
       "Malware could change your default browser or file associations without your knowledge.",
     settings: [

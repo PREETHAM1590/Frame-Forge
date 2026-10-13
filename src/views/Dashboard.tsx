@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   ShieldCheck,
   ShieldAlert,
+  AlertTriangle,
   SlidersHorizontal,
   Gamepad2,
   Archive,
@@ -141,6 +142,17 @@ export function Dashboard({
             </Button>
           </div>
         </div>
+      )}
+      {data.drifted.length > 0 && (
+        <p className="notice" role="alert">
+          <AlertTriangle size={17} />
+          Windows no longer has these settings as Frameforge set them:{" "}
+          {[...new Set(data.drifted.flatMap((d) => d.ids))]
+            .map((id) => catalogue.find((o) => o.id === id)?.name)
+            .join(", ")}
+          . Windows or a policy changed them, so they may not be in effect.
+          Check Activity and roll them back to clear this.
+        </p>
       )}
       {awaitingRestart.length > 0 && (
         <p className="notice" role="status">

@@ -55,7 +55,7 @@ public sealed class BcdStore(IToolRunner tools)
     public void Delete(string entry, string element) { Check(entry, element); tools.Run("bcdedit", ["/deletevalue", entry, element]); }
 }
 
-public sealed class WindowsRegistryStore(IToolRunner? tools = null) : IRegistryStore
+public sealed class WindowsRegistryStore(IToolRunner? tools = null) : IRegistryStore, IKeyDepth
 {
     private readonly IToolRunner runner = tools ?? new SystemTools();
     private static (RegistryKey Root, string Sub) Split(Setting setting) =>
@@ -69,12 +69,25 @@ public sealed class WindowsRegistryStore(IToolRunner? tools = null) : IRegistryS
         using var key = root.OpenSubKey(sub, false);
         if (key is null || !key.GetValueNames().Contains(setting.Name, StringComparer.OrdinalIgnoreCase))
         {
-            // A key that exists but is empty cannot be told apart from one Frameforge created, so rollback would not be exact.
-            if (setting.OwnKey > 0 && key is not null && key.ValueCount == 0 && key.SubKeyCount == 0) throw new InvalidOperationException("An empty registry key already exists where this change writes. No change was made.");
             return new(false, null, setting.Kind);
         }
         if (key.GetValueKind(setting.Name).ToString() != setting.Kind) throw new InvalidOperationException("An affected registry value has an unexpected type. No change was made.");
         return new(true, key.GetValue(setting.Name, null, RegistryValueOptions.DoNotExpandEnvironmentNames), setting.Kind);
+    }
+
+    public int MissingKeys(Setting setting)
+    {
+        if (setting.IsBcd) return 0;
+        var (root, sub) = Split(setting);
+        var missing = 0;
+        for (var path = sub; path.Length > 0;)
+        {
+            using (var key = root.OpenSubKey(path, false)) if (key is not null) break;
+            missing++;
+            var cut = path.LastIndexOf('\\');
+            path = cut < 0 ? "" : path[..cut];
+        }
+        return missing;
     }
 
     public void Write(Setting setting, ValueState state)
@@ -119,5 +132,28 @@ public sealed class WindowsFacts : IFacts
     {
         using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows Defender\Features", false);
         return key?.GetValue("TamperProtection") is int value && value != 4;
+    }
+}
+
+/// <summary>Read-only view of what Microsoft Defender reports (WMI MSFT_MpComputerStatus), shown beside the Defender optimization.</summary>
+public static class DefenderStatus
+{
+    public static (bool? Antivirus, bool? RealTime)? Read()
+    {
+        try
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(new System.Management.ManagementScope(@"root\Microsoft\Windows\Defender"), new System.Management.ObjectQuery("SELECT AntivirusEnabled, RealTimeProtectionEnabled FROM MSFT_MpComputerStatus"), new System.Management.EnumerationOptions { Timeout = TimeSpan.FromSeconds(4) });
+            foreach (System.Management.ManagementObject item in searcher.Get())
+                using (item) return (item["AntivirusEnabled"] as bool?, item["RealTimeProtectionEnabled"] as bool?);
+        }
+        catch (Exception error) when (error is System.Management.ManagementException or System.Runtime.InteropServices.COMException or UnauthorizedAccessException or InvalidOperationException) { }
+        return null;
+    }
+    public static string Describe(Func<(bool? Antivirus, bool? RealTime)?>? read = null)
+    {
+        var state = (read ?? Read)();
+        if (state is null) return "Windows did not report Microsoft Defender's state (another antivirus may be managing protection).";
+        string Word(bool? on) => on is null ? "unknown" : on.Value ? "on" : "off";
+        return $"Defender reports antivirus {Word(state.Value.Antivirus)} and real-time protection {Word(state.Value.RealTime)}.";
     }
 }

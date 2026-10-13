@@ -32,10 +32,10 @@ public class OptimizationCatalogTests
     public void EveryOptimizationRoundTripsFromAbsent(string id)
     {
         var store = new Memory(); var engine = new RegistryOperations(store, new Facts());
+        // hibernate-off reads an always-present value; when Windows does not report it, capture refuses (M2).
+        if (id == "hibernate-off") { Assert.Throws<InvalidOperationException>(() => engine.Capture([id])); return; }
         var snapshot = engine.Capture([id]);
         Assert.All(snapshot.Values, v => Assert.False(v.Existed));
-        // hibernate-off reads an always-present value, covered by the present-value test below.
-        if (id == "hibernate-off") return;
         engine.Apply([id], snapshot);
         Assert.True(engine.Verify([id]));
         engine.Restore(snapshot);
@@ -97,9 +97,138 @@ public class OptimizationCatalogTests
         var store = new Memory(); var engine = new RegistryOperations(store, new Facts());
         var snapshot = engine.Capture(["uac-off"]); engine.Apply(["uac-off"], snapshot);
         var key = Memory.Key(OptimizationTable.Settings.Single(s => s.Operation == "uac-off")); store.Values[key] = new(true, 1, "DWord");
-        Assert.Throws<InvalidOperationException>(() => engine.Restore(snapshot));
-        Assert.Equal(1, store.Values[key].Value);
+        // M3: a security item that Windows reverted to a third value is set back to the captured state and reported.
+        var note = engine.Restore(snapshot);
+        Assert.Equal(["EnableLUA"], note); Assert.Empty(store.Values);
         Assert.Throws<InvalidOperationException>(() => engine.Restore(snapshot with { Values = [snapshot.Values[0] with { Path = @"HKLM\SOFTWARE\Evil" }] }));
+    }
+
+    [Fact]
+    public void ANonSecurityValueChangedByTheUserIsStillPreservedOnRollback()
+    {
+        var store = new Memory(); var engine = new RegistryOperations(store, new Facts());
+        var snapshot = engine.Capture(["lock-screen-blur-off"]); engine.Apply(["lock-screen-blur-off"], snapshot);
+        var key = Memory.Key(OptimizationTable.Settings.Single(s => s.Operation == "lock-screen-blur-off")); store.Values[key] = new(true, 5, "DWord");
+        Assert.Throws<InvalidOperationException>(() => engine.Restore(snapshot));
+        Assert.Equal(5, store.Values[key].Value);
+    }
+
+    [Fact]
+    public void GatewayRestoreNoteReachesTheCaller()
+    {
+        var machine = new Memory(); var inner = new RegistryOperations(machine, new Facts());
+        var gateway = new Gateway(request => AdminCommands.Execute(request, inner));
+        var engine = new Optimizations(new RegistryOperations(new Memory(), new Facts()), new NoPower(), null, gateway, false);
+        var snapshot = engine.Capture(["uac-off"]); engine.Apply(["uac-off"], snapshot);
+        machine.Values[Memory.Key(OptimizationTable.Settings.Single(s => s.Operation == "uac-off"))] = new(true, 1, "DWord");
+        var note = engine.Restore(snapshot);
+        Assert.Contains("EnableLUA", note); Assert.Empty(machine.Values);
+    }
+
+    // IKeyDepth fake: remembers the OwnKey the restore asked for.
+    private sealed class Deep(int missing) : IRegistryStore, IKeyDepth
+    {
+        public Dictionary<string, ValueState> Values { get; } = new(); public List<int> OwnKeys { get; } = new();
+        public ValueState Read(Setting s) => Values.GetValueOrDefault(Memory.Key(s), new(false, null, s.Kind));
+        public void Write(Setting s, ValueState state) { OwnKeys.Add(s.OwnKey); if (state.Existed) Values[Memory.Key(s)] = state; else Values.Remove(Memory.Key(s)); }
+        public int MissingKeys(Setting s) => missing;
+    }
+
+    [Fact]
+    public void RollbackRemovesExactlyTheKeysTheCaptureSawMissing()
+    {
+        var store = new Deep(3); var engine = new RegistryOperations(store, new Facts());
+        var snapshot = engine.Capture(["storage-sense-off"]);
+        Assert.All(snapshot.Values, v => Assert.Equal(3, v.Created));
+        engine.Apply(["storage-sense-off"], snapshot); engine.Restore(snapshot);
+        Assert.Equal([3], store.OwnKeys.Skip(1)); // the apply write, then the restore with the captured count
+        // A key that already existed (nothing missing) is never removed, whatever the table's bound says.
+        var kept = new Deep(0); var shortcut = new RegistryOperations(kept, new Facts());
+        var snap = shortcut.Capture(["shortcut-suffix-off"]); shortcut.Apply(["shortcut-suffix-off"], snap); shortcut.Restore(snap);
+        Assert.Equal(0, kept.OwnKeys.Last());
+        // Snapshots saved before the count existed fall back to the table.
+        var legacy = new Memory(); var old = new RegistryOperations(legacy, new Facts());
+        var oldSnap = old.Capture(["shortcut-suffix-off"]); Assert.All(oldSnap.Values, v => Assert.Null(v.Created));
+    }
+
+    [Fact]
+    public void RealRegistryKeysCreatedByAWriteAreRemovedAgainAndPreexistingOnesKept()
+    {
+        var root = $@"Software\FrameforgeTest_{Guid.NewGuid():N}";
+        var store = new WindowsRegistryStore(new Tools());
+        var setting = new Setting("t", root + @"\A\B", "V", "DWord", 1);
+        try
+        {
+            Assert.Equal(3, store.MissingKeys(setting));
+            store.Write(setting, new(true, 1, "DWord"));
+            Assert.Equal(0, store.MissingKeys(setting)); Assert.Equal(new ValueState(true, 1, "DWord"), store.Read(setting));
+            store.Write(setting with { OwnKey = 3 }, new(false, null, "DWord"));
+            using (var gone = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(root)) Assert.Null(gone);
+            // Only the missing levels go: A existed already, so it stays.
+            using (Microsoft.Win32.Registry.CurrentUser.CreateSubKey(root + @"\A")) { }
+            Assert.Equal(1, store.MissingKeys(setting));
+            store.Write(setting, new(true, 1, "DWord")); store.Write(setting with { OwnKey = 1 }, new(false, null, "DWord"));
+            using (var a = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(root + @"\A")) Assert.NotNull(a);
+            using (var b = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(root + @"\A\B")) Assert.Null(b);
+        }
+        finally { Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(root, false); }
+    }
+
+    [Fact]
+    public void HibernationIsRefusedAtCaptureWhenWindowsDoesNotReportIt()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() => new RegistryOperations(new Memory(), new Facts()).Capture(["hibernate-off"]));
+        Assert.Contains("cannot be restored", ex.Message);
+        var store = new Memory(); store.Values[Memory.Key(OptimizationTable.Settings.Single(s => s.Operation == "hibernate-off"))] = new(true, 1, "DWord");
+        Assert.True(new RegistryOperations(store, new Facts()).Capture(["hibernate-off"]).Values[0].Existed);
+    }
+
+    [Fact]
+    public void RecheckFindsRevertedValuesAndSkipsTheBootStore()
+    {
+        var store = new Memory(); var engine = new RegistryOperations(store, new Facts());
+        var ids = new[] { "uac-off", "ucpd-off", "vbs-hyperv-off" };
+        var snapshot = engine.Capture(ids); engine.Apply(ids, snapshot);
+        Assert.Empty(engine.Drifted(ids));
+        store.Values[Memory.Key(OptimizationTable.Settings.Single(s => s.Operation == "ucpd-off"))] = new(true, 1, "DWord");
+        Assert.Equal(["ucpd-off"], engine.Drifted(ids));
+        store.Values.Remove(Memory.Key(OptimizationTable.Settings.Single(s => s.Operation == "vbs-hyperv-off" && s.IsBcd)));
+        Assert.Equal(["ucpd-off"], engine.Drifted(ids)); // the boot store is not re-read without a prompt
+    }
+
+    [Fact]
+    public void DefenderStateIsDescribedReadOnly()
+    {
+        Assert.Equal("Defender reports antivirus on and real-time protection off.", DefenderStatus.Describe(() => (true, false)));
+        Assert.Contains("unknown", DefenderStatus.Describe(() => (null, true)));
+        Assert.Contains("did not report", DefenderStatus.Describe(() => null));
+    }
+
+    [Fact]
+    public void AFailedMachineStepUndoesTheCurrentUserPartWithASpecificMessage()
+    {
+        var store = new Memory();
+        var gateway = new Gateway(_ => throw new InvalidOperationException("Administrator approval was declined. Nothing was changed."));
+        var engine = new Optimizations(new RegistryOperations(store, new Facts()), new NoPower(), null, gateway, false);
+        var ids = new[] { "transparency-off", "lock-screen-blur-off" };
+        var snapshot = engine.Capture(ids);
+        var ex = Assert.Throws<InvalidOperationException>(() => engine.Apply(ids, snapshot));
+        Assert.Contains("machine-level step did not complete", ex.Message); Assert.Contains("Administrator approval was declined", ex.Message);
+        Assert.Contains("were undone", ex.Message);
+        Assert.Empty(store.Values); // applied first, then taken back
+        Assert.Equal(2, store.Writes);
+    }
+
+    [Fact]
+    public void IfTheCurrentUserPartCannotBeUndoneTheMessageSaysSo()
+    {
+        var store = new Memory(); var broke = false;
+        var gateway = new Gateway(_ => { broke = true; store.Values[Memory.Key(OptimizationTable.Settings.Single(s => s.Operation == "transparency-off"))] = new(true, 99, "DWord"); throw new InvalidOperationException("The administrator step did not finish in time."); });
+        var engine = new Optimizations(new RegistryOperations(store, new Facts()), new NoPower(), null, gateway, false);
+        var ids = new[] { "transparency-off", "lock-screen-blur-off" };
+        var snapshot = engine.Capture(ids);
+        var ex = Assert.Throws<InvalidOperationException>(() => engine.Apply(ids, snapshot));
+        Assert.True(broke); Assert.Contains("could not be undone", ex.Message); Assert.Contains("use Rollback", ex.Message);
     }
 
     [Fact]
@@ -197,7 +326,7 @@ public class OptimizationCatalogTests
         var engine = new Optimizations(new RegistryOperations(store, new Facts()), new NoPower(), null, gateway, false);
         var snapshot = engine.Capture(["transparency-off", "lock-screen-blur-off"]);
         Assert.Throws<InvalidOperationException>(() => engine.Apply(["transparency-off", "lock-screen-blur-off"], snapshot));
-        Assert.Equal(0, store.Writes);
+        Assert.Empty(store.Values); // the current-user part was applied first and undone again
     }
 
     [Fact]

@@ -16,7 +16,7 @@ public record OptimizationSnapshot(
 
 /// <summary>One machine-level request handed to the administrator step: capture, apply (writes then re-reads), verify or restore.</summary>
 public record AdminRequest(string Command, string[] Ids, CapturedValue[]? Values);
-public record AdminResult(CapturedValue[]? Values, bool Verified);
+public record AdminResult(CapturedValue[]? Values, bool Verified, string? Note = null);
 /// <summary>Runs an <see cref="AdminRequest"/> with administrator rights (one approval per call) or throws InvalidOperationException.</summary>
 public interface IAdminGateway { AdminResult Run(AdminRequest request); }
 
@@ -83,13 +83,28 @@ public sealed class Optimizations(RegistryOperations registry, IPowerStore power
         var machine = Remote ? registryIds.Where(OptimizationTable.IsAdmin).ToArray() : [];
         var local = registryIds.Except(machine).ToArray();
         bool? verified = null;
-        // Machine part first: when the approval is declined nothing has changed yet.
-        if (machine.Length > 0) verified = admin!.Run(new("apply", machine, Of(expected.Values, machine))).Verified;
-        if (local.Length > 0) registry.Apply(local, new Snapshot(Of(expected.Values, local)));
-        // Already on the target plan: nothing to write, and rollback has nothing to undo.
-        if (plans is { } change && change.Prior != change.Target) power.SetActive(change.Target);
+        // Current-user part first: it is undone locally without a prompt. The machine part goes last, so a declined or failed
+        // administrator step leaves only things we can take back here.
+        var localApplied = false; var planSwitched = false;
+        try
+        {
+            if (local.Length > 0) { registry.Apply(local, new Snapshot(Of(expected.Values, local))); localApplied = true; }
+            // Already on the target plan: nothing to write, and rollback has nothing to undo.
+            if (plans is { } change && change.Prior != change.Target) { power.SetActive(change.Target); planSwitched = true; }
+            if (machine.Length > 0) verified = admin!.Run(new("apply", machine, Of(expected.Values, machine))).Verified;
+        }
+        catch (Exception error) when (error is InvalidOperationException or Win32Exception && (localApplied || planSwitched))
+        {
+            var undone = new List<string>();
+            try { if (planSwitched) power.SetActive(plans!.Value.Prior); if (localApplied) registry.Restore(new Snapshot(Of(expected.Values, local))); }
+            catch (Exception undo) when (undo is InvalidOperationException or Win32Exception) { undone.Add(undo.Message); }
+            var tail = undone.Count == 0 ? "The current-user changes made before it were undone." : $"The current-user changes made before it could not be undone ({undone[0]}); use Rollback to restore them.";
+            throw new InvalidOperationException($"The machine-level step did not complete: {error.Message} {tail}");
+        }
         return verified;
     }
+    /// <summary>Read-only: which of these applied optimizations no longer match what Frameforge wrote (checked on the registry values only).</summary>
+    public string[] Drifted(string[] ids) => registry.Drifted(Registry(Check(ids)));
     public bool Verify(string[] ids)
     {
         var registryIds = Registry(Check(ids));
@@ -98,8 +113,10 @@ public sealed class Optimizations(RegistryOperations registry, IPowerStore power
         return (direct.Length == 0 || registry.Verify(direct)) && (remote.Length == 0 || admin!.Run(new("verify", remote, null)).Verified) &&
             (!ids.Contains(PowerPlan) || power.Active() == BoostSessionEngine.PlanTarget(power, ownedPlan));
     }
-    public void Restore(OptimizationSnapshot snapshot)
+    /// <summary>Restores the snapshot. Returns a note when security settings had been changed by Windows or a policy and were set back anyway.</summary>
+    public string? Restore(OptimizationSnapshot snapshot)
     {
+        var notes = new List<string>();
         var plans = Plans(snapshot);
         if (plans is null && snapshot.Values.Length == 0) throw new InvalidOperationException("Empty or invalid snapshot.");
         // Check the plan before any write so an external choice is never overwritten: only the prior or the applied plan may be active.
@@ -110,15 +127,17 @@ public sealed class Optimizations(RegistryOperations registry, IPowerStore power
             registry.Validate(new Snapshot(snapshot.Values));
             var machine = Remote ? snapshot.Values.Where(v => OptimizationTable.IsAdmin(v.Operation)).ToArray() : [];
             var local = snapshot.Values.Except(machine).ToArray();
-            if (machine.Length > 0) admin!.Run(new("restore", machine.Select(v => v.Operation).Distinct().ToArray(), machine));
-            if (local.Length > 0) registry.Restore(new Snapshot(local));
+            if (machine.Length > 0) notes.AddRange(Split(admin!.Run(new("restore", machine.Select(v => v.Operation).Distinct().ToArray(), machine)).Note));
+            if (local.Length > 0) notes.AddRange(registry.Restore(new Snapshot(local)));
         }
         if (plans is { } back && power.Active() != back.Prior)
         {
             power.SetActive(back.Prior);
             if (power.Active() != back.Prior) throw new InvalidOperationException("Rollback verification failed.");
         }
+        return notes.Count == 0 ? null : $"Windows had already changed {string.Join(", ", notes.Distinct())} to something else; it was set back to the value captured before.";
     }
+    private static IEnumerable<string> Split(string? note) => note is null ? [] : note.Split('|', StringSplitOptions.RemoveEmptyEntries);
 }
 
 /// <summary>The work an administrator step does for one request. Used inline when already elevated and by the elevated child process.</summary>
@@ -136,8 +155,8 @@ public static class AdminCommands
                 return new(null, registry.Verify(request.Ids));
             case "verify": return new(null, registry.Verify(request.Ids));
             case "restore":
-                registry.Restore(new Snapshot(request.Values ?? throw new InvalidOperationException("Missing snapshot.")));
-                return new(null, true);
+                var third = registry.Restore(new Snapshot(request.Values ?? throw new InvalidOperationException("Missing snapshot.")));
+                return new(null, true, third.Length == 0 ? null : string.Join('|', third));
             default: throw new InvalidOperationException("Unsupported administrator request.");
         }
     }

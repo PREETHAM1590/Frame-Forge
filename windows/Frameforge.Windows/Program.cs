@@ -28,6 +28,8 @@ try
         "capture" when request.Snapshot is null => new { ok = true, message = "Snapshot captured.", snapshot = engine.Capture(ids) },
         "apply" when request.Snapshot is not null => Apply(engine, ids, request.Snapshot),
         "supported" when ids.Length == 0 && request.Snapshot is null => new { ok = true, message = "Applicable optimizations read.", supported = OptimizationTable.Applicable(facts) },
+        "recheck" when ids.Length > 0 && request.Snapshot is null => new { ok = true, message = "Applied settings re-read.", drifted = engine.Drifted(ids) },
+        "defender-status" when ids.Length == 0 && request.Snapshot is null => new { ok = true, message = DefenderStatus.Describe() },
         "restart-explorer" when ids.Length == 0 && request.Snapshot is null => new { ok = true, message = ExplorerRestart.Run() > 0 ? "Windows Explorer was restarted." : "Windows Explorer was not found for this user." },
         "verify" when request.Snapshot is null => new { ok = true, message = "Verification completed.", verified = engine.Verify(ids) },
         "restore" when ids.Length == 0 && request.Snapshot is not null && !request.Force => Restore(engine, request.Snapshot),
@@ -60,5 +62,5 @@ catch (Exception error)
 Console.WriteLine(JsonSerializer.Serialize(response, options));
 static object CreatePlan(Guid destination) { BoostSessionEngine.CreatePlan(new WindowsPowerStore(), destination); return new { ok = true, message = "Frameforge High performance plan created and verified. The active plan was not changed.", powerPlan = destination.ToString() }; }
 static object Apply(Optimizations engine, string[] ids, OptimizationSnapshot snapshot) { var verified = engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written.", verified }; }
-static object Restore(Optimizations engine, OptimizationSnapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
+static object Restore(Optimizations engine, OptimizationSnapshot snapshot) { var note = engine.Restore(snapshot); return new { ok = true, message = note is null ? "Snapshot restored and verified." : "Snapshot restored and verified. " + note }; }
 record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null, bool Elevate = true, string? Host = null, int Count = 0, LaunchRequest? Launch = null);

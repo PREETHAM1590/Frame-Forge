@@ -93,6 +93,7 @@ function bootstrap(): Bootstrap {
     version: "1.0.0",
     capabilities: [],
     bootedAt: "",
+    drifted: [],
     mode: "demo",
     startupSupported: false,
     boost: { session: null, available: false, watching: false },

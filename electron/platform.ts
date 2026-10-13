@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import os from "node:os";
 import {
   HelperResult,
+  OperationId,
   type CreateRestorePointResult,
   type Frequency,
   type HelperRestoreStatus,
@@ -16,7 +17,6 @@ import {
   type LaunchSetting,
   type MechanismResult,
   type NetworkCheck,
-  type OperationId,
   type ProcessTarget,
   type RunningProcess,
   type Snapshot,
@@ -76,7 +76,12 @@ export interface Platform {
     snapshot: Snapshot,
   ): Promise<void>;
   verify(ids: OperationId[]): Promise<boolean>;
-  restore(snapshot: Snapshot, force: boolean): Promise<void>;
+  /** Resolves with a note when Windows had changed security settings to a third value that were set back anyway. */
+  restore(snapshot: Snapshot, force: boolean): Promise<string | void>;
+  /** Read-only: ids among these (applied earlier) whose registry values no longer match what Frameforge wrote. */
+  recheck?(ids: OperationId[]): Promise<OperationId[]>;
+  /** Read-only: what Microsoft Defender itself reports, or null. */
+  defenderStatus?(): Promise<string | null>;
   boostAvailable: boolean;
   /** Ends this user's explorer.exe (Windows restarts it). Only ever called after an explicit click. */
   restartExplorer(): Promise<string>;
@@ -350,11 +355,25 @@ export class WindowsPlatform implements Platform {
   async restore(snapshot: Snapshot, force: boolean) {
     this.bootCapture.clear();
     const machine = snapshot.values.some((v) => adminIds.includes(v.operation));
-    await this.call(
+    const result = await this.call(
       { command: "restore", snapshot, force, ownedPlan: this.ownedPlan },
       undefined,
       machine ? WindowsPlatform.elevatedTimeout : 20000,
     );
+    const plain = "Snapshot restored and verified.";
+    return result.message.startsWith(plain)
+      ? result.message.slice(plain.length).trim() || undefined
+      : undefined;
+  }
+  async recheck(ids: OperationId[]) {
+    const result = await this.call({ command: "recheck", ids });
+    return (result.drifted ?? []).filter(
+      (id): id is OperationId => OperationId.safeParse(id).success,
+    );
+  }
+  async defenderStatus() {
+    return (await this.call({ command: "defender-status" }, undefined, 10000))
+      .message;
   }
   async restartExplorer() {
     return (await this.call({ command: "restart-explorer" })).message;
@@ -582,6 +601,9 @@ export class MockPlatform implements Platform {
   applied: OperationId[] = [];
   failVerification = false;
   boostAvailable = false;
+  /** Tests may supply the optional read-only checks. */
+  defenderStatus?: () => Promise<string | null>;
+  recheck?: (ids: OperationId[]) => Promise<OperationId[]>;
   constructor(testOperations = false) {
     if (testOperations) this.capabilities = ["mouse-precision", "capture-off"];
   }
@@ -607,7 +629,7 @@ export class MockPlatform implements Platform {
   async verify() {
     return !this.failVerification;
   }
-  async restore() {
+  async restore(): Promise<string | void> {
     this.applied = [];
   }
   async runningGames(): Promise<RunningGame[]> {

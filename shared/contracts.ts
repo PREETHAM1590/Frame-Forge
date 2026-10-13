@@ -369,7 +369,17 @@ export const PreviewSchema = z
     ),
     warnings: z.array(z.string()),
     /** Highest follow-up any selected item needs, so the dialog can say what to do after applying. */
-    restart: z.enum(["none", "explorer", "signout", "reboot"]).default("none"),
+    restart: z
+      .enum([
+        "none",
+        "wallpaper",
+        "browser",
+        "signin",
+        "explorer",
+        "signout",
+        "reboot",
+      ])
+      .default("none"),
     /** True when applying or rolling back shows a Windows administrator prompt. */
     admin: z.boolean().default(false),
     /** Selected items that lower security and need an explicit acknowledgement. */
@@ -679,6 +689,10 @@ export const BootstrapSchema = z
     capabilities: z.array(OperationId),
     /** When this PC last started, so "pending restart" can be told from "restarted since". */
     bootedAt: z.string().default(""),
+    /** Applied optimizations whose registry values no longer match what Frameforge wrote (re-read at start and Refresh). */
+    drifted: z
+      .array(z.object({ activityId: Id, ids: z.array(OperationId) }).strict())
+      .default([]),
     startupSupported: z.boolean(),
     version: z.string(),
     mode: z.enum(["desktop", "demo"]),
@@ -940,6 +954,8 @@ export const RegistryValueSchema = z
     target: z
       .union([z.string().max(520), z.number().int(), z.null()])
       .optional(),
+    /** Key levels that were missing at capture; rollback removes exactly these. */
+    created: z.number().int().min(0).max(16).nullable().optional(),
   })
   .strict();
 // The built-in Windows plans, by GUID. The helper (BoostSession.cs) keeps the same list; a test compares the two.
@@ -974,6 +990,7 @@ export const HelperResult = z
     snapshot: SnapshotSchema.optional(),
     verified: z.boolean().nullable().optional(),
     supported: z.array(z.string().max(64)).max(200).optional(),
+    drifted: z.array(z.string().max(64)).max(200).optional(),
     restorePoints: z.array(RestorePointSchema).optional(),
     createdSequence: z.number().int().nonnegative().nullable().optional(),
     available: z.boolean().optional(),
