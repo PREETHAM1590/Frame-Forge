@@ -111,6 +111,11 @@ export class AppService {
         guard();
         const backup = this.repo.backups().find((b) => b.id === id);
         if (!backup) throw new Error("Backup not found");
+        // A restore replaces the library and booster config under a live session.
+        if (this.booster.active || this.repo.boostSession())
+          throw new Error(
+            "Stop or recover the Game Mode session before restoring a configuration backup.",
+          );
         const previous = this.repo.state();
         this.desktop.setStartup(backup.state.settings.startup);
         const state = (() => {
@@ -121,6 +126,7 @@ export class AppService {
             throw e;
           }
         })();
+        this.booster.configure();
         this.log(
           "Configuration restored",
           "App configuration restored; Windows registry state was not changed.",
@@ -298,12 +304,21 @@ export class AppService {
         : old;
     });
     const combined = [...library, ...added].slice(0, 500);
+    const dropped = library.length + added.length - combined.length;
     this.repo.updateState({ ...state, games: combined });
     this.log(
       "Installed game scan completed",
       `${combined.length - state.games.length} new of ${result.games.length} found. Scanned: ${result.launchers.length ? result.launchers.join(", ") : "no supported launchers"}.`,
     );
-    return result;
+    return dropped > 0
+      ? {
+          ...result,
+          warnings: [
+            ...result.warnings,
+            `The library is full (500 games). ${dropped} found game${dropped === 1 ? " was" : "s were"} not added. Remove games you no longer play and rescan.`,
+          ],
+        }
+      : result;
   }
   private log(
     label: string,

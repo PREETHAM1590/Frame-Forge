@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { Repository } from "../electron/repository";
 import { MockPlatform } from "../electron/platform";
 import { AppService } from "../electron/service";
+import { BoostSessionSchema } from "../shared/contracts";
 describe("validated IPC to SQLite integration", () => {
   it("dispatches persisted workflows and rejects untrusted requests", async () => {
     const repo = new Repository(":memory:");
@@ -226,6 +227,97 @@ describe("rescan source upgrade", () => {
       profile: "gaming",
       notes: "mine",
     });
+    repo.close();
+  });
+});
+
+const desktop = (games: unknown[] = []) => ({
+  pickGame: async () => null,
+  detectGames: async () => ({
+    games: games as never[],
+    warnings: [],
+    launchers: [],
+    perLauncher: [],
+  }),
+  scanFolder: async () => null,
+  setStartup: () => {},
+  version: "test",
+});
+const libraryGame = (n: number) => ({
+  id: crypto.randomUUID(),
+  name: `Game ${n}`,
+  path: `D:\\Games\\g${n}`,
+  source: "custom" as const,
+  executablePath: null,
+  profile: "balanced" as const,
+  boostMode: "global" as const,
+  notes: "",
+});
+describe("booster and library guards", () => {
+  it("re-applies booster configuration after a configuration restore", async () => {
+    const repo = new Repository(":memory:");
+    const service = new AppService(repo, new MockPlatform(), desktop());
+    const configure = vi.spyOn(service.booster, "configure");
+    const backup = repo.backup("Auto-boost off");
+    repo.updateState({
+      ...repo.state(),
+      booster: { ...repo.state().booster, autoBoost: true },
+    });
+    await service.dispatch("restore", { id: backup.id, confirmed: true });
+    expect(repo.state().booster.autoBoost).toBe(false);
+    expect(configure).toHaveBeenCalledTimes(1);
+    repo.close();
+  });
+  it("refuses a configuration restore while a boost session exists and keeps the game", async () => {
+    const repo = new Repository(":memory:");
+    const service = new AppService(repo, new MockPlatform(), desktop());
+    const game = libraryGame(1);
+    const backup = repo.backup("Empty library");
+    repo.updateState({ ...repo.state(), games: [game] });
+    repo.saveBoostSession(
+      BoostSessionSchema.parse({
+        id: crypto.randomUUID(),
+        gameId: game.id,
+        mode: "balanced",
+        target: {
+          pid: 4,
+          startTime: "2026-10-12T10:00:00.0000000Z",
+          executablePath: "D:\\Games\\g1\\g.exe",
+          name: "g",
+          priority: "Normal",
+        },
+        startedAt: new Date().toISOString(),
+        status: "recovery-needed",
+        message: "A revert failed.",
+      }),
+      [],
+    );
+    await expect(
+      service.dispatch("restore", { id: backup.id, confirmed: true }),
+    ).rejects.toThrow(/Game Mode session/);
+    expect(repo.state().games.map((g) => g.id)).toEqual([game.id]);
+    repo.close();
+  });
+  it("warns when a scan finds more games than the 500 game library holds", async () => {
+    const repo = new Repository(":memory:");
+    const found = Array.from({ length: 502 }, (_, i) => libraryGame(i));
+    const service = new AppService(
+      repo,
+      new MockPlatform(),
+      desktop(found.slice(0, 500)),
+    );
+    await service.dispatch("detectGames", {});
+    expect(repo.state().games).toHaveLength(500);
+    const extra = new AppService(
+      repo,
+      new MockPlatform(),
+      desktop([libraryGame(900), libraryGame(901)]),
+    );
+    const result = (await extra.dispatch("detectGames", {})) as {
+      warnings: string[];
+    };
+    expect(repo.state().games).toHaveLength(500);
+    expect(result.warnings.join(" ")).toMatch(/library is full.*2 found games/);
     repo.close();
   });
 });
