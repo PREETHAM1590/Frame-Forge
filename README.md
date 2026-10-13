@@ -9,15 +9,14 @@ Get the Windows installer (and the SHA-256 checksums) from the [Releases page](h
 - The installer and `Frameforge.Windows.exe` helper are **not code-signed**, so Windows SmartScreen may warn on first run. Choose "More info", then "Run anyway", or compare the file against `SHA256SUMS.txt` first.
 - Pausing background services during a boost, and creating or listing Windows restore points, need administrator approval. Windows shows a UAC prompt for each of those actions. Declining the prompt changes nothing.
 
-## Known issues in 1.0.0
+## Known limitations
 
-These were found in the final review and are not fixed in this release:
+- **Unsigned.** The installer and `Frameforge.Windows.exe` are not code-signed, so SmartScreen may warn on first run (see above).
+- **Administrator prompts.** Windows asks for approval for each of these, and declining changes nothing: creating or listing restore points, turning on System Protection, pausing services or clearing the standby memory list during a boost, and turning on the Windows 11 timer setting. Only one prompt is open at a time. If you leave a prompt unanswered it times out and nothing is changed; a prompt that is still open after that does nothing.
+- **No benchmark.** Frameforge shows system CPU and RAM snapshots, not FPS. A PresentMon-based benchmark is not included.
+- **Not verified by a person on a second PC.** See [Feature Status](docs/FEATURE_STATUS.md) for what was run on real hardware and what only ran against fakes.
 
-1. **Game capture clash.** If a Balanced, Performance or Competitive boost is running and you apply "Disable background game capture" (or a preset that includes it), the app reports success, but the boost puts the old value back when the game exits. The setting you chose is silently undone. Avoid applying it during a boost.
-2. **Two administrator prompts at once.** Loading restore points while starting a boost can open two UAC prompts back to back, and the boost can time out if the first stays open. Finish the restore-point prompt before starting a boost. A restore point created during a boost also captures the boosted state.
-3. **Stuck launch-setting records.** If a launch setting is left in the "recovery needed" state, there is no Forget button, so it cannot be cleared and the game cannot be removed from the library.
-4. **Restoring an older app backup can orphan launch settings.** If the backup does not contain a game that has a launch setting applied, that game disappears and its Windows graphics preference stays set with no way to revert it in the app. Revert launch settings before restoring a backup.
-5. **Game Mode page on first launch.** If you open Game Mode while the first automatic scan is still running, the game list can look filled in but nothing is actually selected, and Start boost stays disabled. Pick a different game and then the first one again.
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
 
 ## Setup
 
@@ -51,21 +50,21 @@ Tests and the desktop smoke test must not touch a real profile. `FRAMEFORGE_USER
 
 ## Commands
 
-| Command                   | Purpose                                                                                                           |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `npm run build`           | Type-check, then build renderer, Electron main process and preload                                                |
-| `npm run typecheck`       | Check renderer and Electron TypeScript                                                                            |
-| `npm run lint`            | ESLint                                                                                                            |
-| `npm run format:check`    | Prettier check (`npm run format` rewrites)                                                                        |
-| `npm test`                | Vitest: UI, IPC contract, service, persistence, booster, restore, launcher parsing                                |
-| `npm run test:e2e`        | Playwright browser workflows; needs a Vite server (see below) and Chromium from `npx playwright install chromium` |
-| `npm run test:desktop`    | Electron smoke test with an isolated temporary profile                                                            |
-| `npm run windows:build`   | Build the .NET helper                                                                                             |
-| `npm run windows:test`    | Run the xUnit helper tests                                                                                        |
-| `npm run windows:publish` | Publish the self-contained Windows x64 helper to `windows/publish`                                                |
-| `npm run package:win`     | Publish helper, build the app, create the NSIS installer in `release/`                                            |
+| Command                   | Purpose                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `npm run build`           | Type-check, then build renderer, Electron main process and preload                                                        |
+| `npm run typecheck`       | Check renderer and Electron TypeScript                                                                                    |
+| `npm run lint`            | ESLint                                                                                                                    |
+| `npm run format:check`    | Prettier check (`npm run format` rewrites)                                                                                |
+| `npm test`                | Vitest: UI, IPC contract, service, persistence, booster, restore, launcher parsing                                        |
+| `npm run test:e2e`        | Playwright browser workflows; starts the Vite dev server itself and needs Chromium from `npx playwright install chromium` |
+| `npm run test:desktop`    | Electron smoke test with an isolated temporary profile                                                                    |
+| `npm run windows:build`   | Build the .NET helper                                                                                                     |
+| `npm run windows:test`    | Run the xUnit helper tests                                                                                                |
+| `npm run windows:publish` | Publish the self-contained Windows x64 helper to `windows/publish`                                                        |
+| `npm run package:win`     | Publish helper, build the app, create the NSIS installer in `release/`                                                    |
 
-For browser tests, keep a Vite server running first. The default test URL is port 5173; set `PLAYWRIGHT_BASE_URL` to override. To smoke-test a packaged executable, set `FRAMEFORGE_EXECUTABLE` to its absolute path before `npm run test:desktop`.
+`npm run test:e2e` starts `npm run dev` itself (or reuses a server that is already running on port 5173); set `PLAYWRIGHT_BASE_URL` to test another server. To smoke-test a packaged executable, set `FRAMEFORGE_EXECUTABLE` to its absolute path before `npm run test:desktop`.
 
 Installer configuration is included, but the installer and packaged smoke test predate the booster, restore-point and detection work described below. See [Phase Report](docs/PHASE_REPORT.md) for what has been built and tested; installer configuration alone does not establish installation verification.
 
@@ -83,17 +82,22 @@ Every status below is defined in [Feature Status](docs/FEATURE_STATUS.md). The s
 
 Modes and what each one applies. Each mechanism is also shown on the Game Mode page with whether it applies on this PC.
 
-| Mechanism                            | Off                                                    | Balanced    | Performance | Competitive | Custom                      |
-| ------------------------------------ | ------------------------------------------------------ | ----------- | ----------- | ----------- | --------------------------- |
-| Windows Game Mode (per-user GameBar) | No                                                     | Yes         | Yes         | Yes         | Toggle                      |
-| Game priority                        | No                                                     | AboveNormal | High        | High        | Toggle: AboveNormal or High |
-| Game CPU affinity (per CPU)          | No                                                     | No          | No          | No          | Toggle                      |
-| High performance power plan (switch) | No                                                     | No          | Yes         | Yes         | Toggle                      |
-| Timer resolution (1 ms request)      | No                                                     | No          | No          | Yes         | Toggle                      |
-| Lower selected background apps       | No                                                     | No          | Yes         | Yes         | Toggle                      |
-| Suspend selected background apps     | No                                                     | No          | No          | Yes         | Toggle                      |
-| Close selected background apps       | No                                                     | No          | No          | No          | Toggle                      |
-| Standby list purge                   | Unsupported in every mode (needs administrator rights) |             |             |             |                             |
+| Mechanism                                           | Off | Balanced    | Performance | Competitive | Custom                      |
+| --------------------------------------------------- | --- | ----------- | ----------- | ----------- | --------------------------- |
+| Windows Game Mode (per-user GameBar)                | No  | Yes         | Yes         | Yes         | Toggle                      |
+| Game priority                                       | No  | AboveNormal | High        | High        | Toggle: AboveNormal or High |
+| Game CPU affinity (per CPU)                         | No  | No          | No          | No          | Toggle                      |
+| High performance power plan (switch)                | No  | No          | Yes         | Yes         | Toggle                      |
+| Timer resolution (0.5 ms request)                   | No  | No          | No          | Yes         | Toggle                      |
+| Lower selected background apps                      | No  | No          | Yes         | Yes         | Toggle                      |
+| Suspend selected background apps                    | No  | No          | No          | Yes         | Toggle                      |
+| Close selected background apps                      | No  | No          | No          | No          | Toggle                      |
+| Game Bar capture off (session)                      | No  | Yes         | Yes         | Yes         | Toggle                      |
+| Power throttling opt-out (game)                     | No  | Yes         | Yes         | Yes         | Toggle                      |
+| Smart core targeting (hybrid CPUs)                  | No  | No          | Windows 10  | Windows 10  | Toggle                      |
+| Disable core parking (plugged in)                   | No  | No          | No          | Yes         | Toggle                      |
+| Pause Windows services (asks for admin)             | No  | No          | No          | Yes         | Toggle                      |
+| Clear the standby memory list once (asks for admin) | No  | No          | No          | No          | Toggle (off by default)     |
 
 Notes on each mechanism:
 
@@ -101,9 +105,10 @@ Notes on each mechanism:
 - **Priority** is set on the game process only. Real-time priority is never used.
 - **Affinity** is a single 64-bit mask on the game. It only covers processor group 0.
 - **Power plan** switches to High performance, or Ultimate if present, for the session, then returns to the exact prior plan. If neither exists, the option is unavailable until you consent to creating a copy named "Frameforge High performance" from a built-in template. That copy does not become active when created, is recorded in the app database, can be removed from the app, and user-created plans are never modified. Removal refuses any plan that was not created by Frameforge.
-- **Timer resolution** requests 1 ms through `NtSetTimerResolution` and releases it at revert or game exit. It is unsupported on Windows 10 2004 and later builds below 22000 (builds 19041 to 21999), even if the flag below is set. On Windows 11 (22000 and later) it is supported only when `GlobalTimerResolutionRequests` is 1. Frameforge never writes that value.
+- **Timer resolution** requests 0.5 ms through `NtSetTimerResolution` and releases it at revert or game exit. It is unsupported on Windows 10 2004 and later builds below 22000 (builds 19041 to 21999), because there a timer request only affects the requesting program; nothing can change that. On Windows 11 (22000 and later) it works only when `GlobalTimerResolutionRequests` is 1. If it is off, Game Mode offers **Allow games to keep high timer resolution**: after you confirm and approve one Windows administrator prompt, Frameforge saves the current value of `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel` > `GlobalTimerResolutionRequests`, sets it to 1 and tells you to restart Windows (Windows reads it at start-up). Until you restart, the mechanism stays unavailable. **Turn back off** restores exactly the saved value. Frameforge never changes it otherwise.
 - **Background apps** are limited to processes in the game's session and owned by the same user. Critical, system, security, anti-cheat and denylisted processes, the helper and Frameforge itself are never touched. You choose which apps are affected, up to 50. Suspend resumes each process exactly once. Close sends a window-close request and then terminates after 5 seconds; closed apps are not reopened, and that action cannot be reverted.
-- **Standby list purge** is always shown as unsupported.
+- **Clear the standby memory list once** (Custom only, off by default) calls `NtSetSystemInformation` with `SystemMemoryListInformation` and `MemoryPurgeStandbyList` once when the boost starts, after enabling `SeProfileSingleProcessPrivilege`. It runs inside the same administrator step as pausing services (one prompt for both), never during auto-boost, and is not reversible. It is harmless: Windows refills its cache as programs need memory.
+- **Waiting for administrator approval.** The boost starts right away and works without the services or standby step. While Windows waits for you, Game Mode shows the step as "waiting for admin approval" and Stop is available; Stop (or ignoring the prompt for 2 minutes) withdraws the request, and a late approval changes nothing.
 
 Session behaviour: the helper runs detached and reports every prior value before it changes it. On revert, a value is restored only if Frameforge's value is still in place. An external change is kept and shown as a conflict. A failed revert leaves a recovery banner with Retry and Dismiss. Auto-start, when enabled, checks every 5 seconds for a running library game and starts one session per game process. CPU and RAM figures are system readings, not FPS.
 
@@ -117,7 +122,7 @@ Interrupted registry operations and booster sessions are recorded in a durable j
 
 ## Security
 
-Frameforge runs as the current user (`asInvoker`). Only the Windows restore-point actions ask for elevation, one UAC prompt per action, through the same helper. See [Security](docs/SECURITY.md) for the boundaries and the parts of the elevation and booster design that document does not yet cover.
+Frameforge runs as the current user (`asInvoker`). Only these actions ask for elevation, one UAC prompt per action, through the same helper: restore-point actions, pausing services and clearing the standby list during a boost, and the Windows 11 timer setting. An elevated request only works while a short-lived request file next to its result file still exists, so a prompt answered after the app stopped waiting changes nothing. See [Security](docs/SECURITY.md) for the boundaries and the parts of the elevation and booster design that document does not yet cover.
 
 ## Verification and Limitations
 

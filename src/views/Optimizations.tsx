@@ -126,7 +126,7 @@ export function Optimizations({
                     ? missingHere(data)
                       ? "Not available on this PC"
                       : "Desktop helper required"
-                    : "Unsupported"}
+                    : "Review only"}
               </Badge>
               {planMissing(o.id) && (
                 <Button
@@ -194,7 +194,7 @@ export function Optimizations({
               <ShieldAlert size={18} />
               <div>
                 {!detail.supported
-                  ? "This operation is unsupported. No changes will be made."
+                  ? `This is a review-only entry: Frameforge never changes it, so there is nothing to apply. ${detail.settingsPage ? "Use the button below to look at it in Windows yourself." : "Windows or the vendor owns this setting."}`
                   : missingHere(data)
                     ? "A prerequisite is not met on this PC. See Prerequisites above."
                     : "Windows operations require the desktop app and its published helper."}
