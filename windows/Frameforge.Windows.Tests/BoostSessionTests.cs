@@ -32,18 +32,26 @@ public class BoostSessionTests
         }
         public ulong GetAffinity(ProcessTarget id) => Affinity.GetValueOrDefault(id.Pid, 0xFFUL);
         public void SetAffinity(ProcessTarget id, ulong mask) => Affinity[id.Pid] = mask;
+        public bool RefuseSuspend { get; set; }
+        public bool BrokenRecheck { get; set; }
+        private bool resumed;
         public bool Suspend(ProcessTarget id)
         {
+            if (RefuseSuspend) throw new Win32Exception(5);
             Calls.Add($"suspend {id.Pid}"); var t = ThreadsOf(id.Pid);
             for (var i = 0; i < t.Count; i++) t[i]++;
             return t.All(c => c > 0);
         }
         public void Resume(ProcessTarget id)
         {
-            Calls.Add($"resume {id.Pid}"); var t = ThreadsOf(id.Pid);
+            Calls.Add($"resume {id.Pid}"); var t = ThreadsOf(id.Pid); resumed = true;
             for (var i = 0; i < t.Count; i++) if (t[i] > 0) t[i]--;
         }
-        public (int Suspended, int Total) Threads(ProcessTarget id) { var t = ThreadsOf(id.Pid); return (t.Count(c => c > 0), t.Count); }
+        public (int Suspended, int Total) Threads(ProcessTarget id)
+        {
+            if (BrokenRecheck && resumed) throw new InvalidOperationException("thread list unavailable");
+            var t = ThreadsOf(id.Pid); return (t.Count(c => c > 0), t.Count);
+        }
         public int Close(ProcessTarget[] ids) { foreach (var id in ids) { Calls.Add($"close {id.Pid}"); Running.Remove(id.Pid); } return ids.Length; }
     }
     private sealed class FakePower(params Guid[] schemes) : IPowerStore
@@ -64,7 +72,8 @@ public class BoostSessionTests
             if (FailName) { Schemes.Remove(destination); throw new Win32Exception(5); }
             Names[destination] = name;
         }
-        public string? Name(Guid scheme) => Names.GetValueOrDefault(scheme);
+        public bool ThrowName { get; set; }
+        public string? Name(Guid scheme) => ThrowName ? throw new Win32Exception(5) : Names.GetValueOrDefault(scheme);
         public void Delete(Guid scheme) => Schemes.Remove(scheme);
     }
     private sealed class FakeTimer(string? unsupported = null) : ITimerControl
@@ -337,7 +346,7 @@ public class BoostSessionTests
         Assert.False(power.Exists(owned));
         Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.DeletePlan(power, BoostSessionEngine.HighPerformance));
         var none = new FakePower(); none.Refused.Add(BoostSessionEngine.HighPerformance); none.Refused.Add(BoostSessionEngine.Ultimate);
-        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.CreatePlan(none, Guid.NewGuid()));
+        Assert.Throws<PlanNotCreatedException>(() => BoostSessionEngine.CreatePlan(none, Guid.NewGuid()));
     }
     [Fact]
     public void DeleteRefusesBuiltInAndUserPlansAndNamingFailureLeavesNoCopy()
@@ -353,9 +362,9 @@ public class BoostSessionTests
         // A copy whose name cannot be written is removed and creation fails.
         var failing = new FakePower { FailName = true };
         var destination = Guid.NewGuid();
-        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.CreatePlan(failing, destination));
+        Assert.Throws<PlanNotCreatedException>(() => BoostSessionEngine.CreatePlan(failing, destination));
         Assert.False(failing.Exists(destination));
-        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.CreatePlan(power, FakePower.Balanced));
+        Assert.Throws<PlanNotCreatedException>(() => BoostSessionEngine.CreatePlan(power, FakePower.Balanced));
     }
     [Fact]
     public void RecoveryToleratesARemovedFrameforgePlanAndCapabilitiesMatchTheEngine()
@@ -385,5 +394,52 @@ public class BoostSessionTests
         public void Duplicate(Guid source, Guid destination, string name) => throw new Win32Exception(5);
         public string? Name(Guid scheme) => null;
         public void Delete(Guid scheme) => throw new Win32Exception(5);
+    }
+    [Fact]
+    public void AFailedSuspendIsReleasedAndNeverResumed()
+    {
+        // nm2-4: the capture is announced first (GC-10) but released when the suspend call throws.
+        var rig = Setup();
+        rig.Processes.Add(P(910, @"C:\Apps\sync.exe"));
+        rig.Processes.Counts[910] = [1, 0];
+        rig.Processes.RefuseSuspend = true;
+        rig.Engine.Start(Command(Off() with { SuspendBackground = true }, new BackgroundRule("sync.exe", "suspend")));
+        Assert.Equal(["captured", "released", "failed"], rig.Steps.Select(s => s.Event));
+        var revert = rig.Engine.Revert().Single();
+        Assert.Equal(("reverted", "Never applied; nothing to undo."), (revert.State, revert.Detail));
+        Assert.DoesNotContain(rig.Processes.Calls, c => c.StartsWith("resume"));
+        Assert.Equal([1, 0], rig.Processes.Counts[910]);
+    }
+    [Fact]
+    public void AResumeWhoseRecheckFailsIsNotReportedAsFailed()
+    {
+        // nm2-4: a failed re-check after a successful resume must not trigger a second resume on retry.
+        var rig = Setup();
+        rig.Processes.Add(P(920, @"C:\Apps\sync.exe"));
+        rig.Engine.Start(Command(Off() with { SuspendBackground = true }, new BackgroundRule("sync.exe", "suspend")));
+        rig.Processes.BrokenRecheck = true;
+        var revert = rig.Engine.Revert().Single();
+        Assert.Equal("reverted", revert.State);
+        Assert.Contains("could not be re-checked", revert.Detail);
+        Assert.Single(rig.Processes.Calls, c => c == "resume 920");
+    }
+    [Fact]
+    public void PlanCreationNeverClaimsNothingChangedWhenACopyMayRemain()
+    {
+        // nm2-1: a verification failure after the copy is not "plan-not-created", so Frameforge keeps the record.
+        var power = new FakePower { ThrowName = true };
+        var destination = Guid.NewGuid();
+        var error = Assert.ThrowsAny<InvalidOperationException>(() => BoostSessionEngine.CreatePlan(power, destination));
+        Assert.IsNotType<PlanNotCreatedException>(error);
+        Assert.IsType<PlanNotCreatedException>(Assert.ThrowsAny<InvalidOperationException>(() => BoostSessionEngine.CreatePlan(new FakePower { FailName = true }, Guid.NewGuid())));
+        // Remove can clean up a recorded copy left unnamed or with the Windows source name, never a user-named plan.
+        power.ThrowName = false;
+        power.Names[destination] = "High performance";
+        Assert.Contains("removed", BoostSessionEngine.DeletePlan(power, destination));
+        var unnamed = Guid.NewGuid(); power.Schemes.Add(unnamed);
+        Assert.Contains("removed", BoostSessionEngine.DeletePlan(power, unnamed));
+        var user = Guid.NewGuid(); power.Schemes.Add(user); power.Names[user] = "My gaming plan";
+        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.DeletePlan(power, user));
+        Assert.True(power.Exists(user));
     }
 }

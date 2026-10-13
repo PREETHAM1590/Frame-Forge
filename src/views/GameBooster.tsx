@@ -362,7 +362,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                     dismiss: true,
                   });
                   if (result)
-                    setOutcome({ text: result.message, error: false });
+                    setOutcome({ text: result.message, error: result.failed });
                 }}
               >
                 Dismiss

@@ -30,6 +30,8 @@ public record ProcInfo(ProcessTarget Target, int SessionId, string? Sid, bool Cr
 public record Capability(string Id, bool Available, string Detail, bool Active = false);
 public record BoostCapabilities(int LogicalCpus, Capability[] Mechanisms);
 public record ProcessEntry(string Image, int Pid, bool Protected);
+// Reported as code "plan-not-created": the helper verified no plan copy exists, so the recorded GUID can be dropped.
+public sealed class PlanNotCreatedException(string message) : InvalidOperationException(message);
 public static class HelperJson
 {
     public static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
@@ -121,25 +123,46 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
     }
     // Explicit, consent-gated: copies Windows' High performance (or Ultimate) template into a new plan. The active plan is not changed.
     // destination is generated and recorded by Frameforge before this call, so a created plan is never left unrecorded.
+    // Throws PlanNotCreatedException only when it verified that no copy exists; any other failure may leave the recorded copy,
+    // which Remove can then clean up.
     public static void CreatePlan(IPowerStore power, Guid destination)
     {
-        if (BuiltInPlans.Contains(destination) || power.Exists(destination)) throw new InvalidOperationException("Invalid destination for the new power plan.");
+        if (BuiltInPlans.Contains(destination) || power.Exists(destination)) throw new PlanNotCreatedException("Invalid destination for the new power plan. Nothing was changed.");
         foreach (var source in new[] { HighPerformance, Ultimate })
         {
             try { power.Duplicate(source, destination, OwnedPlanName); }
-            catch (Win32Exception) { continue; }
-            if (power.Exists(destination) && power.Name(destination) == OwnedPlanName) return;
-            // Never leave an unverified copy behind.
-            if (power.Exists(destination)) power.Delete(destination);
+            catch (Win32Exception) when (!SafeExists(power, destination)) { continue; }
+            catch (Win32Exception error) { throw new InvalidOperationException($"Windows left an unverified copy of the plan ({Describe(error)}). Use Remove Frameforge plan to clean it up."); }
+            try
+            {
+                if (power.Exists(destination) && power.Name(destination) == OwnedPlanName) return;
+                // Never leave an unverified copy behind.
+                if (power.Exists(destination)) power.Delete(destination);
+                if (power.Exists(destination)) throw new InvalidOperationException("Windows did not remove an unverified copy of the plan.");
+            }
+            catch (Exception error) when (error is Win32Exception or InvalidOperationException)
+            {
+                throw new InvalidOperationException($"The new plan could not be verified ({Describe(error)}). Use Remove Frameforge plan to clean it up.");
+            }
         }
-        throw new InvalidOperationException("Windows did not allow creating a High performance plan on this PC (common on Modern Standby devices). Nothing was changed.");
+        throw new PlanNotCreatedException("Windows did not allow creating a High performance plan on this PC (common on Modern Standby devices). Nothing was changed.");
     }
-    // Removes only the plan Frameforge created: never a built-in scheme, never one without the Frameforge name, never while active.
+    private static bool SafeExists(IPowerStore power, Guid scheme) { try { return power.Exists(scheme); } catch (Win32Exception) { return true; } }
+    // A copy left unnamed (helper killed between copy and naming) still carries a Windows source name, or none.
+    private static bool OwnedName(IPowerStore power, string? name)
+    {
+        if (string.IsNullOrEmpty(name) || name == OwnedPlanName) return true;
+        var sources = new List<string> { "High performance", "Ultimate Performance" };
+        foreach (var source in new[] { HighPerformance, Ultimate })
+            try { if (power.Name(source) is { } n) sources.Add(n); } catch (Win32Exception) { }
+        return sources.Contains(name, StringComparer.OrdinalIgnoreCase);
+    }
+    // Removes only the plan Frameforge created and recorded: never a built-in scheme, never a user-named plan, never while active.
     public static string DeletePlan(IPowerStore power, Guid owned)
     {
         if (BuiltInPlans.Contains(owned)) throw new InvalidOperationException("Only the plan Frameforge created can be removed.");
         if (!power.Exists(owned)) return "The Frameforge plan was already removed.";
-        if (power.Name(owned) != OwnedPlanName) throw new InvalidOperationException("That power plan was not created by Frameforge, so it was not removed.");
+        if (!OwnedName(power, power.Name(owned))) throw new InvalidOperationException("That power plan was not created by Frameforge, so it was not removed.");
         if (power.Active() == owned) throw new InvalidOperationException("The Frameforge plan is active. Switch to another power plan or stop the boost first.");
         power.Delete(owned);
         if (power.Exists(owned)) throw new InvalidOperationException("Windows did not remove the Frameforge plan.");
@@ -175,6 +198,9 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
         captured.Clear();
         return results;
     }
+    // Captures whose change never happened (the suspend call failed): kept in order so results stay one per capture, never undone.
+    private readonly HashSet<Captured> notApplied = new(ReferenceEqualityComparer.Instance);
+    private void Release(Captured item) { notApplied.Add(item); emit(new("released", item.Mechanism, Prior: item)); }
     // Reverse order of capture; every item is attempted (RevertOne never throws) and checks that Frameforge's value is still in place.
     public MechanismResult[] Recover(Captured[] items) => items.Reverse().Select(RevertOne).ToArray();
 
@@ -278,8 +304,13 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
                 // Already frozen (Windows suspends packaged apps; other tools can too): not ours to change or resume.
                 var (suspended, total) = processes.Threads(process);
                 if (total > 0 && suspended == total) return new(id, "skipped", $"{Label(process)}: already suspended by Windows or another program; not changed.");
-                Capture(new(id, process));
-                return processes.Suspend(process) ? new(id, "applied", $"{Label(process)}: suspended and verified.") : new(id, "failed", $"{Label(process)}: suspension could not be verified. It is resumed when the session ends.");
+                var item = new Captured(id, process);
+                Capture(item);
+                bool verified;
+                // A suspend call that threw did not suspend anything: release the capture so it is never "resumed".
+                try { verified = processes.Suspend(process); }
+                catch { Release(item); throw; }
+                return verified ? new(id, "applied", $"{Label(process)}: suspended and verified.") : new(id, "failed", $"{Label(process)}: suspension could not be verified. It is resumed when the session ends.");
             });
         }
     }
@@ -287,6 +318,7 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
     private MechanismResult RevertOne(Captured item)
     {
         var id = item?.Mechanism ?? "";
+        if (item is not null && notApplied.Contains(item)) return new(id, "reverted", "Never applied; nothing to undo.");
         try
         {
             return id switch
@@ -365,7 +397,11 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
         // reverted or conflicted, so a retry never resumes twice.
         if (processes.Threads(process).Suspended == 0) return new("suspendBackground", "reverted", $"{Label(process)}: already running; not resumed again.");
         processes.Resume(process);
-        var (suspended, total) = processes.Threads(process);
+        int suspended, total;
+        // The resume happened; an unreadable re-check must not turn it into a failure that a retry would resume again.
+        try { (suspended, total) = processes.Threads(process); }
+        catch (Exception error) when (error is Win32Exception or InvalidOperationException or ArgumentException)
+        { return new("suspendBackground", "reverted", $"{Label(process)}: resumed; the result could not be re-checked."); }
         return total > 0 && suspended == total
             ? new("suspendBackground", "conflict", $"{Label(process)}: still suspended by Windows or another program after Frameforge's resume; left as it is.")
             : new("suspendBackground", "reverted", $"{Label(process)}: resumed and verified.");
@@ -515,7 +551,9 @@ public sealed class WindowsProcessControl : IProcessControl
         using var handle = Verified(identity, WindowsProcesses.SuspendResume);
         var status = NtSuspendProcess(handle);
         if (status != 0) throw new InvalidOperationException($"{identity.Name}: Windows refused to suspend it (status 0x{status:X8}).");
-        return Count(identity.Pid) is var (suspended, total) && total > 0 && suspended == total;
+        // NtSuspendProcess succeeded, so this process is suspended: a failed re-read means "unverified", never "not applied".
+        try { return Count(identity.Pid) is var (suspended, total) && total > 0 && suspended == total; }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or Win32Exception) { return false; }
     }
     public void Resume(ProcessTarget identity)
     {
@@ -653,8 +691,9 @@ public sealed class WindowsPowerStore : IPowerStore
         var named = PowerWriteFriendlyName(IntPtr.Zero, ref destination, IntPtr.Zero, IntPtr.Zero, text, (uint)text.Length);
         if (named != 0)
         {
-            // An unnamed copy could not be told apart from Windows' own plan: remove it.
-            PowerDeleteScheme(IntPtr.Zero, ref destination);
+            // An unnamed copy could not be told apart from Windows' own plan: remove it, and say so if that fails too.
+            if (PowerDeleteScheme(IntPtr.Zero, ref destination) != 0)
+                throw new InvalidOperationException("Windows created the plan copy but could neither name nor remove it. Use Remove Frameforge plan to clean it up.");
             throw new Win32Exception((int)named);
         }
     }

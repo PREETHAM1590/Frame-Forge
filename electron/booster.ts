@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   SessionEventSchema,
   modeMechanisms,
@@ -22,11 +23,18 @@ const text = (error: unknown) =>
   (error instanceof Error ? error.message : "Unknown error").slice(0, 500);
 const key = (t: ProcessTarget) => `${t.pid}|${t.startTime}`;
 const planKey = "booster.powerPlan";
-// The helper reverts in reverse capture order, one result per capture. Keep only the captures whose revert failed.
-const pendingCaptures = (captured: Captured[], reverts: MechanismResult[]) =>
-  reverts.length === captured.length
+// The helper reverts in reverse capture order, one result per capture it holds. `indices` maps each saved capture to its
+// position in the helper's list (`total` entries, which may include captures Frameforge rejected or that were released).
+// Keep only the captures whose revert failed; if the results cannot be aligned, keep everything for a retry.
+const pendingCaptures = (
+  captured: Captured[],
+  reverts: MechanismResult[],
+  indices = captured.map((_, i) => i),
+  total = captured.length,
+) =>
+  reverts.length === total
     ? captured.filter(
-        (_, i) => reverts[captured.length - 1 - i]!.state === "failed",
+        (_, i) => reverts[total - 1 - indices[i]!]!.state === "failed",
       )
     : captured;
 const delay = (ms: number) =>
@@ -53,6 +61,11 @@ type Live = {
   ended: Promise<BoostSession>;
   // Set when a helper report was rejected; the session is being reverted and is never reported as active.
   aborted?: boolean;
+  abortReason?: string;
+  ready?: boolean;
+  // Every "captured" line the helper sent (valid or not), and each saved capture's position among them.
+  total: number;
+  indices: number[];
 };
 export class BoostEngine {
   private busy = false;
@@ -161,8 +174,8 @@ export class BoostEngine {
         try {
           await this.platform.createPowerPlan(destination);
         } catch (error) {
-          // The helper replied (code set): it verified nothing was left behind. Otherwise keep the record so Remove can clean up.
-          if ((error as { code?: string }).code)
+          // "plan-not-created": the helper verified no copy exists. Any other outcome keeps the record so Remove can clean up.
+          if ((error as { code?: string }).code === "plan-not-created")
             this.repo.setMeta(planKey, null);
           this.capabilities = undefined;
           throw error;
@@ -266,6 +279,8 @@ export class BoostEngine {
       captured,
       game: game.name,
       ended: new Promise((resolve) => (resolveEnded = resolve)),
+      total: 0,
+      indices: [],
     };
     this.live = live;
     return new Promise((resolve) => {
@@ -279,15 +294,22 @@ export class BoostEngine {
       const timer = setTimeout(() => channel.kill(), this.timeouts.start);
       channel.on("event", (raw) => {
         if (this.live !== live) return;
+        const isCapture =
+          (raw as { event?: unknown } | null)?.event === "captured";
+        if (isCapture) live.total++;
         const parsed = SessionEventSchema.safeParse(raw);
         if (!parsed.success) {
           // Fail closed (GC-10): a prior state we cannot save must not be left applied.
           // "stop" makes the helper revert from its in-memory captures; killing it would lose them.
           if (!live.aborted) {
             live.aborted = true;
+            live.abortReason = isCapture
+              ? "the session helper reported a prior state Frameforge could not save, so the boost was stopped"
+              : `the session helper sent a report Frameforge could not read${live.ready ? " during the session" : ""}, so the boost was stopped`;
+            // From here the stop timeout governs; the start timer must not kill the helper mid-revert.
+            clearTimeout(timer);
             this.update(live, {
-              message:
-                "The session helper reported state Frameforge could not save. Stopping the session and restoring.",
+              message: `Stopping and restoring: ${live.abortReason}.`,
             });
             this.log(
               `${game.name}: invalid session helper report; the session was stopped and reverted.`,
@@ -302,10 +324,27 @@ export class BoostEngine {
           switch (event.event) {
             case "captured":
               // GC-10: persisted as soon as the helper reports it, before its change is verified.
-              captured.push(event.prior);
+              live.captured.push(event.prior);
+              live.indices.push(live.total - 1);
               this.update(live, {});
               break;
+            case "released": {
+              // The change never happened; drop the saved prior so recovery never "undoes" it.
+              let index = live.captured.length - 1;
+              while (
+                index >= 0 &&
+                !isDeepStrictEqual(live.captured[index], event.prior)
+              )
+                index--;
+              if (index >= 0) {
+                live.captured.splice(index, 1);
+                live.indices.splice(index, 1);
+                this.update(live, {});
+              }
+              break;
+            }
             case "ready": {
+              live.ready = true;
               // A rejected report means the session is already being reverted: never report it as active.
               if (live.aborted) break;
               const applied = live.session.mechanisms.filter(
@@ -363,10 +402,11 @@ export class BoostEngine {
       });
       channel.on("exit", () => {
         if (this.live !== live) return;
-        // The helper stopped without reporting its reverts: restore from the saved captures.
+        // The helper stopped without reporting its reverts: restore from the saved captures. The session stays marked failed.
         this.live = null;
         this.update(live, {
           status: "recovery-needed",
+          failed: true,
           message:
             "The session helper stopped unexpectedly. Restoring the saved state.",
         });
@@ -400,14 +440,21 @@ export class BoostEngine {
     this.capabilities = undefined;
     const count = (state: MechanismResult["state"]) =>
       reverts.filter((r) => r.state === state).length;
-    const failed = count("failed");
+    // Fewer results than captures means the helper's revert stopped early: never report that as restored.
+    const incomplete = reverts.length < live.total;
+    const failed = count("failed") + (incomplete ? 1 : 0);
     const why = live.aborted
-      ? "the session helper reported a prior state Frameforge could not save, so the boost was stopped"
+      ? (live.abortReason ?? "a helper report was rejected")
       : reason === "start-failed" && detail
         ? `the boost could not start: ${detail}`
         : endReasons[reason];
     // Only failed reverts stay saved for a retry, so a retry never repeats a completed one (for example a second resume).
-    live.captured = pendingCaptures(live.captured, reverts);
+    live.captured = pendingCaptures(
+      live.captured,
+      reverts,
+      live.indices,
+      live.total,
+    );
     const now = new Date();
     const minutes = Math.round(
       (now.getTime() - Date.parse(live.session.startedAt)) / 60000,
@@ -424,9 +471,11 @@ export class BoostEngine {
       failed: failed > 0 || !!live.aborted || reason === "start-failed",
       endedAt: failed ? null : now.toISOString(),
       mechanisms: [...live.session.mechanisms, ...reverts].slice(-400),
-      message: failed
-        ? `Session ended because ${why}, but ${failed} change(s) could not be restored. Retry recovery.`
-        : `Session ended because ${why}. ${summary}`,
+      message: incomplete
+        ? `Session ended because ${why}, but the helper did not report every revert${detail && reason !== "start-failed" ? ` (${detail})` : ""}. Retry recovery.`
+        : failed
+          ? `Session ended because ${why}, but ${failed} change(s) could not be restored. Retry recovery.`
+          : `Session ended because ${why}. ${summary}`,
     });
     this.log(
       `${live.game}: session ended after ${minutes} min because ${why}. ${summary}${snapshot}`,
@@ -481,20 +530,27 @@ export class BoostEngine {
       const failed = reverts.filter((r) => r.state === "failed");
       const conflicts = reverts.filter((r) => r.state === "conflict").length;
       const remaining = pendingCaptures(captured, reverts);
+      // A session that ended abnormally (helper crash, rejected report) stays failed even when recovery succeeds;
+      // one that only had failed reverts is resolved once they are restored.
+      const abnormal =
+        session.failed && !session.mechanisms.some((m) => m.state === "failed");
       const result = this.save(
         {
           ...session,
           status: failed.length ? "recovery-needed" : "ended",
-          failed: failed.length > 0,
+          failed: failed.length > 0 || abnormal,
           endedAt: failed.length ? null : new Date().toISOString(),
           mechanisms: [...session.mechanisms, ...reverts].slice(-400),
           message: failed.length
             ? `Recovery could not restore ${failed.length} change(s): ${failed[0]!.detail}`
-            : `Recovered: ${reverts.length} saved change(s) checked, ${conflicts} external change(s) kept.`,
+            : `${abnormal ? "The boost did not finish normally. " : ""}Recovered: ${reverts.length} saved change(s) checked, ${conflicts} external change(s) kept.`,
         },
         remaining,
       );
-      this.log(result.message, failed.length ? "failed" : "success");
+      this.log(
+        result.message,
+        failed.length || abnormal ? "failed" : "success",
+      );
       return result;
     } catch (error) {
       const result = finish({

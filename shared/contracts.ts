@@ -569,6 +569,14 @@ export const SessionEventSchema = z.union([
       prior: CapturedSchema,
     })
     .strict(),
+  // The change for this capture never happened (for example the suspend call failed): drop it from the saved state.
+  z
+    .object({
+      event: z.literal("released"),
+      mechanism: MechanismId,
+      prior: CapturedSchema,
+    })
+    .strict(),
   z
     .object({
       event: z.enum([

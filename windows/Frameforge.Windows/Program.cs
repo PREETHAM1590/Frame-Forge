@@ -40,7 +40,7 @@ catch (Exception error)
     response = new
     {
         ok = false,
-        code = error switch { InvalidOperationException => "invalid-request", Win32Exception { NativeErrorCode: 5 } => "access-denied", _ => "windows-error" },
+        code = error switch { PlanNotCreatedException => "plan-not-created", InvalidOperationException => "invalid-request", Win32Exception { NativeErrorCode: 5 } => "access-denied", _ => "windows-error" },
         message = error is InvalidOperationException ? error.Message : "Windows could not complete the request. Check permissions and hardware availability."
     };
 }

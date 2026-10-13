@@ -32,7 +32,9 @@ class FakeSession extends EventEmitter implements SessionChannel {
     this.sent.push(command);
     queueMicrotask(() => this.onSend(command as { command: string }));
   }
+  killed = false;
   kill() {
+    this.killed = true;
     this.emit("exit");
   }
   line(event: unknown) {
@@ -321,7 +323,7 @@ describe("game booster sessions", () => {
     const { repo, platform, engine } = setup();
     platform.createPowerPlan = async () => {
       throw Object.assign(new Error("Windows did not allow it"), {
-        code: "invalid-request",
+        code: "plan-not-created",
       });
     };
     await expect(engine.powerPlan("create")).rejects.toThrow(/did not allow/);
@@ -389,6 +391,130 @@ describe("game booster sessions", () => {
     };
     const session = await engine.start(game.id, "manual");
     expect(session?.message).toMatch(/nothing needed changing/);
+    repo.close();
+  });
+  it("nm2-2: an aborted start is not killed by the start timer while it reverts", async () => {
+    const { repo, game, platform } = setup();
+    const engine = new BoostEngine(repo, platform, () => {}, {
+      start: 30,
+      stop: 1000,
+    });
+    platform.onSpawn = (session) => {
+      session.onSend = ({ command }) => {
+        if (command === "start")
+          session.line({ event: "captured", mechanism: "gameMode", prior: {} });
+        else if (command === "stop")
+          // The revert takes longer than the start timeout.
+          setTimeout(
+            () =>
+              session.line({
+                event: "ended",
+                reason: "stop",
+                reverts: [
+                  { id: "gameMode", state: "reverted", detail: "restored" },
+                ],
+              }),
+            80,
+          );
+      };
+    };
+    const result = await engine.start(game.id, "manual");
+    expect(platform.sessions[0]!.killed).toBe(false);
+    expect(result).toMatchObject({ status: "ended", failed: true });
+    expect(result?.message).toMatch(/could not save/);
+    repo.close();
+  });
+  it("nm2-2: recovery after a helper crash stays failed and says so", async () => {
+    const { repo, game, platform } = setup();
+    const events: { status: string; failed: boolean; message: string }[] = [];
+    const engine = new BoostEngine(repo, platform, (s) => events.push(s), {
+      start: 1000,
+      stop: 1000,
+    });
+    await engine.start(game.id, "manual");
+    platform.sessions[0]!.kill();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(repo.boostRecord()).toBeNull();
+    expect(platform.recovered).toEqual([[priorityCapture]]);
+    // The final session is ended but failed, with a truthful message, so the UI shows a warning.
+    expect(events.at(-1)).toMatchObject({ status: "ended", failed: true });
+    expect(events.at(-1)?.message).toMatch(/did not finish normally/);
+    expect(repo.activity()[0]).toMatchObject({ status: "failed" });
+    repo.close();
+  });
+  it("nm2-3: a revert that reports no results is never shown as restored", async () => {
+    const { repo, game, platform, engine } = setup();
+    platform.onSpawn = (session) => {
+      scripted(session);
+      const start = session.onSend;
+      session.onSend = (command) => {
+        if (command.command === "stop")
+          session.line({
+            event: "ended",
+            reason: "stop",
+            detail:
+              "Revert stopped unexpectedly: Windows could not complete the change.",
+            reverts: [],
+          });
+        else start(command);
+      };
+    };
+    await engine.start(game.id, "manual");
+    const ended = await engine.stop();
+    expect(ended).toMatchObject({ status: "recovery-needed", failed: true });
+    expect(ended?.message).toMatch(/did not report every revert/);
+    expect(repo.boostRecord()?.captured).toEqual([priorityCapture]);
+    await engine.recover();
+    expect(platform.recovered).toEqual([[priorityCapture]]);
+    repo.close();
+  });
+  it("nm2-4/nm2-5: released captures are dropped and completed reverts are not retried after a rejected report", async () => {
+    const { repo, game, platform, engine } = setup();
+    const suspend: Captured = {
+      mechanism: "suspendBackground",
+      process: { ...target, pid: 901, name: "sync" },
+    };
+    platform.onSpawn = (session) => {
+      session.onSend = ({ command }) => {
+        if (command !== "start") return;
+        // Helper list: [rejected gameMode, priority, suspend (released)].
+        session.line({ event: "captured", mechanism: "gameMode", prior: {} });
+        session.line({
+          event: "captured",
+          mechanism: "priority",
+          prior: priorityCapture,
+        });
+        session.line({
+          event: "captured",
+          mechanism: "suspendBackground",
+          prior: suspend,
+        });
+        session.line({
+          event: "released",
+          mechanism: "suspendBackground",
+          prior: suspend,
+        });
+        expect(repo.boostRecord()?.captured).toEqual([priorityCapture]);
+        // Reverse order: suspend (never applied), priority reverted, the rejected capture failed.
+        session.line({
+          event: "ended",
+          reason: "stop",
+          reverts: [
+            {
+              id: "suspendBackground",
+              state: "reverted",
+              detail: "Never applied; nothing to undo.",
+            },
+            { id: "priority", state: "reverted", detail: "restored" },
+            { id: "gameMode", state: "failed", detail: "access denied" },
+          ],
+        });
+      };
+    };
+    const result = await engine.start(game.id, "manual");
+    expect(result).toMatchObject({ status: "recovery-needed", failed: true });
+    // The completed priority revert is not kept for retry; the failed one was never saved by Frameforge.
+    expect(repo.boostRecord()?.captured).toEqual([]);
     repo.close();
   });
   it("quitting with an active session awaits stop and revert", async () => {
