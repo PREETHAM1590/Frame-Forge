@@ -12,15 +12,24 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Frameforge.Windows;
 
-public record Mechanisms(bool GameMode, string Priority, int[]? Affinity, bool PowerPlan, bool LowerBackground, bool SuspendBackground, bool CloseBackground, bool TimerResolution);
+public record Mechanisms(bool GameMode, string Priority, int[]? Affinity, bool PowerPlan, bool LowerBackground, bool SuspendBackground, bool CloseBackground, bool TimerResolution,
+    bool PauseServices = false, bool GameBarCapture = false, bool SmartCores = false, bool CoreParking = false, bool PowerThrottling = false, bool GpuPreference = false, bool FullscreenOptimizations = false);
 public record BackgroundRule(string Image, string Action);
-public record SessionCommand(string Command, int GamePid = 0, string? GameStartTime = null, string? GamePath = null, Mechanisms? Mechanisms = null, BackgroundRule[]? Background = null, int ParentPid = 0, string? OwnedPlan = null);
+// StoreGame: the game comes from the Xbox app or Microsoft Store. Unattended: auto-boost, which must not open an administrator prompt.
+public record SessionCommand(string Command, int GamePid = 0, string? GameStartTime = null, string? GamePath = null, Mechanisms? Mechanisms = null, BackgroundRule[]? Background = null, int ParentPid = 0, string? OwnedPlan = null,
+    bool StoreGame = false, bool Unattended = false);
 // Prior state saved before a change. Applied is what Frameforge set, so a revert only happens while it is still in place.
 // Only these optional members omit nulls; registry snapshots keep an explicit `value: null` for absent values.
 public record Captured(string Mechanism, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProcessTarget? Process = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Prior = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Applied = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Snapshot? Registry = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Snapshot? Registry = null,
+    // Second-pass mechanisms: the scheme and setting changed by coreParking, listed names (paused services, CPU set ids) and current-user registry values.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Scheme = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Setting = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? Items = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? AppliedItems = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RegCapture[]? RegValues = null);
 public record MechanismResult(string Id, string State, string Detail);
 public record Step(string Event, string Mechanism, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Detail = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Captured? Prior = null);
@@ -28,7 +37,7 @@ public record Ended(string Event, string Reason, [property: JsonIgnore(Condition
 public record ProcInfo(ProcessTarget Target, int SessionId, string? Sid, bool Critical);
 // Active: the mechanism's effect is already in place on this PC (for example Game Mode already on).
 public record Capability(string Id, bool Available, string Detail, bool Active = false);
-public record BoostCapabilities(int LogicalCpus, Capability[] Mechanisms);
+public record BoostCapabilities(int LogicalCpus, Capability[] Mechanisms, CpuTopology? Topology = null);
 public record ProcessEntry(string Image, int Pid, bool Protected);
 // Reported as code "plan-not-created": the helper verified no plan copy exists, so the recorded GUID can be dropped.
 public sealed class PlanNotCreatedException(string message) : InvalidOperationException(message);
@@ -64,7 +73,7 @@ public interface IProcessControl
 }
 
 // ownedPlan: a plan Frameforge created with the user's consent (GUID recorded in SQLite), allowlisted next to the Windows plans.
-public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore power, ITimerControl timer, IRegistryStore registry, Action<Step> emit, int selfPid, Guid? ownedPlan = null)
+public sealed partial class BoostSessionEngine(IProcessControl processes, IPowerStore power, ITimerControl timer, IRegistryStore registry, Action<Step> emit, int selfPid, Guid? ownedPlan = null, Extras? extras = null)
 {
     public static readonly Guid HighPerformance = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"), Ultimate = new("e9a42b02-d5df-448d-aa00-03f14749eb61");
     public const string OwnedPlanName = "Frameforge High performance";
@@ -101,7 +110,7 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
         try { return read(); }
         catch (Exception error) { return new(id, false, $"Could not be read: {Describe(error)}"); }
     }
-    public static BoostCapabilities Capabilities(IPowerStore power, ITimerControl timer, int cpus, IRegistryStore registry, Guid? ownedPlan)
+    public static BoostCapabilities Capabilities(IPowerStore power, ITimerControl timer, int cpus, IRegistryStore registry, Guid? ownedPlan, Extras? extras = null)
     {
         var timerReason = timer.Unsupported;
         return new(cpus, [
@@ -118,8 +127,9 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
             new("suspendBackground", true, "Selected apps are suspended and resumed afterwards."),
             new("closeBackground", true, "Selected apps are closed and not reopened."),
             new("timerResolution", timerReason is null, timerReason ?? "0.5 ms timer requested for the session."),
-            new("standbyPurge", false, "Needs administrator rights and SeProfileSingleProcessPrivilege. Frameforge runs without elevation.")
-        ]);
+            new("standbyPurge", false, "Needs administrator rights and SeProfileSingleProcessPrivilege. Frameforge runs without elevation."),
+            .. ExtraCapabilities(power, extras)
+        ], ReadTopology(extras));
     }
     // Explicit, consent-gated: copies Windows' High performance (or Ultimate) template into a new plan. The active plan is not changed.
     // destination is generated and recorded by Frameforge before this call, so a created plan is never left unrecorded.
@@ -184,6 +194,8 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
         var all = processes.List();
         var info = all.FirstOrDefault(p => WindowsProcesses.Same(p.Target, game));
         if (info is null || info.Critical || info.SessionId == 0) throw new InvalidOperationException("This process is protected. Frameforge does not boost system processes.");
+        // Planned and journaled first so it is reverted last; the administrator prompt itself runs after everything else.
+        if (mechanisms.PauseServices) PlanServices(command);
         if (mechanisms.GameMode) Run("gameMode", GameMode);
         if (mechanisms.PowerPlan) Run("powerPlan", PowerPlan);
         if (mechanisms.TimerResolution) Run("timerResolution", Timer);
@@ -191,9 +203,16 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
             ? new("priority", "skipped", $"{game.Name} already runs at {game.Priority}; not lowered.")
             : SetPriority("priority", game, mechanisms.Priority));
         if (mechanisms.Affinity is { Length: > 0 } cpus) Run("affinity", () => Affinity(game, cpus));
+        if (mechanisms.GameBarCapture) Run("gameBarCapture", GameBarCapture);
+        if (mechanisms.PowerThrottling) Run("powerThrottling", () => PowerThrottling(game));
+        if (mechanisms.SmartCores) Run("smartCores", () => SmartCoresStep(game, mechanisms.Affinity is { Length: > 0 }));
+        if (mechanisms.CoreParking) Run("coreParking", CoreParking);
+        if (mechanisms.GpuPreference) Run("gpuPreference", () => ExeValue("gpuPreference", game));
+        if (mechanisms.FullscreenOptimizations) Run("fullscreenOptimizations", () => ExeValue("fullscreenOptimizations", game));
         foreach (var rule in rules) Background(rule, mechanisms, info, command.ParentPid, all);
         foreach (var (action, id, on) in new[] { ("lower", "lowerBackground", mechanisms.LowerBackground), ("suspend", "suspendBackground", mechanisms.SuspendBackground), ("close", "closeBackground", mechanisms.CloseBackground) })
             if (on && !rules.Any(r => r.Action == action)) emit(new("skipped", id, "Not configured: no background apps are selected for this action. Pick apps on the Game Mode page."));
+        if (mechanisms.PauseServices) PauseServices();
     }
     public MechanismResult[] Revert()
     {
@@ -332,6 +351,11 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
                 "priority" or "lowerBackground" => RevertPriority(item!),
                 "affinity" => RevertAffinity(item!),
                 "suspendBackground" => RevertSuspend(item!),
+                "pauseServices" => RevertServices(item!),
+                "gameBarCapture" or "gpuPreference" or "fullscreenOptimizations" => RevertRegValues(item!),
+                "powerThrottling" => RevertPowerThrottling(item!),
+                "smartCores" => RevertSmartCores(item!),
+                "coreParking" => RevertCoreParking(item!),
                 // Node only sends known mechanism ids; the ones without a revert (close) are reported under their own id.
                 _ => new(id, "failed", "This saved change has no revert; nothing was changed.")
             };
@@ -486,7 +510,7 @@ public static class SessionRunner
         }
         using var gameWait = Wait(game!);
         using var parentWait = Wait(parent!);
-        var engine = new BoostSessionEngine(new WindowsProcessControl(), new WindowsPowerStore(), new WindowsTimerControl(), new WindowsRegistryStore(), step => Write(step), Environment.ProcessId, owned);
+        var engine = new BoostSessionEngine(new WindowsProcessControl(), new WindowsPowerStore(), new WindowsTimerControl(), new WindowsRegistryStore(), step => Write(step), Environment.ProcessId, owned, Extras.Windows());
         var sampler = new Sampler(command.GamePid);
         Run(Console.In, Write, engine, command, gameWait, parentWait, sampler.Sample);
         game!.Dispose(); parent!.Dispose();
@@ -519,7 +543,7 @@ public sealed class WindowsProcessControl : IProcessControl
 {
     public int LogicalCpus => Environment.ProcessorCount;
     // The verified handle pins the pid, so the second handle opened by pid reaches the same process.
-    private static SafeProcessHandle Verified(ProcessTarget identity, uint access)
+    internal static SafeProcessHandle Verified(ProcessTarget identity, uint access)
     {
         var handle = WindowsProcesses.Open(identity.Pid, WindowsProcesses.QueryLimited | access);
         var current = handle is null ? null : WindowsProcesses.Read(handle, identity.Pid);

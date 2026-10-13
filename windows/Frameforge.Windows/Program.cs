@@ -6,6 +6,7 @@ using Frameforge.Windows;
 var options = HelperJson.Options;
 // GC-7: the elevated instance has no stdin; it answers through the validated result file.
 if (OperatingSystem.IsWindows() && args is ["--elevated", ..]) Environment.Exit(RestoreCommands.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
+if (OperatingSystem.IsWindows() && args is ["--elevated-services", ..]) Environment.Exit(ServiceCommands.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--session"]) { SessionRunner.Host(); return; }
 object response;
 try
@@ -18,7 +19,7 @@ try
     Guid? owned = request.OwnedPlan is null ? null : Guid.TryParse(request.OwnedPlan, out var plan) ? plan : throw new InvalidOperationException("Invalid power plan.");
     var ids = request.Ids ?? [];
     var engine = new Optimizations(new RegistryOperations(new WindowsRegistryStore()), new WindowsPowerStore(), owned);
-    BoostSessionEngine Booster() => new(new WindowsProcessControl(), new WindowsPowerStore(), new WindowsTimerControl(), new WindowsRegistryStore(), _ => { }, Environment.ProcessId, owned);
+    BoostSessionEngine Booster() => new(new WindowsProcessControl(), new WindowsPowerStore(), new WindowsTimerControl(), new WindowsRegistryStore(), _ => { }, Environment.ProcessId, owned, Extras.Windows(request.Elevate));
     response = request.Command switch
     {
         "hardware" when ids.Length == 0 && request.Snapshot is null => new { ok = true, message = "Read-only Windows discovery.", hardware = HardwareDiscovery.Collect() },
@@ -31,10 +32,11 @@ try
         "elevated-result" when request.ResultPath is not null => RestoreCommands.ReadResult(request.ResultPath),
         "running-games" when request.Games is not null => new { ok = true, message = "Running library games read.", runningGames = WindowsProcesses.RunningGames(request.Games) },
         "background-processes" => new { ok = true, message = "Running processes read.", backgroundProcesses = WindowsProcessControl.Entries() },
-        "boost-capabilities" => new { ok = true, message = "Booster capabilities read.", capabilities = BoostSessionEngine.Capabilities(new WindowsPowerStore(), new WindowsTimerControl(), Environment.ProcessorCount, new WindowsRegistryStore(), owned) },
+        "boost-capabilities" => new { ok = true, message = "Booster capabilities read.", capabilities = BoostSessionEngine.Capabilities(new WindowsPowerStore(), new WindowsTimerControl(), Environment.ProcessorCount, new WindowsRegistryStore(), owned, Extras.Windows()) },
         // Untrusted input bound, above the per-session capture cap; every item is attempted.
         "boost-recover" when request.Captured is { Length: <= 1000 } captured && captured.All(c => c is not null) => new { ok = true, message = "Saved booster changes checked.", reverts = Booster().Recover(captured) },
         "boost-recover" => throw new InvalidOperationException("Too many or invalid saved booster changes (limit 1000)."),
+        "network-check" when request.Host is not null => new { ok = true, message = "Network check completed.", network = NetworkCheck.Run(request.Host, request.Count, new WindowsPinger(), new WindowsResolver()) },
         // Frameforge records the destination GUID before asking, so a created plan is never left unrecorded.
         "power-create-plan" when owned is { } destination => CreatePlan(destination),
         "power-delete-plan" when owned is { } ownedPlan => new { ok = true, message = BoostSessionEngine.DeletePlan(new WindowsPowerStore(), ownedPlan) },
@@ -54,4 +56,4 @@ Console.WriteLine(JsonSerializer.Serialize(response, options));
 static object CreatePlan(Guid destination) { BoostSessionEngine.CreatePlan(new WindowsPowerStore(), destination); return new { ok = true, message = "Frameforge High performance plan created and verified. The active plan was not changed.", powerPlan = destination.ToString() }; }
 static object Apply(Optimizations engine, string[] ids, OptimizationSnapshot snapshot) { engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written." }; }
 static object Restore(Optimizations engine, OptimizationSnapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
-record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null);
+record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null, bool Elevate = true, string? Host = null, int Count = 0);
