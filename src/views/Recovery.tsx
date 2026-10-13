@@ -236,9 +236,21 @@ function WindowsRestore({ data, run, pending }: ViewProps) {
             {(result.outcome === "protection-disabled" ||
               result.outcome === "failed") && (
               <div className="restore-actions">
-                <Button disabled={pending} onClick={() => setEnabling(true)}>
+                <Button
+                  disabled={pending || !!status?.configLocked}
+                  aria-describedby={
+                    status?.configLocked ? "enable-locked" : undefined
+                  }
+                  onClick={() => setEnabling(true)}
+                >
                   Turn on System Protection for {drive}
                 </Button>
+                {status?.configLocked && (
+                  <p className="muted" id="enable-locked">
+                    Turning on System Protection is blocked by policy on this
+                    PC. Restore points can still be created.
+                  </p>
+                )}
               </div>
             )}
           </div>

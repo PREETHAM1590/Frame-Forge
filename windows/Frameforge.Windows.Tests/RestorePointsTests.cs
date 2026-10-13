@@ -13,6 +13,8 @@ public class RestorePointsTests
         public bool Throws { get; set; }
         public bool Policy { get; set; }
         public bool PolicyDisabled() => Policy;
+        public bool Locked { get; set; }
+        public bool ConfigLocked() => Locked;
         public Queue<bool?> Protection { get; } = new();
         public bool? SystemDriveProtected() => Protection.Count > 0 ? Protection.Dequeue() : true;
         public string? ForeignDescription { get; set; }
@@ -54,6 +56,19 @@ public class RestorePointsTests
         Assert.Equal(1, result.Point!.Sequence);
         Assert.Equal("off", result.DriveCoverage);
         Assert.Contains("may not cover", result.Message);
+    }
+
+    [Fact]
+    public void ConfigLockedStillCreatesPointsButRefusesToTurnProtectionOn()
+    {
+        var store = new FakeRestoreStore { Locked = true };
+        var restore = new RestorePoints(store);
+        Assert.True(restore.Status().ConfigLocked);
+        Assert.False(restore.Status().PolicyDisabled);
+        Assert.Equal("created", restore.Create("Name", false, store.Frequency).Outcome);
+        var enable = restore.Enable("C:");
+        Assert.False(enable.Ok);
+        Assert.Equal("enable-blocked", enable.Code);
     }
 
     [Fact]
@@ -194,6 +209,7 @@ public class RestorePointsTests
     private sealed class SlowStore : IRestoreStore
     {
         public bool PolicyDisabled() => false;
+        public bool ConfigLocked() => false;
         public bool? SystemDriveProtected() => null;
         public int? SessionInterval() => null;
         public FrequencyState ReadFrequency() => new(false, null);

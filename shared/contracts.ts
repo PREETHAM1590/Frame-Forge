@@ -418,6 +418,8 @@ export const HelperRestoreStatusSchema = z
   .object({
     protection: z.enum(["enabled", "disabled", "unknown"]),
     policyDisabled: z.boolean(),
+    // DisableConfig policy: restore points still work, but System Protection cannot be turned on.
+    configLocked: z.boolean(),
     frequency: FrequencySchema,
     elevated: z.boolean(),
     systemDrive: z.string().regex(/^[A-Z]:$/),

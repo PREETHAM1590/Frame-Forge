@@ -15,7 +15,8 @@ namespace Frameforge.Windows;
 
 public record RestorePoint(long Sequence, string Description, DateTime CreatedAt);
 public record FrequencyState(bool Existed, int? Minutes);
-public record RestoreStatus(string Protection, bool PolicyDisabled, FrequencyState Frequency, bool Elevated, string SystemDrive);
+// ConfigLocked: the DisableConfig policy hides the System Protection settings; points can still be created, but not turned on.
+public record RestoreStatus(string Protection, bool PolicyDisabled, FrequencyState Frequency, bool Elevated, string SystemDrive, bool ConfigLocked = false);
 public record ElevatedRequest(string Action, string[] Args);
 public record RestoreResult(
     bool Ok,
@@ -36,6 +37,7 @@ public record RestoreResult(
 public interface IRestoreStore
 {
     bool PolicyDisabled();
+    bool ConfigLocked();
     /// <summary>Per-volume System Protection for the system drive; null when it cannot be determined.</summary>
     bool? SystemDriveProtected();
     int? SessionInterval();
@@ -59,7 +61,7 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
         var drive = store.SystemDrive;
         if (!Drive.IsMatch(drive)) throw new InvalidOperationException("Unexpected system drive.");
         var protection = store.SessionInterval() switch { 1 => "enabled", 0 => "disabled", _ => "unknown" };
-        return new(protection, store.PolicyDisabled(), store.ReadFrequency(), store.Elevated, drive);
+        return new(protection, store.PolicyDisabled(), store.ReadFrequency(), store.Elevated, drive, store.ConfigLocked());
     }
     public RestoreResult StatusResult()
     {
@@ -122,6 +124,7 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
     public RestoreResult Enable(string drive)
     {
         if (drive != store.SystemDrive || !Drive.IsMatch(drive)) throw new InvalidOperationException("Only the system drive is supported.");
+        if (store.ConfigLocked()) return new(false, "Turning on System Protection is blocked by policy on this PC (DisableConfig).", "enable-blocked");
         var code = store.Enable(drive + "\\");
         if (code != 0) return new(false, $"Windows could not turn on System Protection (error {code}).", "enable-failed");
         var result = StatusResult();
@@ -307,6 +310,11 @@ public sealed class WindowsRestoreStore : IRestoreStore
     }
     // Only DisableSR turns System Restore off. DisableConfig merely hides the Configure UI; restore points still work.
     public static bool PolicyBlocksRestore(Func<string, object?> read) => read("DisableSR") is 1;
+    public bool ConfigLocked()
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(PolicyKey, false);
+        return key?.GetValue("DisableConfig") is 1;
+    }
     public int? SessionInterval()
     {
         using var key = Registry.LocalMachine.OpenSubKey(Key, false);

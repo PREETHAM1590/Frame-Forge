@@ -213,6 +213,7 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
       return {
         protection: "unknown",
         policyDisabled: false,
+        configLocked: false,
         frequency: { existed: false, minutes: null },
         elevated: false,
         systemDrive: "C:",

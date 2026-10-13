@@ -531,6 +531,7 @@ export class MockPlatform implements Platform {
     return {
       protection: "unknown",
       policyDisabled: false,
+      configLocked: false,
       frequency: { existed: false, minutes: null },
       elevated: false,
       systemDrive: "C:",

@@ -11,10 +11,15 @@ const newest = Math.max(
 );
 if (existsSync(exe) && statSync(exe).mtimeMs >= newest) process.exit(0);
 console.log("Windows helper is missing or older than its sources; publishing.");
+const npm = process.env.npm_execpath;
+if (!npm) {
+  console.error("Run this through npm (npm run windows:ensure).");
+  process.exit(1);
+}
 const local = path.resolve(".tools/dotnet");
-const run = spawnSync("npm run windows:publish", {
+// No shell: node runs npm's script directly.
+const run = spawnSync(process.execPath, [npm, "run", "windows:publish"], {
   stdio: "inherit",
-  shell: true,
   env: { ...process.env, PATH: `${local}${path.delimiter}${process.env.PATH}` },
 });
 process.exit(run.status ?? 1);

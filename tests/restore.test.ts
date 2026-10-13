@@ -27,6 +27,7 @@ class RestorePlatform extends MockPlatform {
     return {
       protection: "enabled",
       policyDisabled: false,
+      configLocked: false,
       frequency: this.frequency,
       elevated: false,
       systemDrive: "C:",
@@ -276,6 +277,7 @@ describe("Windows restore points", () => {
     platform.restoreStatus = async () => ({
       protection: "disabled",
       policyDisabled: false,
+      configLocked: false,
       frequency: platform.frequency,
       elevated: false,
       systemDrive: "C:",
@@ -320,6 +322,18 @@ describe("Windows restore points", () => {
     expect(result.message).toMatch(/reads System Protection as off for C:/);
     repo.close();
   });
+  it("refuses to turn System Protection on under the DisableConfig policy but still creates points", async () => {
+    const { repo, platform, restore } = setup();
+    const status = platform.restoreStatus.bind(platform);
+    platform.restoreStatus = async () => ({
+      ...(await status()),
+      configLocked: true,
+    });
+    expect((await restore.status()).configLocked).toBe(true);
+    await expect(restore.enable()).rejects.toThrow(/blocked by policy/);
+    expect((await restore.create("Frameforge", false)).outcome).toBe("created");
+    repo.close();
+  });
   it("reports the mock platform honestly", async () => {
     const repo = new Repository(":memory:");
     const restore = new RestorePointService(repo, new MockPlatform());
@@ -336,6 +350,7 @@ describe("Windows restore points", () => {
     const status = {
       protection: "enabled",
       policyDisabled: false,
+      configLocked: false,
       frequency: { existed: false, minutes: null },
       elevated: false,
       systemDrive: "C:",

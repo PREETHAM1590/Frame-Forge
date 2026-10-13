@@ -87,6 +87,7 @@ export class RestorePointService {
     return {
       protection: status.protection,
       policyDisabled: status.policyDisabled,
+      configLocked: status.configLocked,
       frequency: status.frequency,
       elevated: status.elevated,
       systemDrive: status.systemDrive,
@@ -290,6 +291,10 @@ export class RestorePointService {
       const before = await this.platform.restoreStatus();
       if (before.policyDisabled)
         throw new Error("System Restore is turned off by policy on this PC.");
+      if (before.configLocked)
+        throw new Error(
+          "Turning on System Protection is blocked by policy on this PC.",
+        );
       let after: PlatformRestoreStatus | null;
       try {
         // The drive comes from the helper, never from the renderer.

@@ -93,7 +93,17 @@ function install(capabilities: OperationId[]) {
     },
     boostStatus: async () => ({
       session: bootstrap.boost.session,
-      capabilities: { logicalCpus: 4, mechanisms: [] },
+      capabilities: {
+        logicalCpus: 4,
+        mechanisms: [
+          {
+            id: "powerPlan",
+            available: false,
+            detail: "High performance plan not present",
+            active: false,
+          },
+        ],
+      },
       watching: false,
       ownedPowerPlan: false,
     }),
@@ -231,6 +241,12 @@ describe("presets without a performance power plan", () => {
     expect(
       await screen.findByRole("heading", { name: "Game Mode", level: 1 }),
     ).toBeVisible();
+    // The link must land where the fix is: the Create button is offered when the plan is missing.
+    expect(
+      await screen.findByRole("button", {
+        name: /Create High performance plan…/,
+      }),
+    ).toBeEnabled();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
   it("still lists the skipped item in the operation result", async () => {
