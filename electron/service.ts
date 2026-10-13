@@ -11,6 +11,7 @@ import {
   type Hardware,
   type Bootstrap,
   type Activity,
+  type AppEvent,
 } from "../shared/contracts.js";
 import { Repository } from "./repository.js";
 import { OperationEngine } from "./operations.js";
@@ -28,10 +29,11 @@ export interface DesktopServices {
   version: string;
   startupSupported?: boolean;
   openSystemRestore?: () => Promise<boolean>;
+  notify?: (event: AppEvent) => void;
 }
 export class AppService {
   private engine: OperationEngine;
-  private booster: BoostEngine;
+  readonly booster: BoostEngine;
   private restorePoints: RestorePointService;
   private hardware: Hardware = fallbackHardware();
   private loggingFailed = false;
@@ -41,14 +43,22 @@ export class AppService {
       this.engine.isBusy || this.booster.isBusy || this.restorePoints.isBusy
     );
   }
+  // App quit: stop the watcher and revert a live boost session before exiting.
+  async shutdown() {
+    this.booster.dispose();
+    if (this.booster.active) await this.booster.stop();
+  }
   constructor(
     private repo: Repository,
     private platform: Platform,
     private desktop: DesktopServices,
   ) {
     this.engine = new OperationEngine(repo, platform);
-    this.booster = new BoostEngine(repo, platform);
     this.restorePoints = new RestorePointService(repo, platform);
+    this.booster = new BoostEngine(repo, platform, (session) =>
+      this.desktop.notify?.({ type: "boost", session }),
+    );
+    this.booster.configure();
     const guard = () => {
       if (this.engine.isBusy)
         throw new Error("Wait for the Windows operation to finish.");
@@ -157,19 +167,35 @@ export class AppService {
       },
       openSystemRestore: async () =>
         (await this.desktop.openSystemRestore?.()) ?? false,
-      boostTargets: async ({ gameId }) => {
+      boostStatus: async () => this.booster.status(),
+      boostConfig: async (booster) => {
         guard();
-        const game = this.repo.state().games.find((g) => g.id === gameId);
-        if (!game) throw new Error("Game not found");
-        return this.platform.gameProcesses(game);
+        const state = this.repo.updateState({ ...this.repo.state(), booster });
+        this.booster.configure();
+        this.log(
+          "Game booster settings saved",
+          `Mode ${booster.mode}; auto-boost ${booster.autoBoost ? "on" : "off"}; ${booster.background.length} background app rule(s).`,
+        );
+        return state;
       },
-      boostStart: async ({ gameId, target }) => {
+      boostStart: async ({ gameId }) => {
         guard();
-        return this.booster.start(gameId, target);
+        const session = await this.booster.start(gameId, "manual");
+        if (!session) throw new Error("Booster mode is Off for this game.");
+        return session;
       },
       boostStop: async () => {
         guard();
         return this.booster.stop();
+      },
+      boostRecover: async ({ dismiss }) => {
+        guard();
+        return this.booster.recover(dismiss ?? false);
+      },
+      runningProcesses: async () => this.platform.backgroundProcesses(),
+      boostPowerPlan: async ({ action }) => {
+        guard();
+        return this.booster.powerPlan(action);
       },
       removeGame: async ({ id }) => {
         guard();
@@ -183,7 +209,7 @@ export class AppService {
               : state.gameMode,
         });
       },
-      profile: async ({ id, profile, notes }) => {
+      profile: async ({ id, profile, boostMode, notes }) => {
         guard();
         const state = this.repo.state();
         if (!state.games.some((g) => g.id === id))
@@ -191,21 +217,11 @@ export class AppService {
         return this.repo.updateState({
           ...state,
           games: state.games.map((g) =>
-            g.id === id ? { ...g, profile, notes } : g,
+            g.id === id
+              ? { ...g, profile: profile ?? g.profile, boostMode, notes }
+              : g,
           ),
         });
-      },
-      gameMode: async (mode) => {
-        guard();
-        const state = this.repo.updateState({
-          ...this.repo.state(),
-          gameMode: mode,
-        });
-        this.log(
-          mode.active ? "Profile session started" : "Profile session ended",
-          "App-only Game Mode session updated. No Windows or game settings changed.",
-        );
-        return state;
       },
       savePreset: async ({ name, ids }) => {
         guard();
@@ -315,6 +331,7 @@ export class AppService {
       boost: {
         session: this.repo.boostSession(),
         available: this.platform.boostAvailable,
+        watching: this.booster.watching,
       },
     };
   }

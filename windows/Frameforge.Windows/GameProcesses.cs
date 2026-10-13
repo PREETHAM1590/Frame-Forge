@@ -3,109 +3,105 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json.Serialization;
 using Microsoft.Win32.SafeHandles;
 
 namespace Frameforge.Windows;
 
 public record ProcessTarget(int Pid, string StartTime, string ExecutablePath, string Name, string Priority);
-public record ProcessResult(bool Ok, string Message, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Code = null, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProcessTarget? BoostSnapshot = null);
-public interface IProcessSession : IDisposable
-{
-    ProcessTarget Read();
-    void SetPriority(string priority);
-}
-public interface IProcessStore { IProcessSession? Open(int pid); }
+public record GameRef(string Id, string Path, string? ExecutablePath);
+public record RunningGame(string GameId, ProcessTarget Target);
 
-public sealed class GameProcessOperations(IProcessStore store)
+public static class ProcessSafety
 {
-    public static void Validate(ProcessTarget target)
+    // GC-11 hard denylist (image names without .exe). Mirrored in shared/contracts.ts for UX; this is the enforcement point.
+    public static readonly HashSet<string> Denylist = new(StringComparer.OrdinalIgnoreCase)
     {
-        if (target.Pid <= 0 || string.IsNullOrWhiteSpace(target.Name) || target.Name.Length > 160 ||
-            !DateTime.TryParseExact(target.StartTime, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var time) || time.Kind != DateTimeKind.Utc ||
-            !Path.IsPathFullyQualified(target.ExecutablePath) || target.ExecutablePath.StartsWith(@"\\", StringComparison.Ordinal) ||
-            !target.ExecutablePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || target.Priority != "Normal")
-            throw new InvalidOperationException("Invalid game process snapshot.");
+        "system", "registry", "smss", "csrss", "wininit", "winlogon", "services", "lsass", "lsaiso", "svchost", "fontdrvhost", "dwm", "explorer",
+        "sihost", "ctfmon", "audiodg", "spoolsv", "searchhost", "startmenuexperiencehost", "shellexperiencehost", "textinputhost", "runtimebroker",
+        "msmpeng", "nissrv", "securityhealthservice", "securityhealthsystray", "smartscreen", "easyanticheat", "easyanticheat_eos", "beservice", "vgc",
+        "vgtray", "faceit", "faceitclient", "esportal", "gameguard", "xigncode", "nvcontainer", "nvdisplay.container", "amdrsserv", "atiesrxx", "atieclxx"
+    };
+    public static bool Denied(string image) => Denylist.Contains(image.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? image[..^4] : image);
+}
+
+public static class WindowsProcesses
+{
+    public const uint QueryLimited = 0x1000, SetInformation = 0x0200, SuspendResume = 0x0800, Terminate = 0x0001, Synchronize = 0x00100000;
+    private const uint StillActive = 259;
+    // Returns null when no process has this pid; access refusals surface as Win32Exception so callers can report them.
+    public static SafeProcessHandle? Open(int pid, uint access)
+    {
+        var raw = OpenProcess(access, false, (uint)pid);
+        if (raw != IntPtr.Zero) return new SafeProcessHandle(raw, true);
+        var error = Marshal.GetLastWin32Error();
+        return error == 87 ? null : throw new Win32Exception(error);
     }
-    private static bool SameProcess(ProcessTarget current, ProcessTarget expected) => current.Pid == expected.Pid && current.StartTime == expected.StartTime &&
+    // Null when the process has exited, including an exited process kept alive by another handle.
+    public static ProcessTarget? Read(SafeProcessHandle handle, int pid)
+    {
+        if (!GetExitCodeProcess(handle, out var exitCode) || exitCode != StillActive) return null;
+        var image = new StringBuilder(32768); var size = (uint)image.Capacity;
+        if (!QueryFullProcessImageNameW(handle, 0, image, ref size) || !GetProcessTimes(handle, out var created, out _, out _, out _)) throw new InvalidOperationException("Windows could not inspect this process.");
+        var path = LocalPaths.Resolve(image.ToString());
+        return new(pid, DateTime.FromFileTimeUtc(created).ToString("O", CultureInfo.InvariantCulture), path, Path.GetFileNameWithoutExtension(path), PriorityName(GetPriorityClass(handle)));
+    }
+    public static bool Same(ProcessTarget current, ProcessTarget expected) => current.Pid == expected.Pid && current.StartTime == expected.StartTime &&
         string.Equals(current.ExecutablePath, expected.ExecutablePath, StringComparison.OrdinalIgnoreCase);
-    // Protected and anti-cheat processes deny priority changes; report that per mechanism, never as success.
-    private static bool TrySetPriority(IProcessSession process, string priority, out ProcessResult? refused)
-    {
-        try { process.SetPriority(priority); refused = null; return true; }
-        catch (Win32Exception error) when (error.NativeErrorCode == 5)
-        {
-            refused = new(false, "Priority: failed. Windows refused the change for this protected process. Nothing was changed.", "change-refused");
-            return false;
-        }
-    }
-    public ProcessResult Start(ProcessTarget expected)
-    {
-        Validate(expected);
-        using var process = store.Open(expected.Pid);
-        if (process is null) return new(false, "The game has exited. Start it again before boosting.", "process-exited");
-        var current = process.Read();
-        if (!SameProcess(current, expected)) return new(false, "The selected game process changed. Refresh running games.", "process-changed");
-        if (current.Priority != expected.Priority) return new(false, "The game priority changed externally. No change was made.", "priority-conflict");
-        if (!TrySetPriority(process, "AboveNormal", out var refused)) return refused!;
-        if (process.Read().Priority != "AboveNormal") return new(false, "Windows did not retain the requested priority. Recovery remains available.", "verification-failed", current);
-        return new(true, "Running game priority verified as Above normal.", BoostSnapshot: current);
-    }
-    public ProcessResult Stop(ProcessTarget snapshot)
-    {
-        Validate(snapshot);
-        using var process = store.Open(snapshot.Pid);
-        if (process is null) return new(true, "The game has exited; its temporary priority change ended with it.", "process-exited");
-        var current = process.Read();
-        if (!SameProcess(current, snapshot)) return new(true, "The original game process has exited. No other process was changed.", "process-exited");
-        if (current.Priority == snapshot.Priority) return new(true, "The original game priority is already restored.");
-        if (current.Priority != "AboveNormal") return new(false, "The game priority changed externally. Restore stopped to preserve that change.", "priority-conflict");
-        if (!TrySetPriority(process, snapshot.Priority, out var refused)) return refused!;
-        return process.Read().Priority == snapshot.Priority
-            ? new(true, "The original game priority was restored and verified.")
-            : new(false, "Windows could not verify the restored priority. Recovery remains available.", "verification-failed");
-    }
-}
-
-public sealed class WindowsProcessStore : IProcessStore
-{
-    private const uint QueryLimited = 0x1000, SetInformation = 0x0200, StillActive = 259;
-    public IProcessSession? Open(int pid)
-    {
-        // One handle for the whole session so a recycled pid can never be modified by mistake.
-        // Protected processes refuse SetInformation; fall back to a query-only handle so they can still be identified.
-        var raw = OpenProcess(QueryLimited | SetInformation, false, (uint)pid);
-        if (raw == IntPtr.Zero) raw = OpenProcess(QueryLimited, false, (uint)pid);
-        if (raw == IntPtr.Zero)
-        {
-            var error = Marshal.GetLastWin32Error();
-            if (error == 87) return null;
-            throw new Win32Exception(error);
-        }
-        return new WindowsProcessSession(pid, new SafeProcessHandle(raw, true));
-    }
-    private sealed class WindowsProcessSession(int pid, SafeProcessHandle handle) : IProcessSession
-    {
-        public ProcessTarget Read()
-        {
-            if (!GetExitCodeProcess(handle, out var exitCode) || exitCode != StillActive) throw new InvalidOperationException("The game exited while the request was running. Retry recovery to clear its session.");
-            var image = new StringBuilder(32768); var size = (uint)image.Capacity;
-            if (!QueryFullProcessImageNameW(handle, 0, image, ref size) || !GetProcessTimes(handle, out var created, out _, out _, out _)) throw new InvalidOperationException("Windows could not inspect this game executable.");
-            var path = LocalPaths.Resolve(image.ToString());
-            return new(pid, DateTime.FromFileTimeUtc(created).ToString("O", CultureInfo.InvariantCulture), path, Path.GetFileNameWithoutExtension(path), PriorityName(GetPriorityClass(handle)));
-        }
-        public void SetPriority(string priority)
-        {
-            var value = priority switch { "Normal" => 0x20u, "AboveNormal" => 0x8000u, _ => throw new InvalidOperationException("Unsupported priority.") };
-            if (!SetPriorityClass(handle, value)) throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-        public void Dispose() => handle.Dispose();
-    }
-    private static string PriorityName(uint value) => value switch
+    // Fails closed: an unreadable flag counts as critical.
+    public static bool IsCritical(SafeProcessHandle handle) => !IsProcessCritical(handle, out var critical) || critical;
+    public static string PriorityName(uint value) => value switch
     {
         0x20 => "Normal", 0x8000 => "AboveNormal", 0x4000 => "BelowNormal", 0x80 => "High", 0x40 => "Idle", 0x100 => "RealTime",
-        _ => throw new InvalidOperationException("Windows could not read the game priority.")
+        _ => throw new InvalidOperationException("Windows could not read the process priority.")
     };
+    // RealTime is never set.
+    public static uint PriorityValue(string name) => name switch
+    {
+        "Normal" => 0x20, "AboveNormal" => 0x8000, "BelowNormal" => 0x4000, "High" => 0x80, "Idle" => 0x40,
+        _ => throw new InvalidOperationException("Unsupported priority.")
+    };
+    public static RunningGame[] RunningGames(GameRef[] games)
+    {
+        if (games.Length > 500) throw new InvalidOperationException("Too many games.");
+        var resolved = new List<(string Id, string Directory, string? Executable)>();
+        foreach (var game in games)
+        {
+            try
+            {
+                if (!Guid.TryParse(game.Id, out _)) continue;
+                var directory = LocalPaths.Resolve(game.Path);
+                var executable = game.ExecutablePath is null ? null : LocalPaths.Resolve(game.ExecutablePath);
+                if (executable is not null && (!LocalPaths.IsWithin(executable, directory) || !executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))) continue;
+                resolved.Add((game.Id, directory, executable));
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException) { }
+        }
+        var found = new List<(string Id, ProcessTarget Target, bool Window, long WorkingSet)>();
+        if (resolved.Count == 0) return [];
+        foreach (var process in Process.GetProcesses())
+        {
+            using (process)
+            {
+                try
+                {
+                    // Scans only read, so the handle is query-limited.
+                    using var handle = Open(process.Id, QueryLimited);
+                    if (handle is null) continue;
+                    var current = Read(handle, process.Id);
+                    if (current is null || ProcessSafety.Denied(current.Name) || IsCritical(handle)) continue;
+                    foreach (var game in resolved)
+                    {
+                        var match = game.Executable is not null
+                            ? string.Equals(current.ExecutablePath, game.Executable, StringComparison.OrdinalIgnoreCase)
+                            : LocalPaths.IsWithin(current.ExecutablePath, game.Directory) && !current.Name.Contains("crash", StringComparison.OrdinalIgnoreCase) && !current.Name.Contains("launcher", StringComparison.OrdinalIgnoreCase);
+                        if (match) found.Add((game.Id, current, process.MainWindowHandle != IntPtr.Zero, process.WorkingSet64));
+                    }
+                }
+                catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException or UnauthorizedAccessException) { }
+            }
+        }
+        return found.GroupBy(f => f.Id).Select(g => g.OrderByDescending(f => f.Window).ThenByDescending(f => f.WorkingSet).First()).Select(f => new RunningGame(f.Id, f.Target)).ToArray();
+    }
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -117,31 +113,7 @@ public sealed class WindowsProcessStore : IProcessStore
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern uint GetPriorityClass(SafeProcessHandle handle);
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool SetPriorityClass(SafeProcessHandle handle, uint priorityClass);
-    public static ProcessTarget[] Find(string gamePath, string? executablePath)
-    {
-        var directory = LocalPaths.Resolve(gamePath);
-        if (!Directory.Exists(directory)) throw new InvalidOperationException("The game installation folder no longer exists.");
-        var executable = executablePath is null ? null : LocalPaths.Resolve(executablePath);
-        if (executable is not null && (!LocalPaths.IsWithin(executable, directory) || !executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidOperationException("The selected executable is outside this game installation.");
-        var results = new List<ProcessTarget>();
-        var store = new WindowsProcessStore();
-        foreach (var process in Process.GetProcesses())
-        {
-            int pid;
-            using (process) pid = process.Id;
-            try
-            {
-                using var session = store.Open(pid);
-                if (session is null) continue;
-                var current = session.Read();
-                if (executable is not null ? string.Equals(current.ExecutablePath, executable, StringComparison.OrdinalIgnoreCase) : LocalPaths.IsWithin(current.ExecutablePath, directory)) results.Add(current);
-            }
-            catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException or UnauthorizedAccessException) { }
-        }
-        return results.OrderBy(p => p.Name).ThenBy(p => p.Pid).ToArray();
-    }
+    private static extern bool IsProcessCritical(SafeProcessHandle handle, out bool critical);
 }
 
 public static class LocalPaths

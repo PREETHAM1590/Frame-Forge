@@ -2,7 +2,7 @@ using Microsoft.Win32;
 using System.Text.Json;
 
 namespace Frameforge.Windows;
-public record Setting(string Operation, string Path, string Name, string Kind);
+public record Setting(string Operation, string Path, string Name, string Kind, int Target = 0);
 public record ValueState(bool Existed, object? Value, string Kind);
 public record CapturedValue(string Operation, string Path, string Name, string Kind, bool Existed, object? Value);
 public record Snapshot(CapturedValue[] Values);
@@ -29,14 +29,16 @@ public sealed class RegistryOperations(IRegistryStore store)
         new("mouse-precision", @"Control Panel\Mouse", "MouseSpeed", "String"),
         new("mouse-precision", @"Control Panel\Mouse", "MouseThreshold1", "String"),
         new("mouse-precision", @"Control Panel\Mouse", "MouseThreshold2", "String"),
-        new("capture-off", @"Software\Microsoft\Windows\CurrentVersion\GameDVR", "AppCaptureEnabled", "DWord")
+        new("capture-off", @"Software\Microsoft\Windows\CurrentVersion\GameDVR", "AppCaptureEnabled", "DWord"),
+        new("game-mode", @"Software\Microsoft\GameBar", "AutoGameModeEnabled", "DWord", 1),
+        new("game-mode", @"Software\Microsoft\GameBar", "AllowAutoGameMode", "DWord", 1)
     ];
     private static Setting[] Select(string[] ids)
     {
-        if (ids.Length is < 1 or > 2 || ids.Distinct().Count() != ids.Length || ids.Any(id => !Settings.Any(s => s.Operation == id))) throw new InvalidOperationException("Unsupported operation selection.");
+        if (ids.Length < 1 || ids.Length > Settings.Length || ids.Distinct().Count() != ids.Length || ids.Any(id => !Settings.Any(s => s.Operation == id))) throw new InvalidOperationException("Unsupported operation selection.");
         return Settings.Where(s => ids.Contains(s.Operation)).ToArray();
     }
-    private static ValueState Target(Setting setting) => new(true, setting.Kind == "String" ? "0" : 0, setting.Kind);
+    private static ValueState Target(Setting setting) => new(true, setting.Kind == "String" ? setting.Target.ToString(System.Globalization.CultureInfo.InvariantCulture) : setting.Target, setting.Kind);
     private static object? Normalize(object? value, string kind)
     {
         if (value is JsonElement json) value = json.ValueKind switch { JsonValueKind.String => json.GetString(), JsonValueKind.Number => json.GetInt32(), JsonValueKind.Null => null, _ => throw new InvalidOperationException("Invalid snapshot value.") };
@@ -47,7 +49,7 @@ public sealed class RegistryOperations(IRegistryStore store)
     }
     private static (Setting Setting, ValueState State)[] Validate(Snapshot snapshot)
     {
-        if (snapshot is null || snapshot.Values is null || snapshot.Values.Length is < 1 or > 4 || snapshot.Values.Any(value => value is null)) throw new InvalidOperationException("Empty or invalid snapshot.");
+        if (snapshot is null || snapshot.Values is null || snapshot.Values.Length < 1 || snapshot.Values.Length > Settings.Length || snapshot.Values.Any(value => value is null)) throw new InvalidOperationException("Empty or invalid snapshot.");
         var required = Select(snapshot.Values.Select(v => v.Operation).Distinct().ToArray());
         if (required.Length != snapshot.Values.Length) throw new InvalidOperationException("Incomplete registry snapshot.");
         return required.Select(setting =>

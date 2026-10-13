@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { createInterface } from "node:readline";
 import os from "node:os";
 import {
   HelperResult,
@@ -6,12 +8,45 @@ import {
   type Frequency,
   type HelperRestoreStatus,
   type RestorePoints,
+  type BoostCapabilities,
+  type Captured,
   type Game,
   type Hardware,
+  type MechanismResult,
   type OperationId,
   type ProcessTarget,
+  type RunningProcess,
   type Snapshot,
 } from "../shared/contracts.js";
+// A live `Frameforge.Windows.exe --session` process: emits "event" (one parsed JSON line) and "exit".
+export interface SessionChannel {
+  send(command: unknown): void;
+  kill(): void;
+  on(event: "event", listener: (event: unknown) => void): unknown;
+  on(event: "exit", listener: () => void): unknown;
+}
+export type RunningGame = { gameId: string; target: ProcessTarget };
+export const capabilitiesUnavailable = (detail: string): BoostCapabilities => ({
+  logicalCpus: 0,
+  mechanisms: (
+    [
+      "gameMode",
+      "priority",
+      "affinity",
+      "powerPlan",
+      "lowerBackground",
+      "suspendBackground",
+      "closeBackground",
+      "timerResolution",
+      "standbyPurge",
+    ] as const
+  ).map((id) => ({
+    id,
+    available: false,
+    detail: detail.slice(0, 500),
+    active: false,
+  })),
+});
 export interface Platform {
   capabilities: OperationId[];
   hardware(): Promise<Hardware>;
@@ -24,9 +59,6 @@ export interface Platform {
   verify(ids: OperationId[]): Promise<boolean>;
   restore(snapshot: Snapshot, force: boolean): Promise<void>;
   boostAvailable: boolean;
-  gameProcesses(game: Game): Promise<ProcessTarget[]>;
-  boostStart(expected: ProcessTarget): Promise<ProcessTarget>;
-  boostStop(snapshot: ProcessTarget): Promise<string>;
   restoreStatus(): Promise<PlatformRestoreStatus>;
   restoreList(): Promise<RestorePoints>;
   restoreCreate(
@@ -41,6 +73,18 @@ export interface Platform {
   ): Promise<PlatformRestoreStatus | null>;
   /** Result of an elevated creation that outlived the helper's wait; null while still running. */
   restoreResult(resultPath: string): Promise<PlatformCreateResult | null>;
+  runningGames(games: Game[]): Promise<RunningGame[]>;
+  backgroundProcesses(): Promise<RunningProcess[]>;
+  // ownedPlan: GUID of the plan Frameforge created with consent (from SQLite, never from the renderer).
+  boostCapabilities(ownedPlan: string | null): Promise<BoostCapabilities>;
+  boostRecover(
+    captured: Captured[],
+    ownedPlan: string | null,
+  ): Promise<MechanismResult[]>;
+  // Creates the Frameforge plan under a GUID Frameforge already recorded.
+  createPowerPlan(destination: string): Promise<void>;
+  deletePowerPlan(ownedPlan: string): Promise<string>;
+  spawnSession(): SessionChannel;
 }
 export type PlatformRestoreStatus = HelperRestoreStatus & { message: string };
 export type PlatformCreateResult = CreateRestorePointResult & {
@@ -145,7 +189,10 @@ export class WindowsPlatform implements Platform {
         try {
           if (code !== 0) throw new Error("Windows helper failed.");
           const result = HelperResult.parse(JSON.parse(output));
-          if (!result.ok) throw new Error(result.message);
+          if (!result.ok)
+            throw Object.assign(new Error(result.message), {
+              code: result.code,
+            });
           finish();
           resolve(result);
         } catch (e) {
@@ -183,28 +230,51 @@ export class WindowsPlatform implements Platform {
   async restore(snapshot: Snapshot, force: boolean) {
     await this.call({ command: "restore", snapshot, force });
   }
-  async gameProcesses(game: Game) {
+  async runningGames(games: Game[]) {
     const result = await this.call(
       {
-        command: "processes",
-        gamePath: game.path,
-        executablePath: game.executablePath,
+        command: "running-games",
+        games: games.map((g) => ({
+          id: g.id,
+          path: g.path,
+          executablePath: g.executablePath,
+        })),
       },
       undefined,
       10000,
     );
-    return result.processes ?? [];
+    return result.runningGames ?? [];
   }
-  async boostStart(expected: ProcessTarget) {
+  async backgroundProcesses() {
+    const result = await this.call(
+      { command: "background-processes" },
+      undefined,
+      10000,
+    );
+    return result.backgroundProcesses ?? [];
+  }
+  async boostCapabilities(ownedPlan: string | null) {
     const result = await this.call({
-      command: "boost-start",
-      target: expected,
+      command: "boost-capabilities",
+      ownedPlan,
     });
-    if (!result.boostSnapshot) throw new Error("Missing process snapshot");
-    return result.boostSnapshot;
+    if (!result.capabilities) throw new Error("Missing booster capabilities");
+    return result.capabilities;
   }
-  async boostStop(snapshot: ProcessTarget) {
-    return (await this.call({ command: "boost-stop", target: snapshot }))
+  async boostRecover(captured: Captured[], ownedPlan: string | null) {
+    const result = await this.call({
+      command: "boost-recover",
+      captured,
+      ownedPlan,
+    });
+    if (!result.reverts) throw new Error("Missing recovery results");
+    return result.reverts;
+  }
+  async createPowerPlan(destination: string) {
+    await this.call({ command: "power-create-plan", ownedPlan: destination });
+  }
+  async deletePowerPlan(ownedPlan: string) {
+    return (await this.call({ command: "power-delete-plan", ownedPlan }))
       .message;
   }
   // GC-7: the helper elevates itself; the Node side never builds a command line.
@@ -275,6 +345,41 @@ export class WindowsPlatform implements Platform {
     );
     return cancelled(result) ? null : restoreStatusOf(result);
   }
+  spawnSession(): SessionChannel {
+    // detached: libuv otherwise puts the child in a kill-on-close job, and the helper
+    // must outlive a crashed Frameforge long enough to revert (stdin EOF).
+    const child = spawn(this.executable, ["--session"], {
+      windowsHide: true,
+      shell: false,
+      detached: true,
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    const channel = new EventEmitter();
+    let exited = false;
+    const exit = () => {
+      if (exited) return;
+      exited = true;
+      channel.emit("exit");
+    };
+    createInterface({ input: child.stdout }).on("line", (line) => {
+      if (line.length > 65536) return;
+      try {
+        channel.emit("event", JSON.parse(line));
+      } catch {
+        /* Ignore malformed helper lines; the session schema rejects them anyway. */
+      }
+    });
+    child.on("error", exit);
+    child.on("close", exit);
+    child.stdin.on("error", () => {});
+    return Object.assign(channel, {
+      send: (command: unknown) => {
+        if (child.stdin.writable)
+          child.stdin.write(JSON.stringify(command) + "\n");
+      },
+      kill: () => child.kill(),
+    });
+  }
 }
 export function fallbackHardware(
   warning = "Windows helper unavailable. Only runtime readings are shown.",
@@ -327,14 +432,29 @@ export class MockPlatform implements Platform {
   async restore() {
     this.applied = [];
   }
-  async gameProcesses(): Promise<ProcessTarget[]> {
+  async runningGames(): Promise<RunningGame[]> {
     return [];
   }
-  async boostStart(expected: ProcessTarget): Promise<ProcessTarget> {
-    throw new Error(`Game booster is unavailable for ${expected.name}.`);
+  async backgroundProcesses(): Promise<RunningProcess[]> {
+    throw new Error("Game booster requires the Windows helper.");
   }
-  async boostStop(): Promise<string> {
-    throw new Error("Game booster is unavailable.");
+  async boostCapabilities() {
+    return capabilitiesUnavailable("Game booster requires the Windows helper.");
+  }
+  async boostRecover(captured: Captured[]): Promise<MechanismResult[]> {
+    void captured;
+    throw new Error("Game booster requires the Windows helper.");
+  }
+  async createPowerPlan(destination: string): Promise<void> {
+    void destination;
+    throw new Error("Game booster requires the Windows helper.");
+  }
+  async deletePowerPlan(ownedPlan: string): Promise<string> {
+    void ownedPlan;
+    throw new Error("Game booster requires the Windows helper.");
+  }
+  spawnSession(): SessionChannel {
+    throw new Error("Game booster requires the Windows helper.");
   }
   async restoreStatus(): Promise<PlatformRestoreStatus> {
     return {

@@ -1554,3 +1554,75 @@ input[type="checkbox"] {
 .notice > div:has(.scan-table) {
   flex: 1;
 }
+.booster-section {
+  padding: 26px 0;
+  border-bottom: 1px solid var(--line);
+}
+.booster-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+  margin-bottom: 12px;
+}
+.mechanism-list,
+.booster-chips,
+.booster-log {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+.mechanism-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  font-size: 13px;
+}
+.mechanism-list small {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+.booster-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.cpu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+  border: 1px solid var(--line);
+  padding: 12px;
+  font-size: 12px;
+}
+.booster-log li {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+.mode-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 16px;
+}
+.mode-card.selected {
+  border-color: var(--lime);
+}
+.mode-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  margin-bottom: 6px;
+}

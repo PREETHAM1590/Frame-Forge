@@ -1,31 +1,112 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import type { BoostSession, ProcessTarget } from "../shared/contracts.js";
+import {
+  SessionEventSchema,
+  modeMechanisms,
+  type BoostCapabilities,
+  type BoostMode,
+  type BoostSession,
+  type BoosterConfig,
+  type Captured,
+  type CustomMechanisms,
+  type Game,
+  type MechanismResult,
+  type ProcessTarget,
+} from "../shared/contracts.js";
 import type { Repository } from "./repository.js";
-import type { Platform } from "./platform.js";
+import {
+  capabilitiesUnavailable,
+  type Platform,
+  type SessionChannel,
+} from "./platform.js";
 const text = (error: unknown) =>
   (error instanceof Error ? error.message : "Unknown error").slice(0, 500);
+const key = (t: ProcessTarget) => `${t.pid}|${t.startTime}`;
+const planKey = "booster.powerPlan";
+// The helper reverts in reverse capture order, one result per capture it holds. `indices` maps each saved capture to its
+// position in the helper's list (`total` entries, which may include captures Frameforge rejected or that were released).
+// Keep only the captures whose revert failed; if the results cannot be aligned, keep everything for a retry.
+const pendingCaptures = (
+  captured: Captured[],
+  reverts: MechanismResult[],
+  indices = captured.map((_, i) => i),
+  total = captured.length,
+) =>
+  reverts.length === total
+    ? captured.filter(
+        (_, i) => reverts[total - 1 - indices[i]!]!.state === "failed",
+      )
+    : captured;
+const delay = (ms: number) =>
+  new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
+export const modeLabels: Record<BoostMode, string> = {
+  off: "Off",
+  balanced: "Balanced",
+  performance: "Performance",
+  competitive: "Competitive",
+  custom: "Custom",
+};
+const endReasons = {
+  "game-exited": "the game exited",
+  stop: "it was stopped",
+  "parent-exited": "Frameforge closed",
+  "stdin-closed": "Frameforge closed",
+  "start-failed": "the boost could not start",
+} as const;
+type Live = {
+  channel: SessionChannel;
+  session: BoostSession;
+  captured: Captured[];
+  game: string;
+  ended: Promise<BoostSession>;
+  // Set when a helper report was rejected; the session is being reverted and is never reported as active.
+  aborted?: boolean;
+  abortReason?: string;
+  ready?: boolean;
+  // Every "captured" line the helper sent (valid or not), and each saved capture's position among them.
+  total: number;
+  indices: number[];
+};
 export class BoostEngine {
   private busy = false;
+  private live: Live | null = null;
+  private watcher: ReturnType<typeof setInterval> | undefined;
+  private polling = false;
+  private lastPollError = "";
+  private capabilities: { at: number; value: BoostCapabilities } | undefined;
+  // Process instances already auto-boosted (or stopped), so the watcher never restarts them.
+  private seen = new Set<string>();
   constructor(
     private repo: Repository,
     private platform: Platform,
+    private notify: (session: BoostSession) => void = () => {},
+    private timeouts = { start: 60000, stop: 15000 },
   ) {}
   get isBusy() {
     return this.busy;
   }
-  private save(
-    session: BoostSession,
-    status: BoostSession["status"],
-    message: string,
-  ) {
-    const next = { ...session, status, message: message.slice(0, 1000) };
-    this.repo.saveBoostSession(next);
+  get active() {
+    return this.live !== null;
+  }
+  get watching() {
+    return this.watcher !== undefined;
+  }
+  private save(session: BoostSession, captured: Captured[]) {
+    const next = { ...session, message: session.message.slice(0, 1000) };
+    this.repo.saveBoostSession(next, captured);
+    try {
+      this.notify(next);
+    } catch {
+      /* A closed window must not interrupt the session. */
+    }
     return next;
+  }
+  private update(live: Live, patch: Partial<BoostSession>) {
+    live.session = this.save({ ...live.session, ...patch }, live.captured);
   }
   private log(message: string, status: "success" | "failed" = "success") {
     try {
-      this.repo.log("Game booster", message, status);
+      this.repo.log("Game booster", message.slice(0, 1000), status);
     } catch {
       /* A logging failure must not hide the outcome of the Windows change. */
     }
@@ -39,88 +120,491 @@ export class BoostEngine {
       this.busy = false;
     }
   }
-  start(gameId: string, target: ProcessTarget): Promise<BoostSession> {
-    return this.exclusive(async () => {
-      const game = this.repo.state().games.find((g) => g.id === gameId);
-      if (!game) throw new Error("Game not found");
-      if (this.repo.boostSession())
-        throw new Error(
-          "Restore the current boosted game before starting another.",
-        );
-      const running = await this.platform.gameProcesses(game);
-      if (!running.some((p) => isDeepStrictEqual(p, target)))
-        throw new Error(
-          "The selected process is no longer a running target for this game. Find running processes again.",
-        );
-      if (target.priority !== "Normal")
-        throw new Error(
-          "Only a process running at Normal priority can be boosted.",
-        );
-      let session: BoostSession = {
-        id: randomUUID(),
-        gameId,
-        target,
-        startedAt: new Date().toISOString(),
-        status: "preparing",
-        message: "Original process priority saved; raising priority.",
-      };
-      this.repo.saveBoostSession(session);
+  // GUID of the plan Frameforge created with the user's consent; only the helper's reply ever writes it.
+  private ownedPlan() {
+    const guid = this.repo.meta(planKey);
+    return typeof guid === "string" ? guid : null;
+  }
+  async status(): Promise<{
+    session: BoostSession | null;
+    capabilities: BoostCapabilities;
+    watching: boolean;
+    ownedPowerPlan: boolean;
+  }> {
+    const base = {
+      session: this.live?.session ?? this.repo.boostSession(),
+      watching: this.watching,
+      ownedPowerPlan: this.ownedPlan() !== null,
+    };
+    // Plans and timer support rarely change; avoid a helper spawn on every page refresh.
+    if (!this.capabilities || Date.now() - this.capabilities.at > 30000) {
       try {
-        const snapshot = await this.platform.boostStart(target);
-        session = this.save(
-          { ...session, target: snapshot },
-          "active",
-          "Game priority raised to Above normal and verified.",
-        );
-        this.log(`${game.name}: priority raised to Above normal.`);
-        return session;
+        this.capabilities = {
+          at: Date.now(),
+          value: await this.platform.boostCapabilities(this.ownedPlan()),
+        };
       } catch (error) {
-        try {
-          await this.platform.boostStop(target);
-        } catch (stopError) {
-          const failed = this.save(
-            session,
-            "recovery-needed",
-            `Boost failed (${text(error)}) and the original priority could not be confirmed: ${text(stopError)}`,
-          );
-          this.log(failed.message, "failed");
-          return failed;
-        }
-        this.save(session, "ended", `Boost failed: ${text(error)}`);
-        this.log(
-          `${game.name}: boost failed and nothing was changed. ${text(error)}`,
-          "failed",
-        );
-        throw error;
+        return {
+          ...base,
+          capabilities: capabilitiesUnavailable(
+            `The Windows helper failed: ${text(error)}`,
+          ),
+        };
       }
+    }
+    return { ...base, capabilities: this.capabilities.value };
+  }
+  // Explicit consent from the UI; creates or removes only Frameforge's own copy of the High performance plan.
+  powerPlan(action: "create" | "remove") {
+    return this.exclusive(async () => {
+      if (!this.platform.boostAvailable)
+        throw new Error(
+          "The Windows helper is missing, so the game booster is unavailable.",
+        );
+      // A pending recovery may still need the plan, so it cannot change underneath it.
+      if (this.live || this.repo.boostSession())
+        throw new Error(
+          "Stop the boost session, or finish or dismiss its recovery, before changing power plans.",
+        );
+      const owned = this.ownedPlan();
+      if (action === "create") {
+        if (owned) throw new Error("Frameforge already created its plan.");
+        // Recorded before the helper creates it, so a created plan is never left unrecorded.
+        const destination = randomUUID();
+        this.repo.setMeta(planKey, destination);
+        try {
+          await this.platform.createPowerPlan(destination);
+        } catch (error) {
+          // "plan-not-created": the helper verified no copy exists. Any other outcome keeps the record so Remove can clean up.
+          if ((error as { code?: string }).code === "plan-not-created")
+            this.repo.setMeta(planKey, null);
+          this.capabilities = undefined;
+          throw error;
+        }
+        this.log(
+          `Created the "Frameforge High performance" power plan (${destination}). The active plan was not changed; boost sessions switch to it and back.`,
+        );
+      } else {
+        if (!owned) throw new Error("Frameforge has not created a plan.");
+        const message = await this.platform.deletePowerPlan(owned);
+        this.repo.setMeta(planKey, null);
+        this.log(message);
+      }
+      this.capabilities = undefined;
+      return this.status();
     });
   }
-  stop(): Promise<BoostSession | null> {
+  start(
+    gameId: string,
+    reason: "manual" | "auto",
+    target?: ProcessTarget,
+  ): Promise<BoostSession | null> {
     return this.exclusive(async () => {
-      const session = this.repo.boostSession();
-      if (!session) return null;
-      this.save(
-        session,
-        "restoring",
-        "Restoring the original process priority.",
-      );
-      try {
-        const ended = this.save(
-          session,
-          "ended",
-          await this.platform.boostStop(session.target),
+      if (!this.platform.boostAvailable)
+        throw new Error(
+          "The Windows helper is missing, so the game booster is unavailable.",
         );
-        this.log(ended.message);
-        return ended;
-      } catch (error) {
-        const failed = this.save(
-          session,
-          "recovery-needed",
-          `Restore failed: ${text(error)}`,
+      const state = this.repo.state();
+      const game = state.games.find((g) => g.id === gameId);
+      if (!game) throw new Error("Game not found");
+      if (this.live || this.repo.boostSession())
+        throw new Error(
+          "Stop or recover the current boost session before starting another.",
         );
-        this.log(failed.message, "failed");
-        return failed;
+      const mode =
+        game.boostMode === "global" ? state.booster.mode : game.boostMode;
+      if (mode === "off") {
+        if (reason === "auto") return null;
+        throw new Error(
+          `Booster mode is Off for ${game.name}. Choose a mode first.`,
+        );
       }
+      target ??= (await this.platform.runningGames([game]))[0]?.target;
+      if (!target)
+        throw new Error(
+          "Start the game first. Frameforge boosts a game that is already running.",
+        );
+      const mechanisms =
+        mode === "custom" ? state.booster.custom : modeMechanisms[mode];
+      return this.run(game, mode, target, mechanisms, state.booster, reason);
     });
+  }
+  private run(
+    game: Game,
+    mode: BoostMode,
+    target: ProcessTarget,
+    mechanisms: CustomMechanisms,
+    config: BoosterConfig,
+    reason: "manual" | "auto",
+  ): Promise<BoostSession> {
+    const captured: Captured[] = [];
+    const session = this.save(
+      {
+        id: randomUUID(),
+        gameId: game.id,
+        mode,
+        target,
+        startedAt: new Date().toISOString(),
+        endedAt: null,
+        status: "preparing",
+        message: `${modeLabels[mode]} mode starting for ${game.name}.`,
+        mechanisms: [],
+        samples: [],
+        failed: false,
+        abnormal: false,
+      },
+      captured,
+    );
+    this.log(
+      `${game.name}: ${modeLabels[mode]} session started (${reason === "auto" ? "auto-boost" : "manual"}).`,
+    );
+    let channel: SessionChannel;
+    try {
+      channel = this.platform.spawnSession();
+    } catch (error) {
+      this.save(
+        {
+          ...session,
+          status: "ended",
+          endedAt: new Date().toISOString(),
+          message: `Boost could not start: ${text(error)}`,
+          failed: true,
+        },
+        captured,
+      );
+      throw error;
+    }
+    let resolveEnded!: (session: BoostSession) => void;
+    const live: Live = {
+      channel,
+      session,
+      captured,
+      game: game.name,
+      ended: new Promise((resolve) => (resolveEnded = resolve)),
+      total: 0,
+      indices: [],
+    };
+    this.live = live;
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (result: BoostSession) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(stopTimer);
+        resolve(result);
+      };
+      const timer = setTimeout(() => channel.kill(), this.timeouts.start);
+      let stopTimer: NodeJS.Timeout | undefined;
+      channel.on("event", (raw) => {
+        if (this.live !== live) return;
+        const isCapture =
+          (raw as { event?: unknown } | null)?.event === "captured";
+        if (isCapture) live.total++;
+        const parsed = SessionEventSchema.safeParse(raw);
+        if (!parsed.success) {
+          // Fail closed (GC-10): a prior state we cannot save must not be left applied.
+          // "stop" makes the helper revert from its in-memory captures; killing it would lose them.
+          if (!live.aborted) {
+            live.aborted = true;
+            live.abortReason = isCapture
+              ? "the session helper reported a prior state Frameforge could not save, so the boost was stopped"
+              : `the session helper sent a report Frameforge could not read${live.ready ? " during the session" : ""}, so the boost was stopped`;
+            // From here the stop timeout governs; the start timer must not kill the helper mid-revert.
+            clearTimeout(timer);
+            stopTimer = setTimeout(() => channel.kill(), this.timeouts.stop);
+            this.update(live, {
+              message: `Stopping and restoring: ${live.abortReason}.`,
+            });
+            this.log(
+              `${game.name}: invalid session helper report; the session was stopped and reverted.`,
+              "failed",
+            );
+            channel.send({ command: "stop" });
+          }
+          return;
+        }
+        const event = parsed.data;
+        try {
+          switch (event.event) {
+            case "captured":
+              // GC-10: persisted as soon as the helper reports it, before its change is verified.
+              live.captured.push(event.prior);
+              live.indices.push(live.total - 1);
+              this.update(live, {});
+              break;
+            case "released": {
+              // The change never happened; drop the saved prior so recovery never "undoes" it.
+              let index = live.captured.length - 1;
+              while (
+                index >= 0 &&
+                !isDeepStrictEqual(live.captured[index], event.prior)
+              )
+                index--;
+              if (index >= 0) {
+                live.captured.splice(index, 1);
+                live.indices.splice(index, 1);
+                this.update(live, {});
+              }
+              break;
+            }
+            case "ready": {
+              live.ready = true;
+              // A rejected report means the session is already being reverted: never report it as active.
+              if (live.aborted) break;
+              const applied = live.session.mechanisms.filter(
+                (m) => m.state === "applied",
+              ).length;
+              this.update(live, {
+                status: "active",
+                message: applied
+                  ? `${modeLabels[mode]} mode active for ${game.name}: ${applied} change(s) applied.`
+                  : `${modeLabels[mode]} mode active for ${game.name}, but nothing needed changing on this PC.`,
+              });
+              settle(live.session);
+              break;
+            }
+            case "sample": {
+              const sample = {
+                at: event.at,
+                systemCpuPercent: event.systemCpuPercent,
+                availableMemoryBytes: event.availableMemoryBytes,
+                gameWorkingSetBytes: event.gameWorkingSetBytes,
+              };
+              this.update(live, {
+                samples: [...live.session.samples, sample].slice(-200),
+              });
+              break;
+            }
+            case "ended":
+              this.end(live, event.reason, event.reverts, event.detail);
+              resolveEnded(live.session);
+              settle(live.session);
+              break;
+            default:
+              this.update(live, {
+                mechanisms: [
+                  ...live.session.mechanisms,
+                  {
+                    id: event.mechanism,
+                    state: event.event,
+                    detail: event.detail,
+                  },
+                ].slice(-400),
+                message: event.detail,
+              });
+              this.log(
+                `${game.name}: ${event.mechanism} ${event.event}. ${event.detail}`,
+                event.event === "failed" ? "failed" : "success",
+              );
+          }
+        } catch (error) {
+          this.log(
+            `${game.name}: session state could not be saved: ${text(error)}`,
+            "failed",
+          );
+        }
+      });
+      channel.on("exit", () => {
+        if (this.live !== live) return;
+        // The helper stopped without reporting its reverts: restore from the saved captures. The session stays marked failed.
+        this.live = null;
+        this.update(live, {
+          status: "recovery-needed",
+          failed: true,
+          abnormal: true,
+          message:
+            "The session helper stopped unexpectedly. Restoring the saved state.",
+        });
+        void this.recoverNow()
+          .catch(() => null)
+          .then((result) => {
+            const final = result ?? live.session;
+            resolveEnded(final);
+            settle(final);
+          });
+      });
+      channel.send({
+        command: "start",
+        gamePid: target.pid,
+        gameStartTime: target.startTime,
+        gamePath: target.executablePath,
+        mechanisms,
+        background: config.background,
+        parentPid: process.pid,
+        ownedPlan: this.ownedPlan(),
+      });
+    });
+  }
+  private end(
+    live: Live,
+    reason: keyof typeof endReasons,
+    reverts: MechanismResult[],
+    detail?: string,
+  ) {
+    this.live = null;
+    this.capabilities = undefined;
+    const count = (state: MechanismResult["state"]) =>
+      reverts.filter((r) => r.state === state).length;
+    // Fewer results than captures means the helper's revert stopped early: never report that as restored.
+    const incomplete = reverts.length < live.total;
+    const failed = count("failed") + (incomplete ? 1 : 0);
+    const why = live.aborted
+      ? (live.abortReason ?? "a helper report was rejected")
+      : reason === "start-failed" && detail
+        ? `the boost could not start: ${detail}`
+        : endReasons[reason];
+    // Only failed reverts stay saved for a retry, so a retry never repeats a completed one (for example a second resume).
+    live.captured = pendingCaptures(
+      live.captured,
+      reverts,
+      live.indices,
+      live.total,
+    );
+    const now = new Date();
+    const minutes = Math.round(
+      (now.getTime() - Date.parse(live.session.startedAt)) / 60000,
+    );
+    const samples = live.session.samples;
+    const average = (pick: (s: (typeof samples)[number]) => number) =>
+      samples.reduce((sum, s) => sum + pick(s), 0) / samples.length;
+    const snapshot = samples.length
+      ? ` System snapshot, not FPS: average CPU ${average((s) => s.systemCpuPercent).toFixed(0)}%, average available RAM ${(average((s) => s.availableMemoryBytes) / 1024 ** 3).toFixed(1)} GB.`
+      : "";
+    const summary = `Restored ${count("reverted")}, kept ${count("conflict")} external change(s), failed ${failed}.`;
+    this.update(live, {
+      status: failed ? "recovery-needed" : "ended",
+      failed: failed > 0 || !!live.aborted || reason === "start-failed",
+      abnormal: !!live.aborted || reason === "start-failed",
+      endedAt: failed ? null : now.toISOString(),
+      mechanisms: [...live.session.mechanisms, ...reverts].slice(-400),
+      message: incomplete
+        ? `Session ended because ${why}, but the helper did not report every revert${detail && reason !== "start-failed" ? ` (${detail})` : ""}. Retry recovery.`
+        : failed
+          ? `Session ended because ${why}, but ${failed} change(s) could not be restored. Retry recovery.`
+          : `Session ended because ${why}. ${summary}`,
+    });
+    this.log(
+      `${live.game}: session ended after ${minutes} min because ${why}. ${summary}${snapshot}`,
+      failed || live.aborted || reason === "start-failed"
+        ? "failed"
+        : "success",
+    );
+  }
+  async stop(): Promise<BoostSession | null> {
+    const live = this.live;
+    if (!live) return this.recover();
+    this.seen.add(key(live.session.target));
+    this.update(live, {
+      status: "restoring",
+      message: "Restoring the saved state.",
+    });
+    live.channel.send({ command: "stop" });
+    const result = await Promise.race([live.ended, delay(this.timeouts.stop)]);
+    if (result) return result;
+    // The exit handler restores from the saved captures.
+    live.channel.kill();
+    return (
+      (await Promise.race([live.ended, delay(this.timeouts.stop)])) ??
+      this.repo.boostSession()
+    );
+  }
+  recover(dismiss = false): Promise<BoostSession | null> {
+    return this.exclusive(() => this.recoverNow(dismiss));
+  }
+  private async recoverNow(dismiss = false): Promise<BoostSession | null> {
+    if (this.live) return this.live.session;
+    const record = this.repo.boostRecord();
+    if (!record) return null;
+    const { session, captured } = record;
+    const finish = (patch: Partial<BoostSession>) =>
+      this.save({ ...session, ...patch }, captured);
+    if (dismiss) {
+      const result = finish({
+        status: "ended",
+        endedAt: new Date().toISOString(),
+        message:
+          "Recovery dismissed. Any remaining changes were left as they are.",
+        failed: true,
+      });
+      this.log(result.message, "failed");
+      return result;
+    }
+    try {
+      const reverts = captured.length
+        ? await this.platform.boostRecover(captured, this.ownedPlan())
+        : [];
+      const failed = reverts.filter((r) => r.state === "failed");
+      const conflicts = reverts.filter((r) => r.state === "conflict").length;
+      const remaining = pendingCaptures(captured, reverts);
+      // A session that ended abnormally (helper crash, rejected report) stays failed even when recovery succeeds;
+      // one that only had failed reverts is resolved once they are restored.
+      const abnormal = session.abnormal;
+      const result = this.save(
+        {
+          ...session,
+          status: failed.length ? "recovery-needed" : "ended",
+          failed: failed.length > 0 || abnormal,
+          endedAt: failed.length ? null : new Date().toISOString(),
+          mechanisms: [...session.mechanisms, ...reverts].slice(-400),
+          message: failed.length
+            ? `Recovery could not restore ${failed.length} change(s): ${failed[0]!.detail}`
+            : `${abnormal ? "The boost did not finish normally. " : ""}Recovered: ${reverts.length} saved change(s) checked, ${conflicts} external change(s) kept.`,
+        },
+        remaining,
+      );
+      this.log(
+        result.message,
+        failed.length || abnormal ? "failed" : "success",
+      );
+      return result;
+    } catch (error) {
+      const result = finish({
+        status: "recovery-needed",
+        failed: true,
+        message: `Recovery failed: ${text(error)}. Retry, or dismiss to keep the current state.`,
+      });
+      this.log(result.message, "failed");
+      return result;
+    }
+  }
+  configure() {
+    const on =
+      this.platform.boostAvailable && this.repo.state().booster.autoBoost;
+    if (on && !this.watcher) {
+      // ponytail: 5 s polling; WMI process-start events (Win32_ProcessStartTrace) if start latency matters.
+      this.watcher = setInterval(() => void this.poll(), 5000);
+      this.watcher.unref?.();
+    } else if (!on && this.watcher) {
+      clearInterval(this.watcher);
+      this.watcher = undefined;
+    }
+  }
+  async poll() {
+    if (this.polling || this.busy || this.live || this.repo.boostSession())
+      return;
+    const games = this.repo.state().games;
+    if (!games.length) return;
+    this.polling = true;
+    try {
+      const found = (await this.platform.runningGames(games)).find(
+        (f) => !this.seen.has(key(f.target)),
+      );
+      if (!found) return;
+      if (this.seen.size > 1000) this.seen.clear();
+      this.seen.add(key(found.target));
+      await this.start(found.gameId, "auto", found.target);
+      this.lastPollError = "";
+    } catch (error) {
+      if (text(error) !== this.lastPollError)
+        this.log(`Auto-boost: ${text(error)}`, "failed");
+      this.lastPollError = text(error);
+    } finally {
+      this.polling = false;
+    }
+  }
+  dispose() {
+    if (this.watcher) clearInterval(this.watcher);
+    this.watcher = undefined;
   }
 }

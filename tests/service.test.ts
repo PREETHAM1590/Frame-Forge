@@ -153,6 +153,7 @@ describe("validated IPC to SQLite integration", () => {
       source,
       executablePath: null,
       profile: "balanced" as const,
+      boostMode: "global" as const,
       notes: "",
     });
     const detection = (games: ReturnType<typeof game>[]) => ({
@@ -199,6 +200,7 @@ describe("rescan source upgrade", () => {
       source,
       executablePath,
       profile: "gaming" as const,
+      boostMode: "global" as const,
       notes: "mine",
     });
     let next = [game("registry", null)];

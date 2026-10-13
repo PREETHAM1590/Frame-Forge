@@ -5,6 +5,7 @@ import {
   requests,
   responses,
   defaultState,
+  MechanismId,
   type Api,
   type AppEvent,
   type AppState,
@@ -15,6 +16,7 @@ import {
   type Response,
 } from "../shared/contracts";
 const storageKey = "frameforge-demo-v1";
+export const desktopOnly = "Game booster requires the desktop app.";
 let state: AppState = structuredClone(defaultState);
 let backups: Bootstrap["backups"] = [];
 let activity: Bootstrap["activity"] = [];
@@ -89,7 +91,7 @@ function bootstrap(): Bootstrap {
     capabilities: [],
     mode: "demo",
     startupSupported: false,
-    boost: { session: null, available: false },
+    boost: { session: null, available: false, watching: false },
   };
 }
 async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
@@ -158,21 +160,38 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
         ...state,
         games: state.games.map((g) =>
           g.id === data.id
-            ? { ...g, profile: data.profile, notes: data.notes }
+            ? {
+                ...g,
+                profile: data.profile ?? g.profile,
+                boostMode: data.boostMode,
+                notes: data.notes,
+              }
             : g,
         ),
       };
       result = state;
       break;
     }
-    case "gameMode":
-      state = StateSchema.parse({
-        ...state,
-        gameMode: requests.gameMode.parse(input),
-      });
-      log("Profile session updated", "App-only session; no Windows changes.");
+    case "boostConfig":
+      state = { ...state, booster: requests.boostConfig.parse(input) };
+      log("Game booster settings saved", "Saved in this browser only.");
       result = state;
       break;
+    case "boostStatus":
+      return {
+        session: null,
+        capabilities: {
+          logicalCpus: 0,
+          mechanisms: MechanismId.options.map((id) => ({
+            id,
+            available: false,
+            detail: desktopOnly,
+            active: false,
+          })),
+        },
+        watching: false,
+        ownedPowerPlan: false,
+      };
     case "clearActivity":
       activity = activity.filter((a) => a.rollback);
       result = true;
@@ -202,10 +221,12 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "recoverRestoreFrequency":
     case "openSystemRestore":
       throw new Error("Windows System Restore requires the desktop app.");
-    case "boostTargets":
     case "boostStart":
     case "boostStop":
-      throw new Error("Game booster requires the desktop app.");
+    case "boostRecover":
+    case "runningProcesses":
+    case "boostPowerPlan":
+      throw new Error(desktopOnly);
     default:
       throw new Error(
         "Windows operations are unavailable in browser demo mode.",
@@ -228,7 +249,9 @@ export async function request<M extends Method>(
   requests[method].parse(input);
   const api: Api | undefined = window.frameforge;
   const output = api
-    ? await (api[method] as (input: Request<M>) => Promise<Response<M>>)(input)
+    ? await (
+        (api as Api)[method] as (input: Request<M>) => Promise<Response<M>>
+      )(input)
     : await demoDispatch(method, input);
   return responses[method].parse(output) as Response<M>;
 }

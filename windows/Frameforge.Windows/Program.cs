@@ -1,20 +1,24 @@
+using System.ComponentModel;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Frameforge.Windows;
 
-var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+// Nulls are written explicitly (registry snapshots need `value: null`); records opt out per member.
+var options = HelperJson.Options;
 // GC-7: the elevated instance has no stdin; it answers through the validated result file.
 if (OperatingSystem.IsWindows() && args is ["--elevated", ..]) Environment.Exit(RestoreCommands.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
+if (OperatingSystem.IsWindows() && args is ["--session"]) { SessionRunner.Host(); return; }
 object response;
 try
 {
     if (!OperatingSystem.IsWindows()) throw new InvalidOperationException("Windows is required.");
     // Node writes UTF-8; the console code page would garble non-ASCII names.
     var line = new StreamReader(Console.OpenStandardInput(), new System.Text.UTF8Encoding(false)).ReadLine();
-    if (line is null || line.Length > 32768) throw new InvalidOperationException("Invalid request size.");
+    if (line is null || line.Length > 1048576) throw new InvalidOperationException("Invalid request size.");
     var request = JsonSerializer.Deserialize<Request>(line, options) ?? throw new InvalidOperationException("Missing request.");
     var engine = new RegistryOperations(new WindowsRegistryStore());
     var ids = request.Ids ?? [];
+    Guid? owned = request.OwnedPlan is null ? null : Guid.TryParse(request.OwnedPlan, out var plan) ? plan : throw new InvalidOperationException("Invalid power plan.");
+    BoostSessionEngine Booster() => new(new WindowsProcessControl(), new WindowsPowerStore(), new WindowsTimerControl(), new WindowsRegistryStore(), _ => { }, Environment.ProcessId, owned);
     response = request.Command switch
     {
         "hardware" when ids.Length == 0 && request.Snapshot is null => new { ok = true, message = "Read-only Windows discovery.", hardware = HardwareDiscovery.Collect() },
@@ -22,20 +26,32 @@ try
         "apply" when request.Snapshot is not null => Apply(engine, ids, request.Snapshot),
         "verify" when request.Snapshot is null => new { ok = true, message = "Verification completed.", verified = engine.Verify(ids) },
         "restore" when ids.Length == 0 && request.Snapshot is not null && !request.Force => Restore(engine, request.Snapshot),
-        "processes" when request.GamePath is not null && request.Target is null => new { ok = true, message = "Running game processes read.", processes = WindowsProcessStore.Find(request.GamePath, request.ExecutablePath) },
-        "boost-start" when request.Target is not null => new GameProcessOperations(new WindowsProcessStore()).Start(request.Target),
-        "boost-stop" when request.Target is not null => new GameProcessOperations(new WindowsProcessStore()).Stop(request.Target),
         "restore-status" when ids.Length == 0 && request.Elevated is null => new RestorePoints(new WindowsRestoreStore()).StatusResult(),
         "elevated" when request.Elevated is not null => RestoreCommands.Run(request.Elevated),
         "elevated-result" when request.ResultPath is not null => RestoreCommands.ReadResult(request.ResultPath),
+        "running-games" when request.Games is not null => new { ok = true, message = "Running library games read.", runningGames = WindowsProcesses.RunningGames(request.Games) },
+        "background-processes" => new { ok = true, message = "Running processes read.", backgroundProcesses = WindowsProcessControl.Entries() },
+        "boost-capabilities" => new { ok = true, message = "Booster capabilities read.", capabilities = BoostSessionEngine.Capabilities(new WindowsPowerStore(), new WindowsTimerControl(), Environment.ProcessorCount, new WindowsRegistryStore(), owned) },
+        // Untrusted input bound, above the per-session capture cap; every item is attempted.
+        "boost-recover" when request.Captured is { Length: <= 1000 } captured && captured.All(c => c is not null) => new { ok = true, message = "Saved booster changes checked.", reverts = Booster().Recover(captured) },
+        "boost-recover" => throw new InvalidOperationException("Too many or invalid saved booster changes (limit 1000)."),
+        // Frameforge records the destination GUID before asking, so a created plan is never left unrecorded.
+        "power-create-plan" when owned is { } destination => CreatePlan(destination),
+        "power-delete-plan" when owned is { } ownedPlan => new { ok = true, message = BoostSessionEngine.DeletePlan(new WindowsPowerStore(), ownedPlan) },
         _ => throw new InvalidOperationException("Unsupported helper request.")
     };
 }
 catch (Exception error)
 {
-    response = new { ok = false, message = error is InvalidOperationException ? error.Message : "Windows could not complete the request. Check permissions and hardware availability." };
+    response = new
+    {
+        ok = false,
+        code = error switch { PlanNotCreatedException => "plan-not-created", InvalidOperationException => "invalid-request", Win32Exception { NativeErrorCode: 5 } => "access-denied", _ => "windows-error" },
+        message = error is InvalidOperationException ? error.Message : "Windows could not complete the request. Check permissions and hardware availability."
+    };
 }
 Console.WriteLine(JsonSerializer.Serialize(response, options));
+static object CreatePlan(Guid destination) { BoostSessionEngine.CreatePlan(new WindowsPowerStore(), destination); return new { ok = true, message = "Frameforge High performance plan created and verified. The active plan was not changed.", powerPlan = destination.ToString() }; }
 static object Apply(RegistryOperations engine, string[] ids, Snapshot snapshot) { engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written." }; }
 static object Restore(RegistryOperations engine, Snapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
-record Request(string Command, string[]? Ids, Snapshot? Snapshot, bool Force = false, string? GamePath = null, string? ExecutablePath = null, ProcessTarget? Target = null, ElevatedRequest? Elevated = null, string? ResultPath = null);
+record Request(string Command, string[]? Ids, Snapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null);

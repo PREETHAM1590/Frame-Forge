@@ -148,6 +148,7 @@ function collector() {
       source,
       executablePath,
       profile: "balanced",
+      boostMode: "global",
       notes: "",
     };
     byKey.set(key, game);
