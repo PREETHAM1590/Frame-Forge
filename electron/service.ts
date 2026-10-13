@@ -18,6 +18,7 @@ import { Repository } from "./repository.js";
 import { OperationEngine } from "./operations.js";
 import { BoostEngine } from "./booster.js";
 import { RestorePointService } from "./restore.js";
+import { LaunchSettingsService } from "./launchSettings.js";
 import type { DetectionResult } from "./games.js";
 import { fallbackHardware, type Platform } from "./platform.js";
 import {
@@ -54,6 +55,7 @@ export class AppService {
   private engine: OperationEngine;
   readonly booster: BoostEngine;
   private restorePoints: RestorePointService;
+  private launch: LaunchSettingsService;
   private hardware: Hardware = fallbackHardware();
   private loggingFailed = false;
   // One scan at a time: startup, Rescan and Dashboard "Scan now" all share it.
@@ -63,7 +65,10 @@ export class AppService {
   private handlers: Handlers;
   get isBusy() {
     return (
-      this.engine.isBusy || this.booster.isBusy || this.restorePoints.isBusy
+      this.engine.isBusy ||
+      this.booster.isBusy ||
+      this.restorePoints.isBusy ||
+      this.launch.isBusy
     );
   }
   // App quit: stop the watcher and revert a live boost session before exiting.
@@ -78,6 +83,7 @@ export class AppService {
   ) {
     this.engine = new OperationEngine(repo, platform);
     this.restorePoints = new RestorePointService(repo, platform);
+    this.launch = new LaunchSettingsService(repo, platform);
     this.booster = new BoostEngine(repo, platform, (session) =>
       this.desktop.notify?.({ type: "boost", session }),
     );
@@ -291,6 +297,22 @@ export class AppService {
         return this.booster.recover(dismiss ?? false);
       },
       runningProcesses: async () => this.platform.backgroundProcesses(),
+      launchSettings: async ({ gameId }) => this.launch.status(gameId),
+      launchSettingPreview: async ({ gameId, setting, action }) =>
+        this.launch.preview(gameId, setting, action),
+      launchSettingApply: async ({ gameId, setting, action }) => {
+        guard();
+        noRestoreInFlight();
+        return this.launch.apply(gameId, setting, action);
+      },
+      networkCheck: async ({ host, count }) => {
+        const result = await this.platform.networkCheck(host, count);
+        this.log(
+          "Network check",
+          `${result.host}: ${result.message}`.slice(0, 1000),
+        );
+        return result;
+      },
       boostPowerPlan: async ({ action }) => {
         guard();
         return this.booster.powerPlan(action);
@@ -300,6 +322,10 @@ export class AppService {
         // Removing the game would orphan its boost session's restore target.
         if (this.repo.boostSession()?.gameId === id)
           throw new Error("Stop Game Mode for this game before removing it.");
+        if (this.launch.hasRecords(id))
+          throw new Error(
+            "Revert this game's launch settings before removing it, so the saved prior values are not lost.",
+          );
         const state = this.repo.state();
         const removed = state.games.find((g) => g.id === id);
         // Remember removed games so scans do not bring them back.

@@ -67,6 +67,19 @@ const inputs: { [M in Method]: () => Request<M> } = {
   boostStop: () => ({ confirmed: true }),
   boostRecover: () => ({ confirmed: true }),
   runningProcesses: () => ({}),
+  networkCheck: () => ({ host: "example.com", count: 10 }),
+  launchSettings: () => ({ gameId: id() }),
+  launchSettingPreview: () => ({
+    gameId: id(),
+    setting: "gpuPreference",
+    action: "apply",
+  }),
+  launchSettingApply: () => ({
+    gameId: id(),
+    setting: "gpuPreference",
+    action: "apply",
+    confirmed: true,
+  }),
   boostPowerPlan: () => ({ action: "create", confirmed: true }),
   removeGame: () => ({ id: id() }),
   gameIcon: () => ({ id: id() }),
@@ -107,6 +120,10 @@ describe("IPC surface", () => {
       "boostStop",
       "boostRecover",
       "runningProcesses",
+      "networkCheck",
+      "launchSettings",
+      "launchSettingPreview",
+      "launchSettingApply",
       "boostPowerPlan",
     ];
     localStorage.clear();

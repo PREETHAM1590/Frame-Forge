@@ -187,7 +187,7 @@ if (!app.requestSingleInstanceLock()) {
       activeService = service;
       await service.refresh();
       // GC-10: revert a boost interrupted by a crash or power loss (conflict-aware).
-      await service.booster.recover().catch(() => null);
+      await service.booster.recoverAtStartup().catch(() => null);
       ipcMain.handle(
         "frameforge:request",
         async (event, method: unknown, input: unknown) => {

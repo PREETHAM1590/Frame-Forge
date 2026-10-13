@@ -5,6 +5,7 @@ import {
   requests,
   responses,
   defaultState,
+  dropLegacyMechanisms,
   MechanismId,
   type Api,
   type AppEvent,
@@ -29,7 +30,8 @@ function load() {
       backups: unknown;
       activity: unknown;
     };
-    state = StateSchema.parse(saved.state);
+    // Older demo data may still carry the retired GPU preference / fullscreen toggles.
+    state = StateSchema.parse(dropLegacyMechanisms(saved.state));
     backups = BackupSchema.array().parse(saved.backups);
     activity = BootstrapSchema.shape.activity.parse(saved.activity);
   }
@@ -243,6 +245,12 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "runningProcesses":
     case "boostPowerPlan":
       throw new Error(desktopOnly);
+    case "networkCheck":
+      throw new Error("The network check requires the desktop app.");
+    case "launchSettings":
+    case "launchSettingPreview":
+    case "launchSettingApply":
+      throw new Error("Launch settings require the desktop app.");
     default:
       throw new Error("Windows operations require the desktop app.");
   }

@@ -17,6 +17,16 @@ function moveExecutablePaths(payload: string): string {
   );
   return JSON.stringify(state);
 }
+// GPU preference and fullscreen optimizations moved from session mechanisms to per-game launch settings.
+function dropLegacyMechanisms(payload: string): string {
+  const state = JSON.parse(payload) as Json;
+  const custom = (state.booster as Json | undefined)?.custom as
+    Json | undefined;
+  if (!custom) return payload;
+  delete custom.gpuPreference;
+  delete custom.fullscreenOptimizations;
+  return JSON.stringify(state);
+}
 export const migrations: Array<string | ((db: DatabaseSync) => void)> = [
   `
 CREATE TABLE configuration (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);
@@ -38,4 +48,14 @@ CREATE INDEX operations_at ON operations(at DESC);
         );
   },
   "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+  (db) => {
+    for (const table of ["configuration", "backups"])
+      for (const row of db
+        .prepare(`SELECT rowid AS rid, payload FROM ${table}`)
+        .all())
+        db.prepare(`UPDATE ${table} SET payload=? WHERE rowid=?`).run(
+          dropLegacyMechanisms(String(row.payload)),
+          row.rid as number,
+        );
+  },
 ];

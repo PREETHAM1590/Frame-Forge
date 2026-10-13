@@ -80,7 +80,11 @@ export class BoostEngine {
     private repo: Repository,
     private platform: Platform,
     private notify: (session: BoostSession) => void = () => {},
-    private timeouts = { start: 60000, stop: 15000 },
+    // elevated: extra time while an administrator prompt is open (services pause at start, restart at the end).
+    private timeouts: { start: number; stop: number; elevated?: number } = {
+      start: 60000,
+      stop: 15000,
+    },
   ) {
     this.platform.setOwnedPlan?.(this.ownedPlan());
   }
@@ -92,6 +96,18 @@ export class BoostEngine {
   }
   get watching() {
     return this.watcher !== undefined;
+  }
+  private get elevatedMs() {
+    return this.timeouts.elevated ?? 330000;
+  }
+  // The helper may be waiting on an administrator prompt; killing it then would only open a second prompt during recovery.
+  private stopMs(live: Live) {
+    return (
+      this.timeouts.stop +
+      (live.captured.some((c) => c.mechanism === "pauseServices")
+        ? this.elevatedMs
+        : 0)
+    );
   }
   private save(session: BoostSession, captured: Captured[]) {
     const next = { ...session, message: session.message.slice(0, 1000) };
@@ -255,7 +271,7 @@ export class BoostEngine {
         startedAt: new Date().toISOString(),
         endedAt: null,
         status: "preparing",
-        message: `${modeLabels[mode]} mode starting for ${game.name}.`,
+        message: `${modeLabels[mode]} mode starting for ${game.name}.${mechanisms.pauseServices && reason === "manual" ? " Windows will ask for administrator approval to pause services." : ""}`,
         mechanisms: [],
         samples: [],
         failed: false,
@@ -302,7 +318,13 @@ export class BoostEngine {
         clearTimeout(stopTimer);
         resolve(result);
       };
-      const timer = setTimeout(() => channel.kill(), this.timeouts.start);
+      // Auto-boost never pauses services, so only a manual start waits on the administrator prompt.
+      const prompt =
+        mechanisms.pauseServices && reason === "manual" ? this.elevatedMs : 0;
+      const timer = setTimeout(
+        () => channel.kill(),
+        this.timeouts.start + prompt,
+      );
       let stopTimer: NodeJS.Timeout | undefined;
       channel.on("event", (raw) => {
         if (this.live !== live) return;
@@ -320,7 +342,7 @@ export class BoostEngine {
               : `the session helper sent a report Frameforge could not read${live.ready ? " during the session" : ""}, so the boost was stopped`;
             // From here the stop timeout governs; the start timer must not kill the helper mid-revert.
             clearTimeout(timer);
-            stopTimer = setTimeout(() => channel.kill(), this.timeouts.stop);
+            stopTimer = setTimeout(() => channel.kill(), this.stopMs(live));
             this.update(live, {
               message: `Stopping and restoring: ${live.abortReason}.`,
             });
@@ -397,6 +419,7 @@ export class BoostEngine {
                     id: event.mechanism,
                     state: event.event,
                     detail: event.detail,
+                    ...(event.code && { code: event.code }),
                   },
                 ].slice(-400),
                 message: event.detail,
@@ -424,7 +447,8 @@ export class BoostEngine {
           message:
             "The session helper stopped unexpectedly. Restoring the saved state.",
         });
-        void this.recoverNow()
+        // Automatic: it must not open an administrator prompt the user did not ask for.
+        void this.recoverNow(false, false)
           .catch(() => null)
           .then((result) => {
             const final = result ?? live.session;
@@ -441,6 +465,11 @@ export class BoostEngine {
         background: config.background,
         parentPid: process.pid,
         ownedPlan: this.ownedPlan(),
+        // Xbox and Microsoft Store games need the Xbox services; auto-boost must never open an administrator prompt.
+        storeGame: game.source === "xbox" || game.source === "msstore",
+        unattended: reason === "auto",
+        // Presets leave smart core targeting off on Windows 11 hybrid CPUs; Custom can force it.
+        preset: mode !== "custom",
       });
     });
   }
@@ -508,7 +537,7 @@ export class BoostEngine {
       message: "Restoring the saved state.",
     });
     live.channel.send({ command: "stop" });
-    const result = await Promise.race([live.ended, delay(this.timeouts.stop)]);
+    const result = await Promise.race([live.ended, delay(this.stopMs(live))]);
     if (result) return result;
     // The exit handler restores from the saved captures.
     live.channel.kill();
@@ -520,7 +549,14 @@ export class BoostEngine {
   recover(dismiss = false): Promise<BoostSession | null> {
     return this.exclusive(() => this.recoverNow(dismiss));
   }
-  private async recoverNow(dismiss = false): Promise<BoostSession | null> {
+  // App start: restores everything that needs no administrator rights and leaves paused services as "recovery needed".
+  recoverAtStartup(): Promise<BoostSession | null> {
+    return this.exclusive(() => this.recoverNow(false, false));
+  }
+  private async recoverNow(
+    dismiss = false,
+    interactive = true,
+  ): Promise<BoostSession | null> {
     if (this.live) return this.live.session;
     const record = this.repo.boostRecord();
     if (!record) return null;
@@ -540,7 +576,11 @@ export class BoostEngine {
     }
     try {
       const reverts = captured.length
-        ? await this.platform.boostRecover(captured, this.ownedPlan())
+        ? await this.platform.boostRecover(
+            captured,
+            this.ownedPlan(),
+            interactive,
+          )
         : [];
       const failed = reverts.filter((r) => r.state === "failed");
       const conflicts = reverts.filter((r) => r.state === "conflict").length;
