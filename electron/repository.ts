@@ -231,6 +231,15 @@ export class Repository {
       ? { id: String(row.id), snapshot: JSON.parse(String(row.snapshot)) }
       : null;
   }
+  /** True while a successful, not rolled back optimization contains this id. */
+  optimizationApplied(id: OperationId): boolean {
+    return this.db
+      .prepare(
+        "SELECT ids FROM operations WHERE rollback=1 AND status='success'",
+      )
+      .all()
+      .some((row) => (JSON.parse(String(row.ids)) as string[]).includes(id));
+  }
   meta(key: string): unknown {
     const row = this.db.prepare("SELECT value FROM meta WHERE key=?").get(key);
     return row ? JSON.parse(String(row.value)) : null;

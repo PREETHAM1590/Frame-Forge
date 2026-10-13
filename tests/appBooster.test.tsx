@@ -154,7 +154,9 @@ describe("booster state across the app", () => {
     render(<App />);
     await screen.findByText("Your setup, in focus.");
     expect(
-      screen.getByText(/Mode Balanced; auto-boost off; no active session/),
+      await screen.findByText(
+        /Mode Balanced; auto-boost off; no active session/,
+      ),
     ).toBeVisible();
     const active = session("active");
     send(active);
@@ -163,7 +165,7 @@ describe("booster state across the app", () => {
     ).toBeVisible();
     // The Dashboard card links to Game Mode.
     fireEvent.click(
-      screen.getByRole("button", {
+      await screen.findByRole("button", {
         name: /Game Mode.*Idle|Game Mode.*Test Game/,
       }),
     );

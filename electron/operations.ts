@@ -42,11 +42,17 @@ export class OperationEngine {
       throw new Error("This operation is unavailable on this installation.");
   }
   // A boost session restores the plan it found when it ends, which would undo this switch.
-  // Rollback is deliberately not blocked: it is a recovery path.
+  // The session also writes the same Game Bar capture value, so capture-off waits for it too.
+  // Rolling back the power plan is deliberately not blocked (a recovery path); rolling back capture-off is.
   private noBoost(ids: OperationId[]) {
-    if (ids.includes("power-plan") && this.repo.boostSession())
+    if (!this.repo.boostSession()) return;
+    if (ids.includes("power-plan"))
       throw new Error(
         "Stop Game Mode before changing the power plan; its session restores the plan when it ends.",
+      );
+    if (ids.includes("capture-off"))
+      throw new Error(
+        "Stop Game Mode before changing background game capture; the session writes the same Windows value and would undo or overwrite the change.",
       );
   }
   async preview(ids: OperationId[]): Promise<Preview> {
@@ -159,6 +165,7 @@ export class OperationEngine {
     const row = this.repo.operation(id);
     if (!row || !row.activity.rollback)
       throw new Error("No restorable snapshot for this operation.");
+    if (row.activity.ids.includes("capture-off")) this.noBoost(["capture-off"]);
     // The probe hides power-plan when High performance is missing, but going back to the prior plan needs only the helper.
     if (
       row.activity.ids.some(

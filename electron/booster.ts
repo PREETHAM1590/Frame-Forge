@@ -37,6 +37,8 @@ const pendingCaptures = (
         (_, i) => reverts[total - 1 - indices[i]!]!.state === "failed",
       )
     : captured;
+const capturePolicy =
+  "Game Bar capture is managed by an applied optimization (Disable background game capture), so a session leaves it alone.";
 const delay = (ms: number) =>
   new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
 export const modeLabels: Record<BoostMode, string> = {
@@ -170,7 +172,19 @@ export class BoostEngine {
         };
       }
     }
-    return { ...base, capabilities: this.capabilities.value };
+    return { ...base, capabilities: this.withManaged(this.capabilities.value) };
+  }
+  // The optimization owns the capture value while it is applied; show the mode cards the truth.
+  private withManaged(value: BoostCapabilities): BoostCapabilities {
+    if (!this.repo.optimizationApplied("capture-off")) return value;
+    return {
+      ...value,
+      mechanisms: value.mechanisms.map((m) =>
+        m.id === "gameBarCapture"
+          ? { ...m, available: true, active: true, detail: capturePolicy }
+          : m,
+      ),
+    };
   }
   // The owned plan changes what Optimizations can target too (Recommended and Gaming presets), so tell the platform and re-probe.
   private async plansChanged() {
@@ -257,11 +271,17 @@ export class BoostEngine {
     game: Game,
     mode: BoostMode,
     target: ProcessTarget,
-    mechanisms: CustomMechanisms,
+    requested: CustomMechanisms,
     config: BoosterConfig,
     reason: "manual" | "auto",
   ): Promise<BoostSession> {
     const captured: Captured[] = [];
+    // The capture-off optimization writes the same Windows value; applying it twice would let the revert undo it.
+    const managed =
+      requested.gameBarCapture && this.repo.optimizationApplied("capture-off");
+    const mechanisms = managed
+      ? { ...requested, gameBarCapture: false }
+      : requested;
     const session = this.save(
       {
         id: randomUUID(),
@@ -272,7 +292,16 @@ export class BoostEngine {
         endedAt: null,
         status: "preparing",
         message: `${modeLabels[mode]} mode starting for ${game.name}.${mechanisms.pauseServices && reason === "manual" ? " Windows will ask for administrator approval to pause services." : ""}`,
-        mechanisms: [],
+        mechanisms: managed
+          ? [
+              {
+                id: "gameBarCapture",
+                state: "skipped",
+                detail: capturePolicy,
+                code: "managed",
+              },
+            ]
+          : [],
         samples: [],
         failed: false,
         abnormal: false,

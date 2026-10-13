@@ -232,10 +232,14 @@ describe("new mechanisms on the mode cards", () => {
       return c;
     });
     expect(
-      within(competitive).getByText("applies (asks for admin)"),
+      await within(competitive).findByText("applies (asks for admin)"),
     ).toBeVisible();
-    expect(within(competitive).getByText("Smart core targeting")).toBeVisible();
-    expect(within(competitive).getByText("Disable core parking")).toBeVisible();
+    expect(
+      await within(competitive).findByText("Smart core targeting"),
+    ).toBeVisible();
+    expect(
+      await within(competitive).findByText("Disable core parking"),
+    ).toBeVisible();
     // GPU preference and fullscreen optimizations are launch settings, not mode effects.
     expect(
       within(card("Balanced on this PC")).queryByText(/GPU preference/),

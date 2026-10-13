@@ -156,6 +156,15 @@ export class AppService {
             "Stop or recover the Game Mode session before restoring a configuration backup.",
           );
         const previous = this.repo.state();
+        // Games missing from the backup would vanish with their saved launch-setting values, leaving Windows changed with no way to revert.
+        const inBackup = new Set(backup.state.games.map((g) => g.id));
+        const stuck = previous.games.filter(
+          (g) => !inBackup.has(g.id) && this.launch.hasRecords(g.id),
+        );
+        if (stuck.length)
+          throw new Error(
+            `Revert the launch settings for ${stuck.map((g) => g.name).join(", ")} first (Game Mode, Launch settings). This backup does not contain ${stuck.length === 1 ? "that game" : "those games"}, so restoring it would lose the saved prior values.`,
+          );
         this.desktop.setStartup(backup.state.settings.startup);
         const state = (() => {
           try {
@@ -306,7 +315,24 @@ export class AppService {
         return this.launch.apply(gameId, setting, action);
       },
       networkCheck: async ({ host, count }) => {
-        const result = await this.platform.networkCheck(host, count);
+        let result;
+        try {
+          result = await this.platform.networkCheck(host, count);
+        } catch (error) {
+          // The helper refuses a loopback or unroutable target on purpose; that is an answer, not a failed request.
+          if ((error as { code?: string }).code === "invalid-request") {
+            this.log(
+              "Network check",
+              `${host}: not run. ${error instanceof Error ? error.message : ""}`.slice(
+                0,
+                1000,
+              ),
+              "cancelled",
+            );
+            throw Object.assign(error as Error, { logged: true });
+          }
+          throw error;
+        }
         this.log(
           "Network check",
           `${result.host}: ${result.message}`.slice(0, 1000),
@@ -657,11 +683,13 @@ export class AppService {
       }
       return result;
     } catch (error) {
-      this.log(
-        "Request failed",
-        `${key} did not complete. Review the action and retry.`,
-        "failed",
-      );
+      // An expected refusal has already been recorded in its own words.
+      if (!(error as { logged?: boolean }).logged)
+        this.log(
+          "Request failed",
+          `${key} did not complete. Review the action and retry.`,
+          "failed",
+        );
       throw error;
     }
   }

@@ -230,7 +230,11 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
   const [pickAction, setPickAction] = useState<"lower" | "suspend" | "close">(
     "lower",
   );
-  const [gameId, setGameId] = useState(data.state.games[0]?.id ?? "");
+  // The picked game follows the library: a scan or removal can add, remove or reorder games after this page mounted.
+  const [picked, setGameId] = useState("");
+  const gameId = data.state.games.some((g) => g.id === picked)
+    ? picked
+    : (data.state.games[0]?.id ?? "");
   const [now, setNow] = useState(0);
   const [confirmPlan, setConfirmPlan] = useState(false);
   const [confirmServices, setConfirmServices] = useState(false);
@@ -1322,7 +1326,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                     <RotateCcw size={17} /> Revert
                   </Button>
                 )}
-                {s.state === "conflict" && (
+                {s.canRevert && s.state !== "applied" && (
                   <Button
                     disabled={pending}
                     title="Drop Frameforge's saved value without changing Windows."
@@ -1375,7 +1379,8 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
             <p className="muted">
               Windows is not changed. Frameforge drops the saved prior value, so
               it can no longer restore it. Use this when the value was changed
-              outside Frameforge and you want to keep that change.
+              outside Frameforge, or a failed change could not be undone, and
+              you want to keep what Windows has now.
             </p>
           )}
           <div className="dialog-actions">
