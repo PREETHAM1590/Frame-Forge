@@ -419,6 +419,7 @@ export class BoostEngine {
                     id: event.mechanism,
                     state: event.event,
                     detail: event.detail,
+                    ...(event.code && { code: event.code }),
                   },
                 ].slice(-400),
                 message: event.detail,
@@ -467,6 +468,8 @@ export class BoostEngine {
         // Xbox and Microsoft Store games need the Xbox services; auto-boost must never open an administrator prompt.
         storeGame: game.source === "xbox" || game.source === "msstore",
         unattended: reason === "auto",
+        // Presets leave smart core targeting off on Windows 11 hybrid CPUs; Custom can force it.
+        preset: mode !== "custom",
       });
     });
   }

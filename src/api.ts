@@ -239,6 +239,10 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
       throw new Error(desktopOnly);
     case "networkCheck":
       throw new Error("The network check requires the desktop app.");
+    case "launchSettings":
+    case "launchSettingPreview":
+    case "launchSettingApply":
+      throw new Error("Launch settings require the desktop app.");
     default:
       throw new Error("Windows operations require the desktop app.");
   }

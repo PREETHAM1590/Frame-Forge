@@ -12,6 +12,8 @@ import {
   type Captured,
   type Game,
   type Hardware,
+  type LaunchResult,
+  type LaunchSetting,
   type MechanismResult,
   type NetworkCheck,
   type OperationId,
@@ -45,8 +47,6 @@ export const capabilitiesUnavailable = (detail: string): BoostCapabilities => ({
       "smartCores",
       "coreParking",
       "powerThrottling",
-      "gpuPreference",
-      "fullscreenOptimizations",
     ] as const
   ).map((id) => ({
     id,
@@ -55,6 +55,15 @@ export const capabilitiesUnavailable = (detail: string): BoostCapabilities => ({
     active: false,
   })),
 });
+export type LaunchSettingCall = {
+  setting: LaunchSetting;
+  exe: string;
+  op: "read" | "apply" | "revert";
+  /** For revert: the exact prior state and the value Frameforge wrote. */
+  existed?: boolean;
+  value?: string | null;
+  applied?: string;
+};
 export interface Platform {
   capabilities: OperationId[];
   hardware(): Promise<Hardware>;
@@ -93,6 +102,8 @@ export interface Platform {
   ): Promise<MechanismResult[]>;
   // Diagnostics only: pings the host through the helper and changes nothing.
   networkCheck(host: string, count: number): Promise<NetworkCheck>;
+  // Per-game launch settings (GPU preference, fullscreen optimizations): read, apply or revert one value.
+  launchSetting(call: LaunchSettingCall): Promise<LaunchResult>;
   // Creates the Frameforge plan under a GUID Frameforge already recorded.
   createPowerPlan(destination: string): Promise<void>;
   deletePowerPlan(ownedPlan: string): Promise<string>;
@@ -344,6 +355,21 @@ export class WindowsPlatform implements Platform {
     if (!result.reverts) throw new Error("Missing recovery results");
     return result.reverts;
   }
+  async launchSetting(call: LaunchSettingCall) {
+    const result = await this.call({
+      command: "launch-setting",
+      launch: {
+        setting: call.setting,
+        exe: call.exe,
+        op: call.op,
+        existed: call.existed ?? false,
+        value: call.value ?? null,
+        applied: call.applied ?? null,
+      },
+    });
+    if (!result.launch) throw new Error("Missing launch setting result");
+    return result.launch;
+  }
   async networkCheck(host: string, count: number) {
     // Up to 30 pings at 1 s timeout and 200 ms spacing, plus name resolution.
     const result = await this.call(
@@ -545,6 +571,10 @@ export class MockPlatform implements Platform {
   async boostRecover(captured: Captured[]): Promise<MechanismResult[]> {
     void captured;
     throw new Error("Game booster requires the Windows helper.");
+  }
+  async launchSetting(call: LaunchSettingCall): Promise<LaunchResult> {
+    void call;
+    throw new Error("Launch settings need the Windows helper.");
   }
   async networkCheck(host: string, count: number): Promise<NetworkCheck> {
     void host;

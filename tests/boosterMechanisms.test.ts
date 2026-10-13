@@ -35,8 +35,6 @@ const newIds = [
   "smartCores",
   "coreParking",
   "powerThrottling",
-  "gpuPreference",
-  "fullscreenOptimizations",
 ] as const;
 // The same JSON the C# tests assert the helper writes (BoosterMechanismTests.NewJsonShapesMatchWhatNodeSendsAndExpects).
 const helperLines = {
@@ -45,7 +43,7 @@ const helperLines = {
   parking: `{"mechanism":"coreParking","prior":"4","applied":"100","scheme":"396783ca-20d2-459f-b042-4722bc020d51","setting":"cpmincores"}`,
 };
 const csharpMechanismKeys =
-  "gameMode,priority,affinity,powerPlan,lowerBackground,suspendBackground,closeBackground,timerResolution,pauseServices,gameBarCapture,smartCores,coreParking,powerThrottling,gpuPreference,fullscreenOptimizations".split(
+  "gameMode,priority,affinity,powerPlan,lowerBackground,suspendBackground,closeBackground,timerResolution,pauseServices,gameBarCapture,smartCores,coreParking,powerThrottling".split(
     ",",
   );
 describe("second-pass booster contracts", () => {
@@ -111,6 +109,8 @@ describe("second-pass booster contracts", () => {
       },
     };
     const parsed = StateSchema.parse(old);
+    // The first-pass session toggles are gone; their keys are rejected by the schema and removed by the migration below.
+    expect(Object.keys(parsed.booster.custom)).not.toContain("gpuPreference");
     expect(parsed.booster.custom).toMatchObject({
       gameMode: true,
       priority: "High",
@@ -140,36 +140,75 @@ describe("second-pass booster contracts", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+  it("migration 4 drops the legacy GPU preference and fullscreen keys from configuration and backups", () => {
+    const legacy = {
+      ...defaultState,
+      booster: {
+        ...defaultState.booster,
+        mode: "custom",
+        custom: {
+          ...defaultState.booster.custom,
+          gameMode: true,
+          gpuPreference: true,
+          fullscreenOptimizations: true,
+        },
+      },
+    };
+    expect(StateSchema.safeParse(legacy).success).toBe(false);
+    const dir = mkdtempSync(path.join(os.tmpdir(), "frameforge-v4-"));
+    const file = path.join(dir, "legacy.db");
+    try {
+      const repo = new Repository(file);
+      repo.backup("Before");
+      repo.close();
+      const db = new DatabaseSync(file);
+      db.prepare("UPDATE configuration SET payload=? WHERE id=1").run(
+        JSON.stringify(legacy),
+      );
+      db.prepare("UPDATE backups SET payload=?").run(JSON.stringify(legacy));
+      db.exec("PRAGMA user_version=3");
+      db.close();
+      const migrated = new Repository(file);
+      expect(migrated.state().booster.custom.gameMode).toBe(true);
+      expect(Object.keys(migrated.state().booster.custom)).not.toContain(
+        "fullscreenOptimizations",
+      );
+      expect(migrated.backups()).toHaveLength(1);
+      migrated.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it("wires the mechanisms into modes as researched", () => {
     const on = (mode: keyof typeof modeMechanisms) =>
       newIds.filter((id) => modeMechanisms[mode][id]);
     expect(on("off")).toEqual([]);
     expect(on("balanced").sort()).toEqual(
-      ["gameBarCapture", "gpuPreference", "powerThrottling"].sort(),
+      ["gameBarCapture", "powerThrottling"].sort(),
     );
     expect(on("performance").sort()).toEqual(
-      [
-        "gameBarCapture",
-        "gpuPreference",
-        "powerThrottling",
-        "smartCores",
-      ].sort(),
+      ["gameBarCapture", "powerThrottling", "smartCores"].sort(),
     );
     expect(on("competitive").sort()).toEqual(
       [
         "coreParking",
         "gameBarCapture",
-        "gpuPreference",
         "pauseServices",
         "powerThrottling",
         "smartCores",
       ].sort(),
     );
-    // Nothing that opens an administrator prompt before Competitive; the advanced opt-in is in no preset.
+    // Nothing that opens an administrator prompt before Competitive. GPU preference and fullscreen optimizations are
+    // per-game launch settings and exist in no mode.
     expect(modeMechanisms.balanced.pauseServices).toBe(false);
     expect(modeMechanisms.performance.pauseServices).toBe(false);
-    for (const mode of ["balanced", "performance", "competitive"] as const)
-      expect(modeMechanisms[mode].fullscreenOptimizations).toBe(false);
+    expect(MechanismId.options).not.toContain("gpuPreference");
+    expect(MechanismId.options).not.toContain("fullscreenOptimizations");
+    expect(Object.keys(modeMechanisms.competitive)).not.toContain(
+      "gpuPreference",
+    );
+    // Smart cores is a preset default only where Windows has no Thread Director (the helper keeps it off in presets on Windows 11).
+    expect(modeMechanisms.balanced.smartCores).toBe(false);
   });
   it("validates network check requests and results", () => {
     expect(

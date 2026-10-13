@@ -99,8 +99,6 @@ export const MechanismId = z.enum([
   "smartCores",
   "coreParking",
   "powerThrottling",
-  "gpuPreference",
-  "fullscreenOptimizations",
 ]);
 export type MechanismId = z.infer<typeof MechanismId>;
 export const CustomMechanismsSchema = z
@@ -119,8 +117,6 @@ export const CustomMechanismsSchema = z
     smartCores: z.boolean().default(false),
     coreParking: z.boolean().default(false),
     powerThrottling: z.boolean().default(false),
-    gpuPreference: z.boolean().default(false),
-    fullscreenOptimizations: z.boolean().default(false),
   })
   .strict();
 export type CustomMechanisms = z.infer<typeof CustomMechanismsSchema>;
@@ -146,12 +142,12 @@ const noMechanisms: CustomMechanisms = {
   smartCores: false,
   coreParking: false,
   powerThrottling: false,
-  gpuPreference: false,
-  fullscreenOptimizations: false,
 };
 // What each preset mode applies. Custom uses the saved toggles.
-// Nothing that opens an administrator prompt (pauseServices) is in Balanced or Performance, and fullscreenOptimizations
-// (opt-in advanced) is in no preset mode at all.
+// Nothing that opens an administrator prompt (pauseServices) is in Balanced or Performance. GPU preference and fullscreen
+// optimizations are per-game launch settings, not session mechanisms. smartCores is on in Performance and Competitive only
+// where Windows has no Thread Director (Windows 10 hybrid CPUs); the helper keeps it off in presets on Windows 11, and it is
+// always available in Custom.
 export const modeMechanisms: Record<
   Exclude<BoostMode, "custom">,
   CustomMechanisms
@@ -163,7 +159,6 @@ export const modeMechanisms: Record<
     priority: "AboveNormal",
     gameBarCapture: true,
     powerThrottling: true,
-    gpuPreference: true,
   },
   performance: {
     ...noMechanisms,
@@ -173,7 +168,6 @@ export const modeMechanisms: Record<
     lowerBackground: true,
     gameBarCapture: true,
     powerThrottling: true,
-    gpuPreference: true,
     smartCores: true,
   },
   competitive: {
@@ -186,7 +180,6 @@ export const modeMechanisms: Record<
     timerResolution: true,
     gameBarCapture: true,
     powerThrottling: true,
-    gpuPreference: true,
     smartCores: true,
     coreParking: true,
     pauseServices: true,
@@ -360,6 +353,8 @@ export const MechanismResultSchema = z
       "conflict",
     ]),
     detail: z.string().max(500),
+    /** Stable kebab-case reason for service failures and skips. */
+    code: z.string().max(40).optional(),
   })
   .strict();
 export type MechanismResult = z.infer<typeof MechanismResultSchema>;
@@ -406,6 +401,8 @@ export const CpuTopologySchema = z
     efficiencyCores: z.number().int().nonnegative(),
     efficiencyThreads: z.number().int().nonnegative(),
     dualCcdX3d: z.boolean(),
+    /** A hybrid CPU on Windows 11: the hardware scheduler already places games on the performance cores. */
+    threadDirector: z.boolean().default(false),
     summary: z.string().max(300),
   })
   .strict();
@@ -460,6 +457,70 @@ export const NetworkHost = z
   .min(1)
   .max(253)
   .regex(/^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|[0-9A-Fa-f:.]+)$/);
+/** Per-game launch settings: Windows reads them when the game starts, so they are applied and reverted explicitly. */
+export const LaunchSetting = z.enum([
+  "gpuPreference",
+  "fullscreenOptimizations",
+]);
+export type LaunchSetting = z.infer<typeof LaunchSetting>;
+export const LaunchResultSchema = z
+  .object({
+    setting: LaunchSetting,
+    exe: z.string().max(2048),
+    state: z.enum([
+      "ready",
+      "already-set",
+      "applied",
+      "reverted",
+      "conflict",
+      "unsupported",
+      "failed",
+    ]),
+    detail: z.string().max(500),
+    current: z.string().max(2048).nullable(),
+    after: z.string().max(2048).nullable(),
+    existed: z.boolean(),
+  })
+  .strict();
+export type LaunchResult = z.infer<typeof LaunchResultSchema>;
+export const LaunchStatusSchema = z
+  .object({
+    gameId: Id,
+    executable: z.string().max(2048).nullable(),
+    settings: z.array(
+      z
+        .object({
+          setting: LaunchSetting,
+          state: z.enum([
+            "ready",
+            "already-set",
+            "applied",
+            "conflict",
+            "unsupported",
+            "failed",
+          ]),
+          detail: z.string().max(500),
+          current: z.string().max(2048).nullable(),
+          /** Frameforge changed it and holds the prior value, so Revert is offered. */
+          canRevert: z.boolean(),
+          appliedAt: z.string().nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type LaunchStatus = z.infer<typeof LaunchStatusSchema>;
+export const LaunchPreviewSchema = z
+  .object({
+    setting: LaunchSetting,
+    action: z.enum(["apply", "revert"]),
+    exe: z.string().max(2048),
+    before: z.string().max(2048).nullable(),
+    after: z.string().max(2048).nullable(),
+    warning: z.string().max(500),
+  })
+  .strict();
+export type LaunchPreview = z.infer<typeof LaunchPreviewSchema>;
 export const RunningProcessSchema = z
   .object({
     image: z.string().max(260),
@@ -627,6 +688,23 @@ export const requests = {
       count: z.number().int().min(3).max(30).default(10),
     })
     .strict(),
+  launchSettings: z.object({ gameId: Id }).strict(),
+  launchSettingPreview: z
+    .object({
+      gameId: Id,
+      setting: LaunchSetting,
+      action: z.enum(["apply", "revert"]),
+    })
+    .strict(),
+  // "forget" drops Frameforge's saved prior value without touching Windows (used after an outside change).
+  launchSettingApply: z
+    .object({
+      gameId: Id,
+      setting: LaunchSetting,
+      action: z.enum(["apply", "revert", "forget"]),
+      confirmed: z.literal(true),
+    })
+    .strict(),
   // Consent-gated: create (or remove) the Frameforge copy of Windows' High performance plan.
   boostPowerPlan: z
     .object({
@@ -681,6 +759,9 @@ export const responses = {
   boostRecover: BoostSessionSchema.nullable(),
   runningProcesses: z.array(RunningProcessSchema).max(500),
   networkCheck: NetworkCheckSchema,
+  launchSettings: LaunchStatusSchema,
+  launchSettingPreview: LaunchPreviewSchema,
+  launchSettingApply: LaunchStatusSchema,
   boostPowerPlan: BoostStatusSchema,
   removeGame: StateSchema,
   profile: StateSchema,
@@ -782,6 +863,7 @@ export const HelperResult = z
     backgroundProcesses: z.array(RunningProcessSchema).optional(),
     capabilities: BoostCapabilitiesSchema.optional(),
     network: NetworkCheckSchema.optional(),
+    launch: LaunchResultSchema.optional(),
     reverts: z.array(MechanismResultSchema).optional(),
     powerPlan: Id.optional(),
     driveCoverage: z.enum(["confirmed", "off", "unknown"]).optional(),
@@ -855,6 +937,7 @@ export const SessionEventSchema = z.union([
       ]),
       mechanism: MechanismId,
       detail: z.string().max(500),
+      code: z.string().max(40).optional(),
     })
     .strict(),
   z.object({ event: z.literal("ready") }).strict(),
