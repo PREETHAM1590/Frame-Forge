@@ -13,7 +13,7 @@ try
     var line = new StreamReader(Console.OpenStandardInput(), new System.Text.UTF8Encoding(false)).ReadLine();
     if (line is null || line.Length > 32768) throw new InvalidOperationException("Invalid request size.");
     var request = JsonSerializer.Deserialize<Request>(line, options) ?? throw new InvalidOperationException("Missing request.");
-    var engine = new RegistryOperations(new WindowsRegistryStore());
+    var engine = new Optimizations(new RegistryOperations(new WindowsRegistryStore()), new WindowsPowerStore());
     var ids = request.Ids ?? [];
     response = request.Command switch
     {
@@ -36,6 +36,6 @@ catch (Exception error)
     response = new { ok = false, message = error is InvalidOperationException ? error.Message : "Windows could not complete the request. Check permissions and hardware availability." };
 }
 Console.WriteLine(JsonSerializer.Serialize(response, options));
-static object Apply(RegistryOperations engine, string[] ids, Snapshot snapshot) { engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written." }; }
-static object Restore(RegistryOperations engine, Snapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
-record Request(string Command, string[]? Ids, Snapshot? Snapshot, bool Force = false, string? GamePath = null, string? ExecutablePath = null, ProcessTarget? Target = null, ElevatedRequest? Elevated = null, string? ResultPath = null);
+static object Apply(Optimizations engine, string[] ids, OptimizationSnapshot snapshot) { engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written." }; }
+static object Restore(Optimizations engine, OptimizationSnapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
+record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, string? GamePath = null, string? ExecutablePath = null, ProcessTarget? Target = null, ElevatedRequest? Elevated = null, string? ResultPath = null);
