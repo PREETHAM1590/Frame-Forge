@@ -149,7 +149,7 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
 public static class RestoreCommands
 {
     private static readonly Regex DescriptionPattern = new(@"\A[\p{L}\p{N} ._()\-]{1,64}\z");
-    private static readonly Regex ResultName = new(@"\Aframeforge-[0-9a-f]{32}\.json\z");
+    internal static readonly Regex ResultName = new(@"\Aframeforge-[0-9a-f]{32}\.json\z");
     private static readonly Regex DrivePattern = new(@"\A[A-Z]:\z");
     public static bool ValidDescription(string? text) => text is not null && DescriptionPattern.IsMatch(text);
     private static bool Flag(string text, out bool value) { value = text == "1"; return text is "0" or "1"; }
@@ -187,7 +187,7 @@ public static class RestoreCommands
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetFinalPathNameByHandleW(SafeFileHandle file, StringBuilder path, uint length, uint flags);
-    private static string FinalPath(SafeFileHandle handle)
+    internal static string FinalPath(SafeFileHandle handle)
     {
         var buffer = new StringBuilder(1024);
         var length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
@@ -237,7 +237,7 @@ public static class RestoreCommands
         }
     }
     public static readonly TimeSpan ParentWait = TimeSpan.FromSeconds(150);
-    private static int? ExitCode(Process child)
+    internal static int? ExitCode(Process child)
     {
         try { return child.ExitCode; } catch (Exception error) when (error is InvalidOperationException or Win32Exception) { return null; }
     }
@@ -247,11 +247,11 @@ public static class RestoreCommands
         if (document.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("Invalid administrator result.");
         return document.RootElement.Clone();
     }
-    private static void TryDelete(string path)
+    internal static void TryDelete(string path)
     {
         try { File.Delete(path); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { /* Swept on a later run. */ }
     }
-    private static void SweepStaleResults()
+    internal static void SweepStaleResults()
     {
         try
         {

@@ -36,6 +36,7 @@ try
         // Untrusted input bound, above the per-session capture cap; every item is attempted.
         "boost-recover" when request.Captured is { Length: <= 1000 } captured && captured.All(c => c is not null) => new { ok = true, message = "Saved booster changes checked.", reverts = Booster().Recover(captured) },
         "boost-recover" => throw new InvalidOperationException("Too many or invalid saved booster changes (limit 1000)."),
+        "launch-setting" when request.Launch is not null => new { ok = true, message = "Launch setting checked.", launch = LaunchSettings.Run(request.Launch, new WindowsRegistryAccess(), new WindowsGpuInfo()) },
         "network-check" when request.Host is not null => new { ok = true, message = "Network check completed.", network = NetworkCheck.Run(request.Host, request.Count, new WindowsPinger(), new WindowsResolver()) },
         // Frameforge records the destination GUID before asking, so a created plan is never left unrecorded.
         "power-create-plan" when owned is { } destination => CreatePlan(destination),
@@ -56,4 +57,4 @@ Console.WriteLine(JsonSerializer.Serialize(response, options));
 static object CreatePlan(Guid destination) { BoostSessionEngine.CreatePlan(new WindowsPowerStore(), destination); return new { ok = true, message = "Frameforge High performance plan created and verified. The active plan was not changed.", powerPlan = destination.ToString() }; }
 static object Apply(Optimizations engine, string[] ids, OptimizationSnapshot snapshot) { engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written." }; }
 static object Restore(Optimizations engine, OptimizationSnapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
-record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null, bool Elevate = true, string? Host = null, int Count = 0);
+record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null, bool Elevate = true, string? Host = null, int Count = 0, LaunchRequest? Launch = null);

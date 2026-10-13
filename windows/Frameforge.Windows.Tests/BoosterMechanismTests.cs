@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Net;
 using System.Text.Json;
 using Frameforge.Windows;
@@ -9,7 +9,7 @@ public class BoosterMechanismTests
     private const string Sid = "S-1-5-21-1", Start = "2026-10-12T10:00:00.0000000Z";
     private static readonly ProcessTarget Game = new(100, Start, @"C:\Games\Test\game.exe", "game", "Normal");
     private static Mechanisms Off() => new(false, "Normal", null, false, false, false, false, false);
-    private static SessionCommand Command(Mechanisms m, bool store = false, bool unattended = false) => new("start", Game.Pid, Game.StartTime, Game.ExecutablePath, m, [], 50, null, store, unattended);
+    private static SessionCommand Command(Mechanisms m, bool store = false, bool unattended = false, bool preset = false) => new("start", Game.Pid, Game.StartTime, Game.ExecutablePath, m, [], 50, null, store, unattended, preset);
 
     // ---- fakes ----
     private sealed class Processes : IProcessControl
@@ -506,47 +506,58 @@ public class BoosterMechanismTests
         Assert.Equal(10u, rig.Settings.Values[(BoostSessionEngine.HighPerformance, BoosterPaths.CpMinCores)]);
     }
 
-    // ---- per-exe values ----
+    // ---- launch settings (per-game, persistent) ----
     private const string Layers = BoosterPaths.Layers, Gpu = BoosterPaths.GpuPreferences;
+    private const string Exe = @"C:\Games\Test\game.exe";
     [Fact]
     public void GpuPreferenceMergesWithExistingPairsAndRestoresTheExactString()
     {
         Assert.Equal("AutoHDREnable=2097;GpuPreference=2;", BoosterPaths.WithGpuPreference("AutoHDREnable=2097;"));
         Assert.Equal("GpuPreference=2;", BoosterPaths.WithGpuPreference(null));
         Assert.Equal("GpuPreference=2;AppStatus=1;", BoosterPaths.WithGpuPreference("GpuPreference=1;AppStatus=1;"));
-        var rig = Setup();
-        rig.Registry.Values[(Gpu, Game.ExecutablePath)] = new(true, "String", "AutoHDREnable=2097;");
-        rig.Engine.Start(Command(Off() with { GpuPreference = true }));
-        Assert.Equal("AutoHDREnable=2097;GpuPreference=2;", rig.Registry.Values[(Gpu, Game.ExecutablePath)].Value);
-        Assert.Contains("already running keeps", Result(rig, "gpuPreference").Detail);
-        var item = CapturedOf(rig, "gpuPreference");
-        Assert.Equal("reverted", rig.Engine.Revert().Single().State);
-        Assert.Equal("AutoHDREnable=2097;", rig.Registry.Values[(Gpu, Game.ExecutablePath)].Value);
+        var registry = new Registry { Values = { [(Gpu, Exe)] = new(true, "String", "AutoHDREnable=2097;") } };
+        var read = LaunchSettings.Run(new("gpuPreference", Exe, "read"), registry, new Gpus(2));
+        Assert.Equal(("ready", "AutoHDREnable=2097;", "AutoHDREnable=2097;GpuPreference=2;"), (read.State, read.Current, read.After));
+        Assert.Empty(registry.Writes);
+        var applied = LaunchSettings.Run(new("gpuPreference", Exe, "apply"), registry, new Gpus(2));
+        Assert.Equal(("applied", true), (applied.State, applied.Existed));
+        Assert.Equal("AutoHDREnable=2097;GpuPreference=2;", registry.Values[(Gpu, Exe)].Value);
+        var revert = LaunchSettings.Run(new("gpuPreference", Exe, "revert", true, "AutoHDREnable=2097;", applied.After), registry, new Gpus(2));
+        Assert.Equal("reverted", revert.State);
+        Assert.Equal("AutoHDREnable=2097;", registry.Values[(Gpu, Exe)].Value);
+        // Reverting again is a no-op that still reports reverted.
+        Assert.Equal("reverted", LaunchSettings.Run(new("gpuPreference", Exe, "revert", true, "AutoHDREnable=2097;", applied.After), registry, new Gpus(2)).State);
 
-        var absent = Setup();
-        absent.Engine.Start(Command(Off() with { GpuPreference = true }));
-        Assert.Equal("GpuPreference=2;", absent.Registry.Values[(Gpu, Game.ExecutablePath)].Value);
-        Assert.Equal("reverted", absent.Engine.Revert().Single().State);
-        Assert.False(absent.Registry.Values.ContainsKey((Gpu, Game.ExecutablePath)));
+        var absent = new Registry();
+        var set = LaunchSettings.Run(new("gpuPreference", Exe, "apply"), absent, new Gpus(2));
+        Assert.False(set.Existed);
+        Assert.Equal("GpuPreference=2;", absent.Values[(Gpu, Exe)].Value);
+        Assert.Equal("reverted", LaunchSettings.Run(new("gpuPreference", Exe, "revert", false, null, set.After), absent, new Gpus(2)).State);
+        Assert.False(absent.Values.ContainsKey((Gpu, Exe)), "a value that did not exist is deleted, not left empty");
 
-        rig.Registry.Values[(Gpu, Game.ExecutablePath)] = new(true, "String", "AutoHDREnable=2097;GpuPreference=2;");
-        rig.Registry.Values[(Gpu, Game.ExecutablePath)] = new(true, "String", "Changed=1;");
-        Assert.Equal("conflict", rig.Engine.Recover([item]).Single().State);
-        Assert.Equal("Changed=1;", rig.Registry.Values[(Gpu, Game.ExecutablePath)].Value);
+        absent.Values[(Gpu, Exe)] = new(true, "String", "Changed=1;");
+        var conflict = LaunchSettings.Run(new("gpuPreference", Exe, "revert", false, null, "GpuPreference=2;"), absent, new Gpus(2));
+        Assert.Equal(("conflict", "Changed=1;"), (conflict.State, conflict.Current));
+        Assert.Equal("Changed=1;", absent.Values[(Gpu, Exe)].Value);
     }
     [Fact]
-    public void GpuPreferenceIsUnsupportedWithOneAdapterAndForNonExePaths()
+    public void LaunchSettingsRefuseUnsupportedAndUnsafeRequests()
     {
-        var one = Setup(gpus: 1);
-        one.Engine.Start(Command(Off() with { GpuPreference = true }));
-        Assert.Equal("unsupported", one.Steps.Single().Event);
-        Assert.Empty(one.Registry.Writes);
-        var item = new Captured("gpuPreference", RegValues: [new RegCapture(Gpu, "relative.txt", "String", false, null, "GpuPreference=2;")]);
-        Assert.Equal("failed", one.Engine.Recover([item]).Single().State);
-        var elsewhere = new Captured("gpuPreference", RegValues: [new RegCapture(@"Software\Microsoft\Windows\CurrentVersion\Run", @"C:\x\game.exe", "String", false, null, "GpuPreference=2;")]);
-        Assert.Equal("failed", one.Engine.Recover([elsewhere]).Single().State);
-        var unc = new Captured("gpuPreference", RegValues: [new RegCapture(Gpu, @"\\server\share\game.exe", "String", false, null, "GpuPreference=2;")]);
-        Assert.Equal("failed", one.Engine.Recover([unc]).Single().State);
+        var registry = new Registry();
+        Assert.Equal("unsupported", LaunchSettings.Run(new("gpuPreference", Exe, "read"), registry, new Gpus(1)).State);
+        Assert.Equal("unsupported", LaunchSettings.Run(new("gpuPreference", Exe, "apply"), registry, new Gpus(1)).State);
+        Assert.Empty(registry.Writes);
+        // Fullscreen optimizations do not need a second GPU.
+        Assert.Equal("ready", LaunchSettings.Run(new("fullscreenOptimizations", Exe, "read"), registry, new Gpus(1)).State);
+        registry.Values[(Gpu, Exe)] = new(true, "DWord", 1);
+        Assert.Equal("unsupported", LaunchSettings.Run(new("gpuPreference", Exe, "apply"), registry, new Gpus(2)).State);
+        foreach (var exe in new[] { "relative.txt", @"C:\x\game.bat", @"\\server\share\game.exe", "" })
+            Assert.Throws<InvalidOperationException>(() => LaunchSettings.Run(new("gpuPreference", exe, "apply"), registry, new Gpus(2)));
+        Assert.Throws<InvalidOperationException>(() => LaunchSettings.Run(new("autoexec", Exe, "apply"), registry, new Gpus(2)));
+        Assert.Throws<InvalidOperationException>(() => LaunchSettings.Run(new("gpuPreference", Exe, "delete"), registry, new Gpus(2)));
+        Assert.Throws<InvalidOperationException>(() => LaunchSettings.Run(new("gpuPreference", Exe, "revert", true, null, "x"), registry, new Gpus(2)));
+        Assert.Throws<InvalidOperationException>(() => LaunchSettings.Run(new("gpuPreference", Exe, "revert", false, "x", "x"), registry, new Gpus(2)));
+        Assert.Equal(1, registry.Values[(Gpu, Exe)].Value);
     }
     [Fact]
     public void FullscreenOptimizationsMergeFlagsAndRestoreExactly()
@@ -554,21 +565,226 @@ public class BoosterMechanismTests
         Assert.Equal("~ DISABLEDXMAXIMIZEDWINDOWEDMODE", BoosterPaths.WithFsoOff(null));
         Assert.Equal("~ PERPROCESSSYSTEMDPIFORCEOFF DISABLEDXMAXIMIZEDWINDOWEDMODE", BoosterPaths.WithFsoOff("~ PERPROCESSSYSTEMDPIFORCEOFF"));
         Assert.Equal("~ RUNASADMIN DISABLEDXMAXIMIZEDWINDOWEDMODE", BoosterPaths.WithFsoOff("~ RUNASADMIN DISABLEDXMAXIMIZEDWINDOWEDMODE"));
-        var rig = Setup(gpus: 1);
-        rig.Registry.Values[(Layers, Game.ExecutablePath)] = new(true, "String", "~ RUNASADMIN");
-        rig.Engine.Start(Command(Off() with { FullscreenOptimizations = true }));
-        Assert.Equal("~ RUNASADMIN DISABLEDXMAXIMIZEDWINDOWEDMODE", rig.Registry.Values[(Layers, Game.ExecutablePath)].Value);
-        Assert.Equal("reverted", rig.Engine.Revert().Single().State);
-        Assert.Equal("~ RUNASADMIN", rig.Registry.Values[(Layers, Game.ExecutablePath)].Value);
+        var registry = new Registry { Values = { [(Layers, Exe)] = new(true, "String", "~ RUNASADMIN") } };
+        var applied = LaunchSettings.Run(new("fullscreenOptimizations", Exe, "apply"), registry, new Gpus(1));
+        Assert.Equal("~ RUNASADMIN DISABLEDXMAXIMIZEDWINDOWEDMODE", registry.Values[(Layers, Exe)].Value);
+        Assert.Equal("reverted", LaunchSettings.Run(new("fullscreenOptimizations", Exe, "revert", true, "~ RUNASADMIN", applied.After), registry, new Gpus(1)).State);
+        Assert.Equal("~ RUNASADMIN", registry.Values[(Layers, Exe)].Value);
+        var already = new Registry { Values = { [(Layers, Exe)] = new(true, "String", "~ DISABLEDXMAXIMIZEDWINDOWEDMODE") } };
+        Assert.Equal("already-set", LaunchSettings.Run(new("fullscreenOptimizations", Exe, "apply"), already, new Gpus(1)).State);
+        Assert.Empty(already.Writes);
+    }
+    [Fact]
+    public void LaunchSettingsAreNoLongerSessionMechanisms()
+    {
+        var rig = Setup();
+        rig.Engine.Start(Command(Off()));
+        Assert.Empty(rig.Registry.Writes);
+        Assert.DoesNotContain("GpuPreference", typeof(Mechanisms).GetProperties().Select(p => p.Name));
+        Assert.DoesNotContain("FullscreenOptimizations", typeof(Mechanisms).GetProperties().Select(p => p.Name));
+        // A saved session from the first pass is not silently "reverted" as something else.
+        Assert.Equal("failed", rig.Engine.Recover([new Captured("gpuPreference", RegValues: [new RegCapture(Gpu, Exe, "String", false, null, "GpuPreference=2;")])]).Single().State);
+    }
 
-        var absent = Setup();
-        absent.Engine.Start(Command(Off() with { FullscreenOptimizations = true }));
-        Assert.Equal("reverted", absent.Engine.Revert().Single().State);
-        Assert.False(absent.Registry.Values.ContainsKey((Layers, Game.ExecutablePath)));
+    // ---- fix round 1: services journal, ordering, codes ----
+    [Fact]
+    public void AFailedOrLateStopStaysJournaledAndIsRestartedIfItStoppedLate()
+    {
+        var rig = Setup();
+        rig.Services.Add("DiagTrack"); rig.Services.Add("Spooler");
+        // DiagTrack misses the 5 s wait; the real service stops moments later.
+        var slow = new SlowStop(rig.Services, "DiagTrack");
+        var engine = new BoostSessionEngine(rig.Processes, rig.Power, new Timer(), new MemoryStore(), rig.Steps.Add, 999, null, rig.Extras with { Elevator = slow });
+        engine.Start(Command(Off() with { PauseServices = true }));
+        Assert.Equal("applied", Result(rig, "pauseServices").Event);
+        Assert.Contains("did not stop within 5 seconds", Result(rig, "pauseServices").Detail ?? Result(rig, "pauseServices").Detail);
+        // Journal narrowed to what this session stopped or may have stopped: both here.
+        Assert.Equal(["DiagTrack", "Spooler"], CapturedOf(rig, "pauseServices").Items!);
+        rig.Services.Items["DiagTrack"] = rig.Services.Items["DiagTrack"] with { Running = false };
+        engine.Revert();
+        Assert.True(rig.Services.Query("DiagTrack").Running);
+        Assert.True(rig.Services.Query("Spooler").Running);
 
-        var already = Setup(); already.Registry.Values[(Layers, Game.ExecutablePath)] = new(true, "String", "~ DISABLEDXMAXIMIZEDWINDOWEDMODE");
-        already.Engine.Start(Command(Off() with { FullscreenOptimizations = true }));
-        Assert.Equal("skipped", already.Steps.Single().Event);
+        // When only failures happened and nothing stopped, the journal is kept too (not released).
+        var only = Setup(); only.Services.Add("DiagTrack");
+        var never = new SlowStop(only.Services, "DiagTrack");
+        var engine2 = new BoostSessionEngine(only.Processes, only.Power, new Timer(), new MemoryStore(), only.Steps.Add, 999, null, only.Extras with { Elevator = never });
+        engine2.Start(Command(Off() with { PauseServices = true }));
+        Assert.Equal("failed", Result(only, "pauseServices").Event);
+        Assert.Equal("stop-timeout", Result(only, "pauseServices").Code);
+        Assert.DoesNotContain(only.Steps, s => s.Event == "released");
+    }
+    private sealed class SlowStop(Services services, string slow) : IServiceElevator
+    {
+        public ServiceBatch Run(string action, string[] names)
+        {
+            if (action != "stop") return ServiceCommands.Execute(action, names, services, new Controllers(false));
+            // The slow one reports a timeout without stopping yet.
+            var rest = names.Where(n => n != slow).ToArray();
+            var outcomes = new List<ServiceOutcome>();
+            if (names.Contains(slow)) outcomes.Add(new(slow, "failed", "It did not stop within 5 seconds. Frameforge checks again at the end of the session and restarts it if it stopped late.", ServiceCodes.StopTimeout));
+            if (rest.Length > 0) outcomes.AddRange(ServiceCommands.Execute("stop", rest, services, new Controllers(false)).Outcomes);
+            return new(false, [.. outcomes]);
+        }
+    }
+    [Fact]
+    public void OnlyServicesTheStepStoppedAreJournaledAndOthersAreNeverStarted()
+    {
+        var rig = Setup();
+        rig.Services.Add("DiagTrack"); rig.Services.Add("SysMain"); rig.Services.Add("Spooler");
+        rig.Elevator.StopOnly = ["DiagTrack", "Spooler"];
+        rig.Engine.Start(Command(Off() with { PauseServices = true }));
+        Assert.Equal(["captured", "captured", "released", "applied"], rig.Steps.Select(s => s.Event));
+        Assert.Equal(["DiagTrack", "SysMain", "Spooler"], rig.Steps[0].Prior!.Items!);
+        Assert.Equal(["DiagTrack", "Spooler"], rig.Steps[1].Prior!.Items!);
+        // The user stops SysMain by hand mid-session: it was never ours to start.
+        rig.Services.Items["SysMain"] = rig.Services.Items["SysMain"] with { Running = false };
+        rig.Engine.Revert();
+        Assert.DoesNotContain("start SysMain", rig.Services.Calls);
+        Assert.Equal("start Spooler,DiagTrack", Calls(rig).Last());
+    }
+    [Fact]
+    public void ServicesRunFirstSoTheirRestartIsTheLastRevertStep()
+    {
+        var rig = Setup(cores: [(0, 2), (0, 2), (0, 2), (0, 2)]);
+        rig.Services.Add("DiagTrack");
+        rig.Settings.Values[(Power.Balanced, BoosterPaths.CpMinCores)] = 4;
+        rig.Engine.Start(Command(Off() with { PauseServices = true, PowerPlan = true, CoreParking = true, PowerThrottling = true }));
+        Assert.Equal("pauseServices", rig.Steps.First(s => s.Event == "captured").Mechanism);
+        var reverts = rig.Engine.Revert();
+        Assert.Equal("pauseServices", reverts.Last().Id);
+        // The prompt (start of the services) comes after every other revert had its chance.
+        Assert.Equal("start DiagTrack", Calls(rig).Last());
+    }
+    [Fact]
+    public void RevertWaitsOutAStoppingServiceAndReportsItHonestly()
+    {
+        var rig = Setup();
+        rig.Services.Add("DiagTrack");
+        rig.Services.Items["DiagTrack"] = rig.Services.Items["DiagTrack"] with { Running = false, StopPending = true };
+        var result = rig.Engine.Recover([new Captured("pauseServices", Items: ["DiagTrack"])]).Single();
+        Assert.Equal(("failed", "stop-pending"), (result.State, result.Code));
+        Assert.Contains("still shutting down", result.Detail);
+        Assert.Empty(rig.Elevator.Calls);
+        // Mixed: the settled one is started, the stopping one is reported.
+        rig.Services.Add("Spooler", running: false);
+        var mixed = rig.Engine.Recover([new Captured("pauseServices", Items: ["DiagTrack", "Spooler"])]).Single();
+        Assert.Equal(("failed", "stop-pending"), (mixed.State, mixed.Code));
+        Assert.True(rig.Services.Query("Spooler").Running);
+        // The start step refuses a service that is still stopping instead of calling StartService on it.
+        var batch = ServiceCommands.Execute("start", ["DiagTrack"], rig.Services, new Controllers(false));
+        Assert.Equal(("failed", "stop-pending"), (batch.Outcomes.Single().State, batch.Outcomes.Single().Code));
+    }
+    private sealed class FaultyStore(Services inner, string faulty) : IServiceStore
+    {
+        public ServiceInfo Query(string name) => inner.Query(name);
+        public bool Stop(string name, TimeSpan timeout) => name == faulty ? throw new InvalidOperationException($"{name} is not installed.") : inner.Stop(name, timeout);
+        public bool Start(string name, TimeSpan timeout) => inner.Start(name, timeout);
+    }
+    [Fact]
+    public void AMidBatchFailureKeepsTheOutcomesAlreadyCollected()
+    {
+        var services = new Services();
+        services.Add("DiagTrack"); services.Add("SysMain"); services.Add("Spooler");
+        var batch = ServiceCommands.Execute("stop", ["DiagTrack", "SysMain", "Spooler"], new FaultyStore(services, "SysMain"), new Controllers(false));
+        Assert.Equal(["stopped", "failed", "stopped"], batch.Outcomes.Select(o => o.State));
+        Assert.Equal("service-error", batch.Outcomes[1].Code);
+        Assert.Equal(["stop DiagTrack", "stop Spooler"], services.Calls);
+    }
+    [Fact]
+    public void SkippedServicesCarryStructuredCodes()
+    {
+        var services = new Services();
+        services.Add("DiagTrack", running: false); services.Add("Spooler", canStop: false); services.Add("TrkWks", dependents: "Other"); services.Add("XblAuthManager"); services.Add("XboxGipSvc");
+        var plan = ServicePolicy.Plan(services, true, true);
+        string Code(string name) => plan.Skipped.Single(s => s.Name == name).Code!;
+        Assert.Equal(["not-running", "cannot-stop", "has-dependents", "store-game", "controller-connected", "not-installed"], new[] { Code("DiagTrack"), Code("Spooler"), Code("TrkWks"), Code("XblAuthManager"), Code("XboxGipSvc"), Code("WSearch") });
+        var json = System.Text.Json.JsonSerializer.Serialize(new MechanismResult("pauseServices", "failed", "x", "stop-timeout"), HelperJson.Options);
+        Assert.Equal("{\"id\":\"pauseServices\",\"state\":\"failed\",\"detail\":\"x\",\"code\":\"stop-timeout\"}", json);
+        Assert.DoesNotContain("code", System.Text.Json.JsonSerializer.Serialize(new MechanismResult("a", "applied", "x"), HelperJson.Options));
+    }
+    [Fact]
+    public void TheResultFileGetsItsCanonicalPathEvenWhenTempIsAShortName()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "frameforge-long-directory-name-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var buffer = new System.Text.StringBuilder(260);
+            if (GetShortPathNameW(dir, buffer, 260) == 0 || string.Equals(buffer.ToString(), dir, StringComparison.OrdinalIgnoreCase))
+                return; // 8.3 names are switched off on this volume; nothing to prove here.
+            var shortDir = buffer.ToString();
+            var path = WindowsServiceElevator.NewResultPath(shortDir);
+            Assert.StartsWith(dir, path, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("~", path);
+            Assert.True(RestoreCommands.ValidResultPath(path));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern uint GetShortPathNameW(string longPath, System.Text.StringBuilder shortPath, uint length);
+    [Fact]
+    public void ReadingRealDependentsUsesTheRightStructStride()
+    {
+        // Dhcp, Dnscache and nsi have several running dependents on any Windows PC; protected services refuse access, so try each.
+        var store = new WindowsServiceStore();
+        foreach (var candidate in new[] { "Dhcp", "Dnscache", "nsi" })
+        {
+            ServiceInfo info;
+            try { info = store.Query(candidate); } catch (System.ComponentModel.Win32Exception) { continue; }
+            if (!info.Exists || info.ActiveDependents.Length == 0) continue;
+            // A wrong stride would produce garbage or fewer names; every name read must be a real service.
+            Assert.All(info.ActiveDependents, name => Assert.True(store.Query(name).Exists, name));
+            Assert.True(info.ActiveDependents.Length >= 2, candidate);
+            break;
+        }
+        Assert.False(store.Query("NoSuchServiceFrameforge").Exists);    }
+
+    // ---- fix round 1: smart cores on Windows 11, X3D detection ----
+    [Fact]
+    public void SmartCoresStaysOffInPresetsOnWindows11ButCustomAndWindows10CanUseIt()
+    {
+        var preset = Setup(build: 26300);
+        preset.Engine.Start(Command(Off() with { SmartCores = true }, preset: true));
+        Assert.Equal("skipped", preset.Steps.Single().Event);
+        Assert.Contains("Thread Director", preset.Steps.Single().Detail);
+        Assert.Empty(preset.Sets.Current);
+
+        var custom = Setup(build: 26300);
+        custom.Engine.Start(Command(Off() with { SmartCores = true }));
+        Assert.Equal("applied", Result(custom, "smartCores").Event);
+
+        var win10 = Setup(build: 19045);
+        win10.Engine.Start(Command(Off() with { SmartCores = true }, preset: true));
+        Assert.Equal("applied", Result(win10, "smartCores").Event);
+        Assert.Equal(8, win10.Sets.Current.Length);
+
+        // Non-hybrid stays "unsupported" even in a preset: the more useful reason wins.
+        var plain = Setup(build: 26300, cores: [(0, 2), (0, 2), (0, 2), (0, 2)]);
+        plain.Engine.Start(Command(Off() with { SmartCores = true }, preset: true));
+        Assert.Equal("unsupported", plain.Steps.Single().Event);
+    }
+    [Fact]
+    public void DualCcdX3dDetectionPrefersTheCacheLayoutAndFailsClosedOnNames()
+    {
+        foreach (var name in new[] { "AMD Ryzen 9 7950X3D 16-Core Processor", "AMD Ryzen 9 9950X3D", "AMD Ryzen 9 9900X3D", "AMD Ryzen 9 9950X3D2", "AMD Ryzen 9 7945HX3D", "AMD Ryzen 9 9955HX3D", "AMD Ryzen 9 7900X3D" })
+            Assert.True(SmartCores.IsDualCcdX3d(name), name);
+        foreach (var name in new[] { "AMD Ryzen 7 5800X3D 8-Core Processor", "AMD Ryzen 7 7800X3D", "AMD Ryzen 7 9800X3D", "AMD Ryzen 5 5600X3D", "AMD Ryzen 9 7950X", "13th Gen Intel(R) Core(TM) i5-13420H" })
+            Assert.False(SmartCores.IsDualCcdX3d(name), name);
+        // The cache layout decides when Windows reports it.
+        Assert.True(SmartCores.IsDualCcdX3d("AMD Ryzen 9 9955HX3D", [96 << 20, 32 << 20]));
+        Assert.True(SmartCores.IsDualCcdX3d("AMD Ryzen 9 9950X3D2", [96 << 20, 96 << 20]));
+        Assert.False(SmartCores.IsDualCcdX3d("AMD Ryzen 9 7945HX3D", [96 << 20]));
+        Assert.False(SmartCores.IsDualCcdX3d("AMD Ryzen 7 7800X3D", [96 << 20]));
+        Assert.False(SmartCores.IsDualCcdX3d("AMD Ryzen 9 7950X", [32 << 20, 32 << 20]));
+        Assert.False(SmartCores.IsDualCcdX3d("Intel Core i9", [36 << 20]));
+        // Core parking uses the same decision.
+        var rig = Setup(cpu: "AMD Ryzen 9 9955HX3D"); rig.Settings.Values[(Power.Balanced, BoosterPaths.CpMinCores)] = 4;
+        rig.Engine.Start(Command(Off() with { CoreParking = true }));
+        Assert.Equal("unsupported", rig.Steps.Single().Event);
+        // The real PC reports its own cache layout.
+        var real = new WindowsCpuTopology().L3Sizes();
+        Assert.True(real is null || real.Length >= 1);
     }
 
     // ---- capabilities, contract parity, network ----
@@ -577,26 +793,29 @@ public class BoosterMechanismTests
     {
         var rig = Setup(); rig.Services.Add("DiagTrack"); rig.Settings.Values[(Power.Balanced, BoosterPaths.CpMinCores)] = 4;
         var caps = BoostSessionEngine.Capabilities(rig.Power, new Timer(), 12, new MemoryStore(), null, rig.Extras);
-        string[] ids = ["pauseServices", "gameBarCapture", "smartCores", "coreParking", "powerThrottling", "gpuPreference", "fullscreenOptimizations"];
+        string[] ids = ["pauseServices", "gameBarCapture", "smartCores", "coreParking", "powerThrottling"];
         foreach (var id in ids) Assert.Contains(caps.Mechanisms, m => m.Id == id);
         Assert.True(caps.Mechanisms.Single(m => m.Id == "pauseServices").Available);
         Assert.True(caps.Mechanisms.Single(m => m.Id == "smartCores").Available);
         Assert.Equal(8, caps.Topology!.PerformanceThreads);
-        Assert.False(BoostSessionEngine.Capabilities(Setup(gpus: 1).Power, new Timer(), 12, new MemoryStore(), null, Setup(gpus: 1).Extras).Mechanisms.Single(m => m.Id == "gpuPreference").Available);
+        Assert.DoesNotContain(caps.Mechanisms, m => m.Id is "gpuPreference" or "fullscreenOptimizations");
+        Assert.True(caps.Topology!.ThreadDirector, "hybrid on build 26300");
+        Assert.Contains("Thread Director", caps.Mechanisms.Single(m => m.Id == "smartCores").Detail);
+        Assert.False(BoostSessionEngine.Capabilities(Setup(build: 19045).Power, new Timer(), 12, new MemoryStore(), null, Setup(build: 19045).Extras).Topology!.ThreadDirector);
         var none = BoostSessionEngine.Capabilities(rig.Power, new Timer(), 12, new MemoryStore(), null, null);
-        Assert.All(ids.Where(i => i != "fullscreenOptimizations"), id => Assert.False(none.Mechanisms.Single(m => m.Id == id).Available));
+        Assert.All(ids, id => Assert.False(none.Mechanisms.Single(m => m.Id == id).Available));
     }
     [Fact]
     public void NewJsonShapesMatchWhatNodeSendsAndExpects()
     {
         var options = HelperJson.Options;
         // Every mechanism key Node sends; the helper rejects unknown members.
-        var keys = "gameMode,priority,affinity,powerPlan,lowerBackground,suspendBackground,closeBackground,timerResolution,pauseServices,gameBarCapture,smartCores,coreParking,powerThrottling,gpuPreference,fullscreenOptimizations".Split(',');
+        var keys = "gameMode,priority,affinity,powerPlan,lowerBackground,suspendBackground,closeBackground,timerResolution,pauseServices,gameBarCapture,smartCores,coreParking,powerThrottling".Split(',');
         var json = "{" + string.Join(",", keys.Select(k => k == "priority" ? "\"priority\":\"High\"" : k == "affinity" ? "\"affinity\":null" : $"\"{k}\":true")) + "}";
         var parsed = JsonSerializer.Deserialize<Mechanisms>(json, options)!;
-        Assert.True(parsed.PauseServices && parsed.GameBarCapture && parsed.SmartCores && parsed.CoreParking && parsed.PowerThrottling && parsed.GpuPreference && parsed.FullscreenOptimizations);
-        var command = JsonSerializer.Deserialize<SessionCommand>("{\"command\":\"start\",\"storeGame\":true,\"unattended\":true}", options)!;
-        Assert.True(command.StoreGame && command.Unattended);
+        Assert.True(parsed.PauseServices && parsed.GameBarCapture && parsed.SmartCores && parsed.CoreParking && parsed.PowerThrottling);
+        var command = JsonSerializer.Deserialize<SessionCommand>("{\"command\":\"start\",\"storeGame\":true,\"unattended\":true,\"preset\":true}", options)!;
+        Assert.True(command.StoreGame && command.Unattended && command.Preset);
         var captured = new Captured("gameBarCapture", RegValues: [new RegCapture(BoosterPaths.GameDvr, "AppCaptureEnabled", "DWord", false, null, 0)]);
         Assert.Equal("{\"mechanism\":\"gameBarCapture\",\"regValues\":[{\"path\":\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\GameDVR\",\"name\":\"AppCaptureEnabled\",\"kind\":\"DWord\",\"existed\":false,\"value\":null,\"applied\":0}]}", JsonSerializer.Serialize(captured, options));
         var service = new Captured("pauseServices", Items: ["DiagTrack"]);

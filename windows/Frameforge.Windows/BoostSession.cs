@@ -13,11 +13,12 @@ using Microsoft.Win32.SafeHandles;
 namespace Frameforge.Windows;
 
 public record Mechanisms(bool GameMode, string Priority, int[]? Affinity, bool PowerPlan, bool LowerBackground, bool SuspendBackground, bool CloseBackground, bool TimerResolution,
-    bool PauseServices = false, bool GameBarCapture = false, bool SmartCores = false, bool CoreParking = false, bool PowerThrottling = false, bool GpuPreference = false, bool FullscreenOptimizations = false);
+    bool PauseServices = false, bool GameBarCapture = false, bool SmartCores = false, bool CoreParking = false, bool PowerThrottling = false);
 public record BackgroundRule(string Image, string Action);
 // StoreGame: the game comes from the Xbox app or Microsoft Store. Unattended: auto-boost, which must not open an administrator prompt.
+// Preset: a preset mode rather than Custom; smart core targeting stays off in presets on Windows 11 hybrid CPUs.
 public record SessionCommand(string Command, int GamePid = 0, string? GameStartTime = null, string? GamePath = null, Mechanisms? Mechanisms = null, BackgroundRule[]? Background = null, int ParentPid = 0, string? OwnedPlan = null,
-    bool StoreGame = false, bool Unattended = false);
+    bool StoreGame = false, bool Unattended = false, bool Preset = false);
 // Prior state saved before a change. Applied is what Frameforge set, so a revert only happens while it is still in place.
 // Only these optional members omit nulls; registry snapshots keep an explicit `value: null` for absent values.
 public record Captured(string Mechanism, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProcessTarget? Process = null,
@@ -30,9 +31,10 @@ public record Captured(string Mechanism, [property: JsonIgnore(Condition = JsonI
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? Items = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? AppliedItems = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RegCapture[]? RegValues = null);
-public record MechanismResult(string Id, string State, string Detail);
+public record MechanismResult(string Id, string State, string Detail, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Code = null);
 public record Step(string Event, string Mechanism, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Detail = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Captured? Prior = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Captured? Prior = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Code = null);
 public record Ended(string Event, string Reason, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Detail, MechanismResult[] Reverts);
 public record ProcInfo(ProcessTarget Target, int SessionId, string? Sid, bool Critical);
 // Active: the mechanism's effect is already in place on this PC (for example Game Mode already on).
@@ -194,8 +196,8 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         var all = processes.List();
         var info = all.FirstOrDefault(p => WindowsProcesses.Same(p.Target, game));
         if (info is null || info.Critical || info.SessionId == 0) throw new InvalidOperationException("This process is protected. Frameforge does not boost system processes.");
-        // Planned and journaled first so it is reverted last; the administrator prompt itself runs after everything else.
-        if (mechanisms.PauseServices) PlanServices(command);
+        // First, so its journal entry is the oldest and the restart prompt is the last revert step.
+        if (mechanisms.PauseServices) { PlanServices(command); PauseServices(); }
         if (mechanisms.GameMode) Run("gameMode", GameMode);
         if (mechanisms.PowerPlan) Run("powerPlan", PowerPlan);
         if (mechanisms.TimerResolution) Run("timerResolution", Timer);
@@ -205,14 +207,11 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         if (mechanisms.Affinity is { Length: > 0 } cpus) Run("affinity", () => Affinity(game, cpus));
         if (mechanisms.GameBarCapture) Run("gameBarCapture", GameBarCapture);
         if (mechanisms.PowerThrottling) Run("powerThrottling", () => PowerThrottling(game));
-        if (mechanisms.SmartCores) Run("smartCores", () => SmartCoresStep(game, mechanisms.Affinity is { Length: > 0 }));
+        if (mechanisms.SmartCores) Run("smartCores", () => SmartCoresStep(game, mechanisms.Affinity is { Length: > 0 }, command.Preset));
         if (mechanisms.CoreParking) Run("coreParking", CoreParking);
-        if (mechanisms.GpuPreference) Run("gpuPreference", () => ExeValue("gpuPreference", game));
-        if (mechanisms.FullscreenOptimizations) Run("fullscreenOptimizations", () => ExeValue("fullscreenOptimizations", game));
         foreach (var rule in rules) Background(rule, mechanisms, info, command.ParentPid, all);
         foreach (var (action, id, on) in new[] { ("lower", "lowerBackground", mechanisms.LowerBackground), ("suspend", "suspendBackground", mechanisms.SuspendBackground), ("close", "closeBackground", mechanisms.CloseBackground) })
             if (on && !rules.Any(r => r.Action == action)) emit(new("skipped", id, "Not configured: no background apps are selected for this action. Pick apps on the Game Mode page."));
-        if (mechanisms.PauseServices) PauseServices();
     }
     public MechanismResult[] Revert()
     {
@@ -232,7 +231,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         MechanismResult result;
         try { result = work(); }
         catch (Exception error) { result = new(id, "failed", Describe(error)); }
-        emit(new(result.State, result.Id, result.Detail));
+        emit(new(result.State, result.Id, result.Detail, Code: result.Code));
     }
     public static string Describe(Exception error) => error switch
     {
@@ -352,7 +351,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
                 "affinity" => RevertAffinity(item!),
                 "suspendBackground" => RevertSuspend(item!),
                 "pauseServices" => RevertServices(item!),
-                "gameBarCapture" or "gpuPreference" or "fullscreenOptimizations" => RevertRegValues(item!),
+                "gameBarCapture" => RevertRegValues(item!),
                 "powerThrottling" => RevertPowerThrottling(item!),
                 "smartCores" => RevertSmartCores(item!),
                 "coreParking" => RevertCoreParking(item!),
