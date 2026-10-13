@@ -124,8 +124,24 @@ describe("IPC surface", () => {
     ).rejects.toThrow();
     expect(opened).toEqual(["startup", "services"]);
   });
+  it("drops power-plan when this PC lacks the plan and restores it later", async () => {
+    const platform = new WindowsPlatform("unused.exe");
+    let present = false;
+    Object.assign(platform, {
+      call: async () => {
+        if (!present) throw new Error("High performance plan not present.");
+        return { ok: true, message: "ok", snapshot: { values: [] } };
+      },
+    });
+    await platform.probe();
+    expect(platform.capabilities).not.toContain("power-plan");
+    expect(platform.capabilities).toContain("mouse-precision");
+    present = true;
+    await platform.probe();
+    expect(platform.capabilities).toContain("power-plan");
+  });
   it("built-in presets only use operations the Windows helper supports", () => {
-    const supported = new WindowsPlatform("unused.exe").capabilities;
+    const supported = WindowsPlatform.supported;
     for (const preset of presets)
       for (const op of preset.ids) expect(supported, preset.name).toContain(op);
     expect(new Set(presets.map((p) => p.ids.join())).size).toBe(presets.length);

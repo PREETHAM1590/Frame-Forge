@@ -41,6 +41,8 @@ export interface Platform {
   ): Promise<PlatformRestoreStatus | null>;
   /** Result of an elevated creation that outlived the helper's wait; null while still running. */
   restoreResult(resultPath: string): Promise<PlatformCreateResult | null>;
+  /** Re-checks per-machine prerequisites and updates `capabilities`. */
+  probe?(): Promise<void>;
 }
 export type PlatformRestoreStatus = HelperRestoreStatus & { message: string };
 export type PlatformCreateResult = CreateRestorePointResult & {
@@ -82,11 +84,12 @@ const frequencyArgs = (f: Frequency) => [
   String(f.minutes ?? -1),
 ];
 export class WindowsPlatform implements Platform {
-  capabilities: OperationId[] = [
+  static readonly supported: OperationId[] = [
     "mouse-precision",
     "capture-off",
     "power-plan",
   ];
+  capabilities: OperationId[] = [...WindowsPlatform.supported];
   boostAvailable = true;
   constructor(private executable: string) {}
   private call(
@@ -167,6 +170,18 @@ export class WindowsPlatform implements Platform {
       }
       child.stdin.end(JSON.stringify(request) + "\n");
     });
+  }
+  // power-plan needs the built-in High performance plan; a read-only capture tells.
+  async probe() {
+    let power = true;
+    try {
+      await this.capture(["power-plan"]);
+    } catch {
+      power = false;
+    }
+    this.capabilities = WindowsPlatform.supported.filter(
+      (id) => power || id !== "power-plan",
+    );
   }
   async hardware() {
     const result = await this.call({ command: "hardware" });

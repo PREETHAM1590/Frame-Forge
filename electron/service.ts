@@ -302,6 +302,7 @@ export class AppService {
       : this.hardware;
   }
   async refresh(): Promise<Hardware> {
+    await this.platform.probe?.().catch(() => undefined);
     try {
       this.hardware = await this.platform.hardware();
     } catch {

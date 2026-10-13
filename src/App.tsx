@@ -153,7 +153,13 @@ export default function App() {
     setConfirmed(false);
     setNoPoint(null);
     setRestoreOffer(false);
-    if (!data || ids.some((id) => !data.capabilities.includes(id))) return;
+    if (!data || ids.some((id) => !data.capabilities.includes(id))) {
+      if (data?.mode === "desktop" && data.capabilities.length)
+        setPreviewError(
+          "A prerequisite is not met on this PC; see Prerequisites in the optimization details.",
+        );
+      return;
+    }
     setPreviewLoading(true);
     try {
       const restore = await request("restoreStatus", {}).catch(() => null);

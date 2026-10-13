@@ -38,7 +38,10 @@ export class OperationEngine {
       ids.some((id) => !this.platform.capabilities.includes(id))
     )
       throw new Error("This operation is unavailable on this installation.");
-    // A boost session restores the plan it found when it ends, which would undo this switch.
+  }
+  // A boost session restores the plan it found when it ends, which would undo this switch.
+  // Rollback is deliberately not blocked: it is a recovery path.
+  private noBoost(ids: OperationId[]) {
     if (ids.includes("power-plan") && this.repo.boostSession())
       throw new Error(
         "Stop Game Mode before changing the power plan; its session restores the plan when it ends.",
@@ -46,6 +49,7 @@ export class OperationEngine {
   }
   async preview(ids: OperationId[]): Promise<Preview> {
     this.supported(ids);
+    this.noBoost(ids);
     if (this.busy) throw new Error("Another operation is running.");
     const snapshot = await this.platform.capture(ids);
     const token = randomUUID();
@@ -92,6 +96,7 @@ export class OperationEngine {
     if (preview.expires < this.now())
       throw new Error("Preview expired. Review the settings again.");
     this.supported(preview.ids);
+    this.noBoost(preview.ids);
     this.busy = true;
     this.controller = new AbortController();
     let record: Activity | undefined;
@@ -141,7 +146,15 @@ export class OperationEngine {
     const row = this.repo.operation(id);
     if (!row || !row.activity.rollback)
       throw new Error("No restorable snapshot for this operation.");
-    this.supported(row.activity.ids);
+    // The probe hides power-plan when High performance is missing, but going back to the prior plan needs only the helper.
+    if (
+      row.activity.ids.some(
+        (id) =>
+          !this.platform.capabilities.includes(id) &&
+          !(id === "power-plan" && this.platform.probe),
+      )
+    )
+      throw new Error("This operation is unavailable on this installation.");
     this.busy = true;
     try {
       await this.platform.restore(SnapshotSchema.parse(row.snapshot), false);
