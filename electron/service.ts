@@ -229,6 +229,14 @@ export class AppService {
         return this.booster.recover(dismiss ?? false);
       },
       runningProcesses: async () => this.platform.backgroundProcesses(),
+      networkCheck: async ({ host, count }) => {
+        const result = await this.platform.networkCheck(host, count);
+        this.log(
+          "Network check",
+          `${result.host}: ${result.message}`.slice(0, 1000),
+        );
+        return result;
+      },
       boostPowerPlan: async ({ action }) => {
         guard();
         return this.booster.powerPlan(action);

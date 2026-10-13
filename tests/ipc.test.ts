@@ -65,6 +65,7 @@ const inputs: { [M in Method]: () => Request<M> } = {
   boostStop: () => ({ confirmed: true }),
   boostRecover: () => ({ confirmed: true }),
   runningProcesses: () => ({}),
+  networkCheck: () => ({ host: "example.com", count: 10 }),
   boostPowerPlan: () => ({ action: "create", confirmed: true }),
   removeGame: () => ({ id: id() }),
   profile: () => ({ id: id(), boostMode: "global", notes: "" }),
@@ -103,6 +104,7 @@ describe("IPC surface", () => {
       "boostStop",
       "boostRecover",
       "runningProcesses",
+      "networkCheck",
       "boostPowerPlan",
     ];
     localStorage.clear();

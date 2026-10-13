@@ -237,6 +237,8 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "runningProcesses":
     case "boostPowerPlan":
       throw new Error(desktopOnly);
+    case "networkCheck":
+      throw new Error("The network check requires the desktop app.");
     default:
       throw new Error("Windows operations require the desktop app.");
   }
