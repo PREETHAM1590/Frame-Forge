@@ -90,7 +90,7 @@ function bootstrap(): Bootstrap {
     backups,
     activity,
     hardware,
-    version: "0.1.0",
+    version: "1.0.0",
     capabilities: [],
     mode: "demo",
     startupSupported: false,

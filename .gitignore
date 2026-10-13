@@ -14,3 +14,5 @@ artifacts/
 out/
 *.log
 .serena/
+
+.claude/

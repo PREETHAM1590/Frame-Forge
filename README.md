@@ -2,6 +2,23 @@
 
 An original, local Windows gaming configuration application built with React, TypeScript, Vite, Tailwind, Radix, Electron and a C#/.NET Windows helper. Core desktop features work offline. Frameforge makes no FPS, latency or performance-gain claims.
 
+## Download
+
+Get the Windows installer (and the SHA-256 checksums) from the [Releases page](https://github.com/PREETHAM1590/Frame-Forge/releases). Requires Windows 10 or 11, x64.
+
+- The installer and `Frameforge.Windows.exe` helper are **not code-signed**, so Windows SmartScreen may warn on first run. Choose "More info", then "Run anyway", or compare the file against `SHA256SUMS.txt` first.
+- Pausing background services during a boost, and creating or listing Windows restore points, need administrator approval. Windows shows a UAC prompt for each of those actions. Declining the prompt changes nothing.
+
+## Known issues in 1.0.0
+
+These were found in the final review and are not fixed in this release:
+
+1. **Game capture clash.** If a Balanced, Performance or Competitive boost is running and you apply "Disable background game capture" (or a preset that includes it), the app reports success, but the boost puts the old value back when the game exits. The setting you chose is silently undone. Avoid applying it during a boost.
+2. **Two administrator prompts at once.** Loading restore points while starting a boost can open two UAC prompts back to back, and the boost can time out if the first stays open. Finish the restore-point prompt before starting a boost. A restore point created during a boost also captures the boosted state.
+3. **Stuck launch-setting records.** If a launch setting is left in the "recovery needed" state, there is no Forget button, so it cannot be cleared and the game cannot be removed from the library.
+4. **Restoring an older app backup can orphan launch settings.** If the backup does not contain a game that has a launch setting applied, that game disappears and its Windows graphics preference stays set with no way to revert it in the app. Revert launch settings before restoring a backup.
+5. **Game Mode page on first launch.** If you open Game Mode while the first automatic scan is still running, the game list can look filled in but nothing is actually selected, and Start boost stays disabled. Pick a different game and then the first one again.
+
 ## Setup
 
 Requirements: Windows x64, Node.js 22.13 or later, npm, and a .NET 8 SDK. Node's built-in `node:sqlite` is required for repository tests. The published helper is self-contained, so an installed app does not need a separate .NET runtime.
