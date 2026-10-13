@@ -9,6 +9,49 @@ export const OperationId = z.enum([
   "driver-review",
   "dns-tuning",
   "service-tuning",
+  "transparency-off",
+  "shortcut-suffix-off",
+  "classic-context-menu",
+  "explorer-compact-mode",
+  "explorer-open-this-pc",
+  "explorer-no-recent",
+  "jpeg-wallpaper-quality",
+  "sticky-keys-shortcut-off",
+  "accessibility-shortcuts-off",
+  "notifications-off",
+  "action-center-off",
+  "storage-sense-off",
+  "lock-theme-icons",
+  "clean-taskbar",
+  "visual-effects-light",
+  "reduce-ads",
+  "search-web-off",
+  "onedrive-startup-off",
+  "browser-background-off",
+  "browser-hwaccel-off",
+  "lock-screen-blur-off",
+  "insider-off",
+  "verbose-boot-status",
+  "onedrive-sync-policy-off",
+  "telemetry-minimum",
+  "harden-anonymous-access",
+  "background-apps-off",
+  "dlss-indicator",
+  "hibernate-off",
+  "boot-timeout-short",
+  "boot-menu-legacy",
+  "boot-logo-off",
+  "defender-off",
+  "mitigations-off",
+  "vbs-hyperv-off",
+  "uac-off",
+  "smartscreen-off",
+  "windows-updates-off",
+  "driver-updates-off",
+  "browser-updates-off",
+  "security-questions-off",
+  "ucpd-off",
+  "win11-checks-bypass",
 ]);
 export type OperationId = z.infer<typeof OperationId>;
 const Id = z.string().uuid();
@@ -217,7 +260,7 @@ export const BoosterConfigSchema = z
   .strict();
 export type BoosterConfig = z.infer<typeof BoosterConfigSchema>;
 export const PresetSchema = z
-  .object({ id: Id, name: Name, ids: z.array(OperationId).min(1).max(8) })
+  .object({ id: Id, name: Name, ids: z.array(OperationId).min(1).max(64) })
   .strict();
 export const StateSchema = z
   .object({
@@ -328,6 +371,22 @@ export const PreviewSchema = z
       }),
     ),
     warnings: z.array(z.string()),
+    /** Highest follow-up any selected item needs, so the dialog can say what to do after applying. */
+    restart: z
+      .enum([
+        "none",
+        "wallpaper",
+        "browser",
+        "signin",
+        "explorer",
+        "signout",
+        "reboot",
+      ])
+      .default("none"),
+    /** True when applying or rolling back shows a Windows administrator prompt. */
+    admin: z.boolean().default(false),
+    /** Selected items that lower security and need an explicit acknowledgement. */
+    security: z.array(OperationId).default([]),
   })
   .strict();
 export type Preview = z.infer<typeof PreviewSchema>;
@@ -665,6 +724,12 @@ export const BootstrapSchema = z
     activity: z.array(ActivitySchema),
     backups: z.array(BackupSchema),
     capabilities: z.array(OperationId),
+    /** When this PC last started, so "pending restart" can be told from "restarted since". */
+    bootedAt: z.string().default(""),
+    /** Applied optimizations whose registry values no longer match what Frameforge wrote (re-read at start and Refresh). */
+    drifted: z
+      .array(z.object({ activityId: Id, ids: z.array(OperationId) }).strict())
+      .default([]),
     startupSupported: z.boolean(),
     version: z.string(),
     mode: z.enum(["desktop", "demo"]),
@@ -702,7 +767,7 @@ const Selection = z
     ids: z
       .array(OperationId)
       .min(1)
-      .max(8)
+      .max(64)
       .refine(
         (ids) => new Set(ids).size === ids.length,
         "Duplicate operations",
@@ -719,7 +784,14 @@ export const requests = {
   refresh: Empty,
   settings: SettingsSchema,
   preview: Selection,
-  confirm: z.object({ token: Id, confirmed: z.literal(true) }).strict(),
+  confirm: z
+    .object({
+      token: Id,
+      confirmed: z.literal(true),
+      // Optimizations that lower security must be named here; the engine refuses a confirm without them.
+      acknowledged: z.array(OperationId).max(64).optional(),
+    })
+    .strict(),
   cancel: Empty,
   rollback: z.object({ id: Id, confirmed: z.literal(true) }).strict(),
   backup: z.object({ name: Name }).strict(),
@@ -789,7 +861,9 @@ export const requests = {
     .strict(),
   // Server-side allowlist; the renderer never sends a URI or path.
   openSettings: z
-    .object({ page: z.enum(["graphics", "startup", "network", "services"]) })
+    .object({
+      page: z.enum(["graphics", "startup", "network", "services", "defender"]),
+    })
     .strict(),
   removeGame: z.object({ id: Id }).strict(),
   // Native file dialog, opened by the main process: picks the .exe of a library game that has none (launch settings need it).
@@ -815,6 +889,8 @@ export const requests = {
     .strict(),
   removePreset: z.object({ id: Id }).strict(),
   clearActivity: z.object({ confirmed: z.literal(true) }).strict(),
+  // Ends this user's explorer.exe; Windows starts it again. Never called automatically.
+  restartExplorer: z.object({ confirmed: z.literal(true) }).strict(),
 };
 export const responses = {
   bootstrap: BootstrapSchema,
@@ -838,6 +914,7 @@ export const responses = {
   boostStatus: BoostStatusSchema,
   boostConfig: StateSchema,
   openSettings: z.boolean(),
+  restartExplorer: z.boolean(),
   boostStart: BoostSessionSchema,
   boostStop: BoostSessionSchema.nullable(),
   boostRecover: BoostSessionSchema.nullable(),
@@ -925,7 +1002,13 @@ export const RegistryValueSchema = z
     name: z.string(),
     kind: z.enum(["String", "DWord"]),
     existed: z.boolean(),
-    value: z.union([z.string().max(100), z.number().int(), z.null()]),
+    value: z.union([z.string().max(520), z.number().int(), z.null()]),
+    /** What applying writes (null = the value is removed). Absent in snapshots saved before targets were recorded. */
+    target: z
+      .union([z.string().max(520), z.number().int(), z.null()])
+      .optional(),
+    /** Key levels that were missing at capture; rollback removes exactly these. */
+    created: z.number().int().min(0).max(16).nullable().optional(),
   })
   .strict();
 // The built-in Windows plans, by GUID. The helper (BoostSession.cs) keeps the same list; a test compares the two.
@@ -940,7 +1023,7 @@ const PlanGuid = z
   .regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i);
 export const SnapshotSchema = z
   .object({
-    values: z.array(RegistryValueSchema).max(4),
+    values: z.array(RegistryValueSchema).max(64),
     // Prior active power scheme, present only when power-plan was captured.
     scheme: PlanGuid.optional(),
     // The performance plan the apply switches to (High performance, Ultimate, or the Frameforge copy).
@@ -977,7 +1060,9 @@ export const HelperResult = z
     code: z.string().max(80).optional(),
     hardware: HardwareSchema.optional(),
     snapshot: SnapshotSchema.optional(),
-    verified: z.boolean().optional(),
+    verified: z.boolean().nullable().optional(),
+    supported: z.array(z.string().max(64)).max(200).optional(),
+    drifted: z.array(z.string().max(64)).max(200).optional(),
     restorePoints: z.array(RestorePointSchema).optional(),
     createdSequence: z.number().int().nonnegative().nullable().optional(),
     available: z.boolean().optional(),

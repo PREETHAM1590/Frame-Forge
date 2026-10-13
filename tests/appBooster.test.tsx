@@ -286,7 +286,12 @@ describe("presets without a performance power plan", () => {
       name: /Review preset/,
     });
     await within(rebuilt).findByText("setting-power-plan");
-    expect(within(rebuilt).queryByText(/Skipped — not available/)).toBeNull();
+    // Other preset items this fake PC lacks stay skipped; the power plan is no longer one of them.
+    expect(
+      within(rebuilt).queryByRole("button", {
+        name: /Create High performance plan…/,
+      }),
+    ).toBeNull();
     // Still on the same page: nothing navigated away.
     expect(
       screen.queryByRole("heading", { name: "Game Mode", level: 1 }),

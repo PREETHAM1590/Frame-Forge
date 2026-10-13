@@ -1,0 +1,1407 @@
+<!doctype html>
+<html class="dark" lang="en" style="">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta content="web_dashboard" name="shell-type" />
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700;800;900&amp;family=Space+Grotesk:wght@400;500;700;900&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      @layer base {
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+        }
+        body {
+          overscroll-behavior: none;
+        }
+        main > :first-child {
+          margin-top: 0 !important;
+        }
+        main > :last-child {
+          margin-bottom: 0 !important;
+        }
+      }
+      ::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-container": "#ff5708",
+              "primary-fixed": "#ffdbcf",
+              "tertiary-fixed": "#ffddb4",
+              "secondary-container": "#fe7600",
+              secondary: "#ffb68d",
+              "on-tertiary": "#452b00",
+              "surface-container-low": "#090a0d",
+              "outline-variant": "#5c4037",
+              "inverse-surface": "#e3e2e6",
+              primary: "#ffb59c",
+              "surface-container": "#1f1f23",
+              "inverse-on-surface": "#303034",
+              "surface-tint": "#ffb59c",
+              "inverse-primary": "#aa3600",
+              "surface-container-highest": "#343538",
+              "on-secondary-fixed": "#331200",
+              "on-secondary": "#532200",
+              "on-surface-variant": "#e5beb2",
+              "on-surface": "#f5f5f7",
+              error: "#ff3b30",
+              "surface-dim": "#121316",
+              surface: "#12141a",
+              "surface-container-lowest": "#050608",
+              "primary-fixed-dim": "#ffb59c",
+              "error-container": "#93000a",
+              "tertiary-container": "#c68300",
+              "surface-variant": "#343538",
+              "surface-container-high": "#292a2d",
+              "on-secondary-container": "#5a2600",
+              "on-secondary-fixed-variant": "#763300",
+              "on-primary": "#5c1900",
+              "on-background": "#e3e2e6",
+              "secondary-fixed": "#ffdbc9",
+              tertiary: "#ffb952",
+              "on-tertiary-fixed-variant": "#633f00",
+              outline: "#5e6370",
+              "on-error-container": "#ffdad6",
+              "on-tertiary-container": "#3c2500",
+              "on-primary-container": "#511500",
+              background: "#121316",
+              "tertiary-fixed-dim": "#ffb952",
+              "surface-bright": "#38393c",
+              "on-primary-fixed": "#390c00",
+              "on-tertiary-fixed": "#291800",
+              "secondary-fixed-dim": "#ffb68d",
+              "on-error": "#690005",
+              "on-primary-fixed-variant": "#822700",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              "space-sm": "0.5rem",
+              margin: "2rem",
+              "space-md": "1rem",
+              gutter: "0px",
+              "space-xl": "2rem",
+              "space-xs": "0.25rem",
+              "space-lg": "1.5rem",
+            },
+            fontFamily: {
+              "display-lg-mobile": ["Space Grotesk"],
+              "body-md": ["Space Grotesk"],
+              "headline-md": ["Space Grotesk"],
+              "label-lg": ["JetBrains Mono"],
+              "body-sm": ["Space Grotesk"],
+              "telemetry-numeral-lg": ["JetBrains Mono"],
+              "headline-sm": ["Space Grotesk"],
+              "telemetry-numeral-md": ["JetBrains Mono"],
+              "headline-lg": ["Space Grotesk"],
+              "label-sm": ["JetBrains Mono"],
+              "label-md": ["JetBrains Mono"],
+              "body-lg": ["Space Grotesk"],
+              "headline-lg-mobile": ["Space Grotesk"],
+              "label-xs": ["JetBrains Mono"],
+              "display-lg": ["Space Grotesk"],
+            },
+            fontSize: {
+              "display-lg-mobile": [
+                "2.25rem",
+                {
+                  lineHeight: "1.1",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "900",
+                },
+              ],
+              "body-md": [
+                "0.875rem",
+                { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" },
+              ],
+              "headline-md": [
+                "1.5rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-lg": [
+                "0.875rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.05em",
+                  fontWeight: "700",
+                },
+              ],
+              "body-sm": [
+                "0.75rem",
+                { lineHeight: "1.4", letterSpacing: "0", fontWeight: "400" },
+              ],
+              "telemetry-numeral-lg": [
+                "3.75rem",
+                {
+                  lineHeight: "1",
+                  letterSpacing: "-0.03em",
+                  fontWeight: "900",
+                },
+              ],
+              "headline-sm": [
+                "1.25rem",
+                {
+                  lineHeight: "1.3",
+                  letterSpacing: "-0.01em",
+                  fontWeight: "700",
+                },
+              ],
+              "telemetry-numeral-md": [
+                "1.5rem",
+                { lineHeight: "1.1", letterSpacing: "0", fontWeight: "800" },
+              ],
+              "headline-lg": [
+                "3rem",
+                {
+                  lineHeight: "1.1",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "900",
+                },
+              ],
+              "label-sm": [
+                "0.6875rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.1em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-md": [
+                "0.75rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.08em",
+                  fontWeight: "700",
+                },
+              ],
+              "body-lg": [
+                "1.125rem",
+                { lineHeight: "1.5", letterSpacing: "0", fontWeight: "500" },
+              ],
+              "headline-lg-mobile": [
+                "2rem",
+                {
+                  lineHeight: "1.15",
+                  letterSpacing: "-0.015em",
+                  fontWeight: "900",
+                },
+              ],
+              "label-xs": [
+                "0.5625rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.12em",
+                  fontWeight: "700",
+                },
+              ],
+              "display-lg": [
+                "3.75rem",
+                {
+                  lineHeight: "1",
+                  letterSpacing: "-0.025em",
+                  fontWeight: "900",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-surface-container-lowest text-on-surface font-body-md text-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen"
+  >
+    <aside
+      class="fixed left-0 top-0 h-full w-72 bg-surface-container-low z-50 flex flex-col justify-between border-r border-outline-variant"
+    >
+      <div class="flex flex-col">
+        <div
+          class="h-14 px-space-md border-b border-outline-variant flex items-center justify-between bg-surface-container-lowest"
+        >
+          <div class="flex items-center gap-space-sm">
+            <div class="w-2.5 h-2.5 bg-primary-container"></div>
+            <span
+              class="font-headline-sm text-headline-sm uppercase tracking-tight text-on-surface font-black"
+              >AURA</span
+            >
+          </div>
+          <span
+            class="font-label-xs text-label-xs px-1.5 py-0.5 bg-primary-container text-on-primary-container uppercase font-bold tracking-widest"
+            >v2.4</span
+          >
+        </div>
+        <div
+          class="px-space-md py-space-xs border-b border-outline-variant bg-surface-container-low flex items-center justify-between"
+        >
+          <span
+            class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+            >DISPATCH INTERFACE</span
+          ><span
+            class="font-label-xs text-label-xs text-primary-container uppercase tracking-widest"
+            >SYS_RDY</span
+          >
+        </div>
+        <nav
+          class="flex flex-col py-space-xs"
+          data-active-classes="bg-primary-container text-on-primary-container border-l-4 border-secondary-container"
+        >
+          <a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="home"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-on-surface-variant flex-shrink-0"
+                >grid_view</span
+              ><span class="">Home</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >01</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="game-mode"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-on-surface-variant flex-shrink-0"
+                >sports_esports</span
+              ><span class="">Game Mode</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >02</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="games-library"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-on-surface-variant flex-shrink-0"
+                >stadia_controller</span
+              ><span class="">Games Library</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >03</span
+            ></a
+          ><a
+            aria-current="page"
+            class="flex items-center justify-between px-space-md py-3 transition-none font-label-md uppercase tracking-wider bg-primary-container text-on-primary-container border-l-4 border-secondary-container"
+            data-path="optimize"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-on-primary-container flex-shrink-0"
+                >speed</span
+              ><span class="">Optimize</span></span
+            ><span
+              class="font-mono text-[10px] tracking-widest text-on-primary-container font-bold"
+              >04</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="safety-and-backups"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-on-surface-variant flex-shrink-0"
+                >security</span
+              ><span class="">Safety &amp; Backups</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >05</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="system-and-topology"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-on-surface-variant flex-shrink-0"
+                >memory</span
+              ><span class="">System &amp; Topology</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >06</span
+            ></a
+          >
+        </nav>
+      </div>
+      <div
+        class="flex flex-col border-t border-outline-variant bg-surface-container-lowest"
+      >
+        <a
+          class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none font-label-md text-label-md uppercase tracking-wider border-b border-outline-variant"
+          data-path="settings"
+          href="#"
+          ><span class="flex items-center gap-space-sm"
+            ><span
+              class="material-symbols-outlined text-[18px] text-outline flex-shrink-0"
+              >settings</span
+            ><span class="">Settings</span></span
+          ><span class="font-mono text-[10px]">SYS</span></a
+        >
+        <div class="p-space-md flex flex-col gap-space-xs">
+          <div class="flex items-center justify-between">
+            <span
+              class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+              >TARGET NODE</span
+            ><span
+              class="flex items-center gap-1.5 font-label-xs text-label-xs text-tertiary font-bold"
+              ><span
+                class="w-1.5 h-1.5 bg-primary-container animate-pulse"
+              ></span
+              >ONLINE</span
+            >
+          </div>
+          <div
+            class="font-headline-sm text-headline-sm uppercase text-on-surface tracking-tight font-bold"
+          >
+            Rig-01 Ultra
+          </div>
+          <div
+            class="flex justify-between items-center text-outline font-label-xs text-label-xs mt-1"
+          >
+            <span class="uppercase">KERNEL TELEMETRY</span
+            ><span class="font-mono">v4.19.0-OC</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="pl-72">
+      <header
+        class="fixed top-0 left-72 right-0 h-14 bg-surface-container-low/95 backdrop-blur-md z-40 border-b border-outline-variant flex items-center justify-between px-space-md"
+      >
+        <div class="flex items-center gap-space-md">
+          <div
+            class="flex items-center gap-2 border-r border-outline-variant pr-space-md"
+          >
+            <span class="font-label-xs text-label-xs text-outline uppercase"
+              >STATUS</span
+            ><span
+              class="font-label-sm text-label-sm font-bold uppercase text-primary-container tracking-wider"
+              >SYSTEM EQUILIBRIUM: NOMINAL</span
+            >
+          </div>
+          <div
+            class="hidden lg:flex items-center gap-space-md font-label-sm text-label-sm"
+          >
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >CORE FREQ</span
+              ><span class="font-bold font-mono text-on-surface">4.85 GHz</span>
+            </div>
+            <span class="text-outline-variant">/</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >TEMP</span
+              ><span class="font-bold font-mono text-tertiary">38°C</span>
+            </div>
+            <span class="text-outline-variant">/</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >BUS LOAD</span
+              ><span class="font-bold font-mono text-on-surface">14%</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-space-sm">
+          <div
+            class="flex items-center mr-space-sm pr-space-sm border-r border-outline-variant"
+          >
+            <div
+              class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"
+            >
+              <span
+                class="material-symbols-outlined text-on-primary text-[18px]"
+                >person</span
+              >
+            </div>
+          </div>
+          <div class="flex items-center border border-outline-variant">
+            <button
+              class="w-9 h-9 flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface text-on-surface-variant transition-none border-r border-outline-variant"
+              title="Minimize Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >minimize</span
+              ></button
+            ><button
+              class="w-9 h-9 flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface text-on-surface-variant transition-none border-r border-outline-variant"
+              title="Maximize Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >crop_square</span
+              ></button
+            ><button
+              class="w-9 h-9 flex items-center justify-center hover:bg-error hover:text-on-error text-on-surface-variant transition-none"
+              title="Close Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          </div>
+        </div>
+      </header>
+      <main class="relative pt-14 w-full min-h-screen bg-surface">
+        <div class="flex flex-col w-full">
+          <!-- TOP CONTEXT TICKER / SUB-HEADER -->
+          <div
+            class="w-full bg-surface-container-low px-space-md py-space-xs flex flex-wrap items-center justify-between gap-space-sm"
+          >
+            <div
+              class="flex items-center gap-space-sm font-label-xs text-label-xs"
+            >
+              <span class="w-2 h-2 bg-primary-container inline-block"></span>
+              <span class="text-on-surface font-bold tracking-widest uppercase"
+                >DISPATCH ENGINE // KERNEL TWEAK DISPATCH</span
+              >
+              <span class="text-outline">/</span>
+              <span class="text-outline font-mono"
+                >NODE: RIG-01 ULTRA [RING-0 ACCESS]</span
+              >
+            </div>
+            <div
+              class="flex items-center gap-space-md font-label-xs text-label-xs font-mono"
+            >
+              <span class="text-outline"
+                >PENDING DISPATCH:
+                <span class="text-primary-container font-bold"
+                  >3 OPS</span
+                ></span
+              >
+              <span class="text-outline"
+                >RESTORE SNAPSHOT:
+                <span class="text-tertiary">#2024-10-24_0411_PRE</span></span
+              >
+            </div>
+          </div>
+          <!-- CONTROL BAND: PRESET CHIP SHELF & BULK ACTIONS -->
+          <div
+            class="w-full bg-surface-container-lowest p-space-md flex flex-col xl:flex-row xl:items-center justify-between gap-space-md"
+          >
+            <div class="flex flex-col gap-space-xs">
+              <div
+                class="flex items-center gap-space-sm font-label-xs text-label-xs tracking-wider uppercase text-outline"
+              >
+                <span class="">OPTIMIZATION CATALOGUE // SYSTEM PROFILES</span>
+                <span
+                  class="px-1.5 py-0.2 bg-surface-container-high text-on-surface-variant font-mono"
+                  >HOT-APPLY READY</span
+                >
+              </div>
+              <!-- Chip Shelf -->
+              <div class="flex flex-wrap items-center gap-2" id="presetChips">
+                <button
+                  class="preset-chip px-3 py-1.5 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none"
+                  type="button"
+                >
+                  ALL TWEAKS (48)
+                </button>
+                <button
+                  class="preset-chip px-3 py-1.5 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-primary-container text-on-primary-container hover:bg-secondary-container transition-none"
+                  type="button"
+                >
+                  PRESET: ESPORTS MAXIMUM LOW-LATENCY
+                </button>
+                <button
+                  class="preset-chip px-3 py-1.5 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none"
+                  type="button"
+                >
+                  PRESET: BALANCED STREAMER &amp; GAMING
+                </button>
+                <button
+                  class="preset-chip px-3 py-1.5 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none"
+                  type="button"
+                >
+                  PRESET: BENCHMARK RECORD LOCK
+                </button>
+                <button
+                  class="preset-chip px-3 py-1.5 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none"
+                  type="button"
+                >
+                  PRESET: SAFE CONSERVATIVE BASELINE
+                </button>
+              </div>
+            </div>
+            <!-- Bulk Action Trigger Stack -->
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <button
+                class="px-4 py-2.5 font-label-sm text-label-sm uppercase font-bold tracking-wider bg-surface-container text-on-surface hover:bg-surface-container-highest transition-none flex items-center gap-2"
+                type="button"
+              >
+                <span
+                  class="material-symbols-outlined text-[16px] text-tertiary"
+                  >history</span
+                >
+                <span class="">REVERT TO RESTORE POINT</span>
+              </button>
+              <button
+                class="px-5 py-2.5 font-headline-sm text-headline-sm uppercase font-black tracking-tight bg-primary-container text-on-primary-container hover:bg-secondary-container transition-none flex items-center gap-2"
+                type="button"
+              >
+                <span class="material-symbols-outlined text-[20px]">bolt</span>
+                <span class="">APPLY PRESET BATCH</span>
+              </button>
+            </div>
+          </div>
+          <!-- CATEGORY GROUPING STRIP (HORIZONTAL INDUSTRIAL TABS) -->
+          <div
+            class="w-full bg-surface-container-low px-space-md py-2 overflow-x-auto flex items-center gap-1"
+          >
+            <button
+              class="category-tab px-3.5 py-2 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-primary-container text-on-primary-container flex items-center gap-2 whitespace-nowrap transition-none"
+              type="button"
+            >
+              <span class="font-mono">01</span>
+              <span class="">FPS &amp; LATENCY (12)</span>
+            </button>
+            <button
+              class="category-tab px-3.5 py-2 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex items-center gap-2 whitespace-nowrap transition-none"
+              type="button"
+            >
+              <span class="font-mono text-outline">02</span>
+              <span class="">QUALITY OF LIFE (8)</span>
+            </button>
+            <button
+              class="category-tab px-3.5 py-2 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex items-center gap-2 whitespace-nowrap transition-none"
+              type="button"
+            >
+              <span class="font-mono text-outline">03</span>
+              <span class="">PRIVACY &amp; TELEMETRY (10)</span>
+            </button>
+            <button
+              class="category-tab px-3.5 py-2 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex items-center gap-2 whitespace-nowrap transition-none"
+              type="button"
+            >
+              <span class="font-mono text-outline">04</span>
+              <span class="">NETWORK &amp; PACKET PACING (6)</span>
+            </button>
+            <button
+              class="category-tab px-3.5 py-2 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex items-center gap-2 whitespace-nowrap transition-none"
+              type="button"
+            >
+              <span class="font-mono text-outline">05</span>
+              <span class="">BOOT &amp; STARTUP SERVICES (7)</span>
+            </button>
+            <button
+              class="category-tab px-3.5 py-2 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-tertiary hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1.5 whitespace-nowrap transition-none"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[14px] text-tertiary"
+                >warning</span
+              >
+              <span class="font-mono">06</span>
+              <span class="">ADVANCED (SECURITY TRADE-OFFS) (5)</span>
+            </button>
+          </div>
+          <!-- MAIN WORKSPACE: OPTIMIZATION CATALOG (LEFT) & TECHNICAL DRAWER (RIGHT) -->
+          <div
+            class="w-full grid grid-cols-1 xl:grid-cols-12 gap-0 bg-surface-container-lowest"
+          >
+            <!-- LEFT LIST WORKSPACE (8 COLS) -->
+            <div
+              class="xl:col-span-8 flex flex-col bg-surface-container-lowest p-space-md gap-3"
+            >
+              <!-- ITEM ROW 1 (HIGH RISK - CURRENTLY SELECTED) -->
+              <div
+                class="tweak-card bg-surface-container p-space-md flex flex-col lg:flex-row lg:items-center justify-between gap-space-md cursor-pointer hover:bg-surface-container-high transition-none"
+                data-tweak="hvci"
+              >
+                <div class="flex items-start gap-space-md min-w-0">
+                  <div
+                    class="w-8 h-8 bg-error-container text-on-error-container flex items-center justify-center flex-shrink-0 mt-0.5"
+                  >
+                    <span class="material-symbols-outlined text-[18px]"
+                      >security</span
+                    >
+                  </div>
+                  <div class="flex flex-col min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                      <span
+                        class="font-label-xs text-label-xs px-2 py-0.5 font-bold uppercase tracking-wider bg-error-container text-on-error-container"
+                      >
+                        RISK: HIGH // SECURITY TRADE-OFF
+                      </span>
+                      <span
+                        class="font-label-xs text-label-xs px-2 py-0.5 font-bold uppercase tracking-wider bg-surface-container-highest text-on-surface-variant"
+                      >
+                        KERNEL // VIRTUALIZATION
+                      </span>
+                      <span
+                        class="font-label-xs text-label-xs text-primary-container font-mono uppercase"
+                        >ID: TWEAK_0108</span
+                      >
+                    </div>
+                    <h2
+                      class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight font-bold truncate"
+                    >
+                      Disable Hypervisor-Protected Code Integrity (HVCI / Core
+                      Isolation)
+                    </h2>
+                    <p
+                      class="font-body-md text-body-md text-on-surface-variant mt-0.5"
+                    >
+                      Eliminates virtualization layer overhead for 2-4% raw L3
+                      cache latency improvement and stops arbitrary hypervisor
+                      memory traps.
+                    </p>
+                  </div>
+                </div>
+                <div
+                  class="flex items-center justify-between lg:justify-end gap-space-md flex-shrink-0"
+                >
+                  <!-- Toggle -->
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="font-label-xs text-label-xs font-mono font-bold uppercase text-primary-container"
+                      >ACTIVE</span
+                    >
+                    <button
+                      class="brutal-toggle w-12 h-6 bg-primary-container relative p-0.5 flex items-center justify-end"
+                      onclick="toggleSwitch(this)"
+                      type="button"
+                    >
+                      <span
+                        class="w-5 h-5 bg-surface-container-lowest block"
+                      ></span>
+                    </button>
+                  </div>
+                  <!-- Inspect Button -->
+                  <button
+                    class="px-3 py-2 bg-surface-container-highest hover:bg-primary-container hover:text-on-primary-container text-on-surface font-label-xs text-label-xs uppercase font-bold tracking-wider flex items-center gap-1 transition-none"
+                    onclick="inspectTweak('hvci')"
+                    type="button"
+                  >
+                    <span class="">DETAILS &amp; UNDO</span>
+                    <span class="material-symbols-outlined text-[14px]"
+                      >chevron_right</span
+                    >
+                  </button>
+                </div>
+              </div>
+              <!-- ITEM ROW 2 (SAFE) -->
+              <div
+                class="tweak-card bg-surface-container p-space-md flex flex-col lg:flex-row lg:items-center justify-between gap-space-md cursor-pointer hover:bg-surface-container-high transition-none"
+                data-tweak="affinity"
+              >
+                <div class="flex items-start gap-space-md min-w-0">
+                  <div
+                    class="w-8 h-8 bg-surface-container-highest text-primary-container flex items-center justify-center flex-shrink-0 mt-0.5"
+                  >
+                    <span class="material-symbols-outlined text-[18px]"
+                      >memory</span
+                    >
+                  </div>
+                  <div class="flex flex-col min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                      <span
+                        class="font-label-xs text-label-xs px-2 py-0.5 font-bold uppercase tracking-wider bg-surface-container-highest text-primary font-mono"
+                      >
+                        RISK: SAFE
+                      </span>
+                      <span
+                        class="font-label-xs text-label-xs px-2 py-0.5 font-bold uppercase tracking-wider bg-surface-container-highest text-on-surface-variant"
+                      >
+                        THREAD SCHEDULER // HARDWARE BUS
+                      </span>
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono uppercase"
+                        >ID: TWEAK_0102</span
+                      >
+                    </div>
+                    <h2
+                      class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight font-bold truncate"
+                    >
+                      Interrupt Affinity Steering (MSI Mode &amp; Core Pinning)
+                    </h2>
+                    <p
+                      class="font-body-md text-body-md text-on-surface-variant mt-0.5"
+                    >
+                      Redirects GPU and NVMe interrupts to designated CPU
+                      threads, eliminating core #0 contention during intense
+                      rendering.
+                    </p>
+                  </div>
+                </div>
+                <div
+                  class="flex items-center justify-between lg:justify-end gap-space-md flex-shrink-0"
+                >
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="font-label-xs text-label-xs font-mono font-bold uppercase text-primary-container"
+                      >ACTIVE</span
+                    >
+                    <button
+                      class="brutal-toggle w-12 h-6 bg-primary-container relative p-0.5 flex items-center justify-end"
+                      onclick="toggleSwitch(this)"
+                      type="button"
+                    >
+                      <span
+                        class="w-5 h-5 bg-surface-container-lowest block"
+                      ></span>
+                    </button>
+                  </div>
+                  <button
+                    class="px-3 py-2 bg-surface-container-highest hover:bg-primary-container hover:text-on-primary-container text-on-surface font-label-xs text-label-xs uppercase font-bold tracking-wider flex items-center gap-1 transition-none"
+                    onclick="inspectTweak('affinity')"
+                    type="button"
+                  >
+                    <span class="">DETAILS &amp; UNDO</span>
+                    <span class="material-symbols-outlined text-[14px]"
+                      >chevron_right</span
+                    >
+                  </button>
+                </div>
+              </div>
+              <!-- ITEM ROW 3 (SAFE) -->
+              <div
+                class="tweak-card bg-surface-container p-space-md flex flex-col lg:flex-row lg:items-center justify-between gap-space-md cursor-pointer hover:bg-surface-container-high transition-none"
+                data-tweak="gamebar"
+              >
+                <div class="flex items-start gap-space-md min-w-0">
+                  <div
+                    class="w-8 h-8 bg-surface-container-highest text-primary-container flex items-center justify-center flex-shrink-0 mt-0.5"
+                  >
+                    <span class="material-symbols-outlined text-[18px]"
+                      >videocam_off</span
+                    >
+                  </div>
+                  <div class="flex flex-col min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                      <span
+                        class="font-label-xs text-label-xs px-2 py-0.5 font-bold uppercase tracking-wider bg-surface-container-highest text-primary font-mono"
+                      >
+                        RISK: SAFE
+                      </span>
+                      <span
+                        class="font-label-xs text-label-xs px-2 py-0.5 font-bold uppercase tracking-wider bg-surface-container-highest text-on-surface-variant"
+                      >
+                        BACKGROUND SERVICES // OS SHELL
+                      </span>
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono uppercase"
+                        >ID: TWEAK_0105</span
+                      >
+                    </div>
+                    <h2
+                      class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight font-bold truncate"
+                    >
+                      Disable Windows Game Bar &amp; Background DVR Polling
+                    </h2>
+                    <p
+                      class="font-body-md text-body-md text-on-surface-variant mt-0.5"
+                    >
+                      Prevents continuous hardware encoder polling and
+                      background frame recording buffers from consuming
+                      auxiliary GPU clock cycles.
+                    </p>
+                  </div>
+                </div>
+                <div
+                  class="flex items-center justify-between lg:justify-end gap-space-md flex-shrink-0"
+                >
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="font-label-xs text-label-xs font-mono font-bold uppercase text-primary-container"
+                      >ACTIVE</span
+                    >
+                    <button
+                      class="brutal-toggle w-12 h-6 bg-primary-container relative p-0.5 flex items-center justify-end"
+                      onclick="toggleSwitch(this)"
+                      type="button"
+                    >
+                      <span
+                        class="w-5 h-5 bg-surface-container-lowest block"
+                      ></span>
+                    </button>
+                  </div>
+                  <button
+                    class="px-3 py-2 bg-surface-container-highest hover:bg-primary-container hover:text-on-primary-container text-on-surface font-label-xs text-label-xs uppercase font-bold tracking-wider flex items-center gap-1 transition-none"
+                    onclick="inspectTweak('gamebar')"
+                    type="button"
+                  >
+                    <span class="">DETAILS &amp; UNDO</span>
+                    <span class="material-symbols-outlined text-[14px]"
+                      >chevron_right</span
+                    >
+                  </button>
+                </div>
+              </div>
+              <!-- ITEM ROW 4 (SAFE) -->
+              <div
+                class="tweak-card bg-surface-container p-space-md flex flex-col lg:flex-row lg:items-center justify-between gap-space-md cursor-pointer hover:bg-surface-container-high transition-none"
+                data-tweak="nagle"
+              >
+                <div class="flex items-start gap-space-md min-w-0">
+                  <div
+                    class="w-8 h-8 bg-surface-container-highest text-primary-container flex items-center justify-center flex-shrink-0 mt-0.5"
+                  >
+                    <span class="material-symbols-outlined text-[18px]"
+                      >lan</span
+                    >
+                  </div>
+                  <div class="flex flex-col min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                      <span
+                        class="font-label-xs text-label-xs px-2 py-0.5 font-bold uppercase tracking-wider bg-surface-container-highest text-primary font-mono"
+                      >
+                        RISK: SAFE
+                      </span>
+                      <span
+                        class="font-label-xs text-label-xs px-2 py-0.5 font-bold uppercase tracking-wider bg-surface-container-highest text-on-surface-variant"
+                      >
+                        NETWORK STACK // WINSOCK
+                      </span>
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono uppercase"
+                        >ID: TWEAK_0114</span
+                      >
+                    </div>
+                    <h2
+                      class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight font-bold truncate"
+                    >
+                      Configure Network TCP NoDelay &amp; Disable Nagle's
+                      Algorithm
+                    </h2>
+                    <p
+                      class="font-body-md text-body-md text-on-surface-variant mt-0.5"
+                    >
+                      Forces immediate packet dispatch in competitive
+                      matchmaking by eliminating arbitrary 200ms TCP aggregation
+                      buffers.
+                    </p>
+                  </div>
+                </div>
+                <div
+                  class="flex items-center justify-between lg:justify-end gap-space-md flex-shrink-0"
+                >
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="font-label-xs text-label-xs font-mono font-bold uppercase text-primary-container"
+                      >ACTIVE</span
+                    >
+                    <button
+                      class="brutal-toggle w-12 h-6 bg-primary-container relative p-0.5 flex items-center justify-end"
+                      onclick="toggleSwitch(this)"
+                      type="button"
+                    >
+                      <span
+                        class="w-5 h-5 bg-surface-container-lowest block"
+                      ></span>
+                    </button>
+                  </div>
+                  <button
+                    class="px-3 py-2 bg-surface-container-highest hover:bg-primary-container hover:text-on-primary-container text-on-surface font-label-xs text-label-xs uppercase font-bold tracking-wider flex items-center gap-1 transition-none"
+                    onclick="inspectTweak('nagle')"
+                    type="button"
+                  >
+                    <span class="">DETAILS &amp; UNDO</span>
+                    <span class="material-symbols-outlined text-[14px]"
+                      >chevron_right</span
+                    >
+                  </button>
+                </div>
+              </div>
+              <!-- ITEM ROW 5 (MODERATE) -->
+              <div
+                class="tweak-card bg-surface-container p-space-md flex flex-col lg:flex-row lg:items-center justify-between gap-space-md cursor-pointer hover:bg-surface-container-high transition-none"
+                data-tweak="hpet"
+              >
+                <div class="flex items-start gap-space-md min-w-0">
+                  <div
+                    class="w-8 h-8 bg-surface-container-highest text-tertiary flex items-center justify-center flex-shrink-0 mt-0.5"
+                  >
+                    <span class="material-symbols-outlined text-[18px]"
+                      >timer</span
+                    >
+                  </div>
+                  <div class="flex flex-col min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                      <span
+                        class="font-label-xs text-label-xs px-2 py-0.5 font-bold uppercase tracking-wider bg-tertiary-container text-on-tertiary font-mono"
+                      >
+                        RISK: MODERATE
+                      </span>
+                      <span
+                        class="font-label-xs text-label-xs px-2 py-0.5 font-bold uppercase tracking-wider bg-surface-container-highest text-on-surface-variant"
+                      >
+                        TIMER RESOLUTION // KERNEL CLOCK
+                      </span>
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono uppercase"
+                        >ID: TWEAK_0120</span
+                      >
+                    </div>
+                    <h2
+                      class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight font-bold truncate"
+                    >
+                      HPET (High Precision Event Timer) Platform Bypass
+                    </h2>
+                    <p
+                      class="font-body-md text-body-md text-on-surface-variant mt-0.5"
+                    >
+                      Forces invariant TSC timer fallback in Windows kernel,
+                      eliminating slow hardware register read stalls across
+                      multi-core CPUs.
+                    </p>
+                  </div>
+                </div>
+                <div
+                  class="flex items-center justify-between lg:justify-end gap-space-md flex-shrink-0"
+                >
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="font-label-xs text-label-xs font-mono font-bold uppercase text-primary-container"
+                      >ACTIVE</span
+                    >
+                    <button
+                      class="brutal-toggle w-12 h-6 bg-primary-container relative p-0.5 flex items-center justify-end"
+                      onclick="toggleSwitch(this)"
+                      type="button"
+                    >
+                      <span
+                        class="w-5 h-5 bg-surface-container-lowest block"
+                      ></span>
+                    </button>
+                  </div>
+                  <button
+                    class="px-3 py-2 bg-surface-container-highest hover:bg-primary-container hover:text-on-primary-container text-on-surface font-label-xs text-label-xs uppercase font-bold tracking-wider flex items-center gap-1 transition-none"
+                    onclick="inspectTweak('hpet')"
+                    type="button"
+                  >
+                    <span class="">DETAILS &amp; UNDO</span>
+                    <span class="material-symbols-outlined text-[14px]"
+                      >chevron_right</span
+                    >
+                  </button>
+                </div>
+              </div>
+              <!-- IN-LINE TELEMETRY SUMMARY STRIP -->
+              <div
+                class="bg-surface-container-low p-space-md mt-2 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-space-md"
+              >
+                <div class="flex items-center gap-space-md">
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase"
+                      >AGGREGATE DPC LATENCY REDUCTION</span
+                    >
+                    <span
+                      class="font-telemetry-numeral-md text-telemetry-numeral-md text-primary-container"
+                      >-48.2 μs</span
+                    >
+                  </div>
+                  <div class="h-8 w-px bg-surface-container-high"></div>
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase"
+                      >ACTIVE PROCESS PRIORITY HIERARCHY</span
+                    >
+                    <span
+                      class="font-label-sm text-label-sm text-on-surface font-mono font-bold"
+                      >REALTIME_IO_BOOST_ON</span
+                    >
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button
+                    class="px-3 py-2 bg-surface-container hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface font-label-xs text-label-xs uppercase font-bold tracking-wider transition-none"
+                    type="button"
+                  >
+                    EXPORT AUDIT MANIFEST
+                  </button>
+                </div>
+              </div>
+            </div>
+            <!-- RIGHT INSPECTOR & PREVIEW DOCK (4 COLS) -->
+            <div
+              class="xl:col-span-4 bg-surface-container-low p-space-md flex flex-col gap-space-md"
+              id="inspectorDrawer"
+            >
+              <!-- INSPECTOR HEADER -->
+              <div
+                class="flex items-center justify-between bg-surface-container-lowest p-space-sm"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 bg-primary-container"></span>
+                  <span
+                    class="font-label-xs text-label-xs uppercase font-bold tracking-wider text-on-surface"
+                    >INSPECTOR &amp; IMPACT TELEMETRY</span
+                  >
+                </div>
+                <span
+                  class="font-label-xs text-label-xs font-mono text-tertiary"
+                  >NODE: ACTIVE</span
+                >
+              </div>
+              <!-- INSPECTED ITEM SUMMARY -->
+              <div class="flex flex-col gap-2 bg-surface-container p-space-md">
+                <div class="flex items-center justify-between">
+                  <span
+                    class="font-label-xs text-label-xs px-2 py-0.5 bg-error-container text-on-error-container font-bold uppercase tracking-wider"
+                  >
+                    RISK LEVEL: ELEVATED
+                  </span>
+                  <span
+                    class="font-label-xs text-label-xs text-outline font-mono"
+                    >TWEAK_0108</span
+                  >
+                </div>
+                <h3
+                  class="font-headline-sm text-headline-sm uppercase font-bold text-on-surface tracking-tight"
+                  id="drawerTitle"
+                >
+                  Disable Core Isolation (HVCI / VBS)
+                </h3>
+                <p
+                  class="font-body-sm text-body-sm text-on-surface-variant"
+                  id="drawerExplainer"
+                >
+                  Virtualization-based Security introduces hypervisor memory
+                  intercept overhead on memory-intensive game engines. Disabling
+                  stops continuous VMCS pointer traps.
+                </p>
+              </div>
+              <!-- IMPACT METRICS DISPLAY -->
+              <div class="grid grid-cols-2 gap-2">
+                <div class="bg-surface-container p-space-sm flex flex-col">
+                  <span
+                    class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                    >FRAME PACING DELTA</span
+                  >
+                  <span
+                    class="font-headline-md text-headline-md font-black text-primary-container mt-1"
+                    >-0.6 ms</span
+                  >
+                  <span
+                    class="font-label-xs text-label-xs text-outline mt-1 font-mono"
+                    >P99.9 STABILITY BOOST</span
+                  >
+                </div>
+                <div class="bg-surface-container p-space-sm flex flex-col">
+                  <span
+                    class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                    >L3 CACHE LATENCY</span
+                  >
+                  <span
+                    class="font-headline-md text-headline-md font-black text-on-surface mt-1"
+                    >-3.8%</span
+                  >
+                  <span
+                    class="font-label-xs text-label-xs text-outline mt-1 font-mono"
+                    >MEASURED VIA AIDA64</span
+                  >
+                </div>
+              </div>
+              <!-- SVG TELEMETRY GRAPH: JITTER TRACE COMPARISON -->
+              <div class="bg-surface-container p-space-md flex flex-col gap-2">
+                <div
+                  class="flex items-center justify-between font-label-xs text-label-xs"
+                >
+                  <span class="text-outline uppercase tracking-wider font-mono"
+                    >LATENCY JITTER HISTOGRAM</span
+                  >
+                  <span class="text-primary-container font-mono font-bold"
+                    >DELTA: 12.4μs PEAK</span
+                  >
+                </div>
+                <div
+                  class="w-full h-24 bg-surface-container-lowest p-2 flex flex-col justify-end relative"
+                >
+                  <!-- Baseline SVG comparison -->
+                  <svg
+                    class="w-full h-full"
+                    preserveAspectRatio="none"
+                    viewBox="0 0 300 80"
+                  >
+                    <!-- Grid lines -->
+                    <line
+                      class="text-surface-container-highest"
+                      stroke="currentColor"
+                      stroke-dasharray="2 2"
+                      stroke-width="0.5"
+                      x1="0"
+                      x2="300"
+                      y1="20"
+                      y2="20"
+                    ></line>
+                    <line
+                      class="text-surface-container-highest"
+                      stroke="currentColor"
+                      stroke-dasharray="2 2"
+                      stroke-width="0.5"
+                      x1="0"
+                      x2="300"
+                      y1="40"
+                      y2="40"
+                    ></line>
+                    <line
+                      class="text-surface-container-highest"
+                      stroke="currentColor"
+                      stroke-dasharray="2 2"
+                      stroke-width="0.5"
+                      x1="0"
+                      x2="300"
+                      y1="60"
+                      y2="60"
+                    ></line>
+                    <!-- Default Windows Jitter (Orange-muted) -->
+                    <path
+                      class="text-outline"
+                      d="M0,65 L25,60 L50,68 L75,30 L100,62 L125,25 L150,70 L175,20 L200,65 L225,18 L250,55 L275,35 L300,60"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                    ></path>
+                    <!-- Tuned Dispatch Jitter (Incandescent Orange) -->
+                    <path
+                      class="text-primary-container"
+                      d="M0,72 L25,70 L50,71 L75,68 L100,70 L125,67 L150,69 L175,68 L200,70 L225,67 L250,69 L275,68 L300,69"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    ></path>
+                  </svg>
+                  <div
+                    class="flex items-center justify-between font-label-xs text-label-xs text-outline mt-1 font-mono"
+                  >
+                    <span class="">UN-OPTIMIZED BASELINE</span>
+                    <span class="text-primary-container font-bold"
+                      >AURA RIG DISPATCH</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <!-- SECURITY RISK NOTICE -->
+              <div class="bg-surface-container p-space-md flex flex-col gap-1">
+                <div class="flex items-center gap-2 text-tertiary">
+                  <span class="material-symbols-outlined text-[16px]"
+                    >warning</span
+                  >
+                  <span
+                    class="font-label-xs text-label-xs font-bold uppercase tracking-wider"
+                    >SECURITY DELTA SPECIFICATION</span
+                  >
+                </div>
+                <p class="font-body-sm text-body-sm text-on-surface-variant">
+                  Kernel code integrity checks are bypassed until re-enabled.
+                  Third-party unsigned driver defense mechanism disabled. Not
+                  recommended for public untrusted networks.
+                </p>
+              </div>
+              <!-- REGISTRY PATCH PREVIEW BLOCK -->
+              <div
+                class="bg-surface-container-lowest p-space-md flex flex-col gap-2 font-mono"
+              >
+                <div
+                  class="flex items-center justify-between text-outline font-label-xs text-label-xs"
+                >
+                  <span class="">REGISTRY TARGET INJECTION</span>
+                  <span class="text-primary-container">HKLM\SYSTEM</span>
+                </div>
+                <div
+                  class="text-[11px] leading-relaxed text-on-surface-variant bg-surface-container p-2 select-all overflow-x-auto whitespace-pre"
+                >
+                  [HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard]
+                  "EnableVirtualizationBasedSecurity"=dword:00000000
+                  [HKLM\SYSTEM\CurrentControlSet\Control\Lsa]
+                  "LsaCfgFlags"=dword:00000000
+                </div>
+              </div>
+              <!-- ACTION CONTROLS STACK -->
+              <div class="flex flex-col gap-2 mt-auto pt-2">
+                <button
+                  class="w-full py-2.5 bg-primary-container text-on-primary-container hover:bg-secondary-container font-label-sm text-label-sm uppercase font-bold tracking-wider transition-none flex items-center justify-center gap-2"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[18px]"
+                    >terminal</span
+                  >
+                  <span class="">PREVIEW REGISTRY CHANGES</span>
+                </button>
+                <button
+                  class="w-full py-2.5 bg-surface-container hover:bg-surface-container-highest text-on-surface font-label-sm text-label-sm uppercase font-bold tracking-wider transition-none flex items-center justify-center gap-2"
+                  type="button"
+                >
+                  <span
+                    class="material-symbols-outlined text-[18px] text-tertiary"
+                    >undo</span
+                  >
+                  <span class="">INSTANT UNDO / REVERT TO BASELINE</span>
+                </button>
+                <button
+                  class="w-full py-2 bg-surface-container-low hover:bg-surface-container text-outline hover:text-on-surface font-label-xs text-label-xs uppercase font-bold tracking-wider transition-none flex items-center justify-center gap-1.5"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[14px]"
+                    >verified_user</span
+                  >
+                  <span class="">AUDIT SECURITY CERTIFICATE</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <!-- BOTTOM HARDWARE TELEMETRY FOOTER -->
+          <div
+            class="w-full bg-surface-container-lowest px-space-md py-3 flex flex-wrap items-center justify-between gap-space-md"
+          >
+            <div
+              class="flex items-center gap-space-lg font-label-xs text-label-xs font-mono text-outline"
+            >
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 bg-primary-container"></span>
+                <span class="text-on-surface font-bold"
+                  >KERNEL INTERRUPT AGENT: ACTIVE</span
+                >
+              </div>
+              <div class="">
+                DPC/ISR WATCHDOG:
+                <span class="text-tertiary font-bold">ARMED</span>
+              </div>
+              <div class="">
+                PAGE FAULT LATENCY:
+                <span class="text-on-surface font-bold">0.02ms</span>
+              </div>
+            </div>
+            <div
+              class="flex items-center gap-space-md font-label-xs text-label-xs font-mono text-outline"
+            >
+              <span class="">AURA MONOLITH ENGINE V2.4-RELEASE</span>
+              <span class="text-primary-container font-bold"
+                >[CHECKSUM: 0x9FA43C]</span
+              >
+            </div>
+          </div>
+        </div>
+        <script>
+          function toggleSwitch(btn) {
+            const knob = btn.querySelector("span");
+            const statusText = btn.previousElementSibling;
+            const isCurrentlyActive = btn.classList.contains(
+              "bg-primary-container",
+            );
+
+            if (isCurrentlyActive) {
+              btn.classList.remove("bg-primary-container", "justify-end");
+              btn.classList.add(
+                "bg-surface-container-highest",
+                "justify-start",
+              );
+              statusText.textContent = "OFF";
+              statusText.classList.remove("text-primary-container");
+              statusText.classList.add("text-outline");
+            } else {
+              btn.classList.add("bg-primary-container", "justify-end");
+              btn.classList.remove(
+                "bg-surface-container-highest",
+                "justify-start",
+              );
+              statusText.textContent = "ACTIVE";
+              statusText.classList.add("text-primary-container");
+              statusText.classList.remove("text-outline");
+            }
+          }
+
+          const tweakData = {
+            hvci: {
+              title: "Disable Core Isolation (HVCI / VBS)",
+              explainer:
+                "Virtualization-based Security introduces hypervisor memory intercept overhead on memory-intensive game engines. Disabling stops continuous VMCS pointer traps.",
+            },
+            affinity: {
+              title: "Interrupt Affinity Steering (MSI Mode & Core Pinning)",
+              explainer:
+                "Configures Message Signaled Interrupts (MSI) across high-bandwidth PCIe slots. Restricts GPU and storage controllers to Core #4 through #11, freeing Core #0-#3 for game logic loops.",
+            },
+            gamebar: {
+              title: "Disable Windows Game Bar & Background DVR Polling",
+              explainer:
+                "Shuts down BroadcastDVR background tasks and frees NVENC/AMF hardware encoder threads. Prevents micro-stutters during 1% low frame transitions.",
+            },
+            nagle: {
+              title:
+                "Configure Network TCP NoDelay & Disable Nagle's Algorithm",
+              explainer:
+                "Sets TcpAckFrequency to 1 and TCPNoDelay to 1 in Registry network adapter paths. Eliminates packet hold delays for competitive matchmaking.",
+            },
+            hpet: {
+              title: "HPET (High Precision Event Timer) Platform Bypass",
+              explainer:
+                "Disables hardware HPET in boot configuration. Windows falls back to Invariant TSC (Time Stamp Counter), removing sub-microsecond query performance penalties.",
+            },
+          };
+
+          function inspectTweak(key) {
+            const data = tweakData[key];
+            if (!data) return;
+
+            const titleEl = document.getElementById("drawerTitle");
+            const explainerEl = document.getElementById("drawerExplainer");
+
+            if (titleEl) titleEl.textContent = data.title;
+            if (explainerEl) explainerEl.textContent = data.explainer;
+
+            // Visual card indicator
+            document.querySelectorAll(".tweak-card").forEach((card) => {
+              card.classList.remove("bg-surface-container-high");
+              if (card.getAttribute("data-tweak") === key) {
+                card.classList.add("bg-surface-container-high");
+              }
+            });
+          }
+
+          // Preset chip activation
+          document.querySelectorAll(".preset-chip").forEach((chip) => {
+            chip.addEventListener("click", () => {
+              document.querySelectorAll(".preset-chip").forEach((c) => {
+                c.className =
+                  "preset-chip px-3 py-1.5 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none";
+              });
+              chip.className =
+                "preset-chip px-3 py-1.5 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-primary-container text-on-primary-container hover:bg-secondary-container transition-none";
+            });
+          });
+
+          // Category tab activation
+          document.querySelectorAll(".category-tab").forEach((tab) => {
+            tab.addEventListener("click", () => {
+              document.querySelectorAll(".category-tab").forEach((t) => {
+                t.className =
+                  "category-tab px-3.5 py-2 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex items-center gap-2 whitespace-nowrap transition-none";
+              });
+              tab.className =
+                "category-tab px-3.5 py-2 font-label-xs text-label-xs uppercase font-bold tracking-wider bg-primary-container text-on-primary-container flex items-center gap-2 whitespace-nowrap transition-none";
+            });
+          });
+        </script>
+      </main>
+    </div>
+  </body>
+</html>

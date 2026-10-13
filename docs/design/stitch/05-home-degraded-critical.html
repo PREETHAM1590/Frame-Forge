@@ -1,0 +1,1042 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta content="web_dashboard" name="shell-type" />
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@300;400;500;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      @layer base {
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+          background-color: #0d0e11;
+          color: #f5f5f7;
+          font-family:
+            "Space Grotesk",
+            -apple-system,
+            sans-serif;
+        }
+        body {
+          overscroll-behavior: none;
+        }
+      }
+      .font-mono-tech {
+        font-family: "JetBrains Mono", monospace;
+      }
+      ::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0d0e11;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #ff5500;
+      }
+    </style>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              background: "#0d0e11",
+              surface: "#12141a",
+              "surface-container": "#181a22",
+              "surface-container-high": "#20232d",
+              "surface-container-low": "#090a0d",
+              "surface-container-lowest": "#050608",
+              primary: "#ff5500",
+              "primary-container": "#ff7700",
+              "primary-tint": "#ffaa00",
+              "on-primary": "#000000",
+              "on-surface": "#f5f5f7",
+              "on-surface-variant": "#9ba0ad",
+              outline: "#5e6370",
+              "outline-variant": "#262930",
+              tertiary: "#ffaa00",
+              secondary: "#ff7700",
+              "secondary-container": "#ff5500",
+              error: "#ff3b30",
+            },
+            borderRadius: {
+              none: "0px",
+              DEFAULT: "0px",
+              sm: "0px",
+              md: "0px",
+              lg: "0px",
+              xl: "0px",
+              full: "0px",
+            },
+            fontFamily: {
+              sans: ["Space Grotesk", "sans-serif"],
+              mono: ["JetBrains Mono", "monospace"],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-background text-on-surface select-none antialiased min-h-screen border-t-2 border-primary"
+  >
+    <div class="flex min-h-screen w-full">
+      <!-- Monolithic Swiss Brutalist Sidebar Nav -->
+      <aside
+        class="fixed left-0 top-0 h-full w-64 bg-[#090a0d] border-r-2 border-[#262930] z-50 flex flex-col justify-between"
+      >
+        <div class="flex flex-col">
+          <div
+            class="h-16 px-6 flex items-center justify-between border-b border-[#262930] bg-[#0d0e11]"
+          >
+            <div class="flex items-center gap-2">
+              <div
+                class="w-6 h-6 bg-primary flex items-center justify-center text-black font-bold font-mono"
+              >
+                <span class="material-symbols-outlined text-[16px] text-black"
+                  >tune</span
+                >
+              </div>
+              <span
+                class="font-sans font-bold text-xl tracking-tight text-[#f5f5f7]"
+                >AURA</span
+              >
+            </div>
+            <span
+              class="font-mono text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 border border-[#262930] bg-black text-primary"
+              >v2.4</span
+            >
+          </div>
+          <nav
+            class="flex flex-col p-0 border-b border-[#262930]"
+            data-active-classes="bg-primary text-black font-bold"
+          >
+            <a
+              aria-current="page"
+              class="flex items-center justify-between px-6 py-3.5 border-b border-[#262930] bg-primary text-black font-bold tracking-tight text-sm uppercase transition-none"
+              data-path="home"
+              href="#"
+              ><div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-[18px]"
+                  >grid_view</span
+                ><span>Home</span>
+              </div>
+              <span class="font-mono text-[10px] tracking-widest text-black"
+                >01</span
+              ></a
+            ><a
+              class="flex items-center justify-between px-6 py-3.5 border-b border-[#262930] text-[#9ba0ad] hover:text-[#f5f5f7] hover:bg-[#12141a] font-medium tracking-tight text-sm uppercase transition-none"
+              data-path="game-mode"
+              href="#"
+              ><div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-[18px]"
+                  >sports_esports</span
+                ><span>Game Mode</span>
+              </div>
+              <span class="font-mono text-[10px] tracking-widest text-outline"
+                >02</span
+              ></a
+            ><a
+              class="flex items-center justify-between px-6 py-3.5 border-b border-[#262930] text-[#9ba0ad] hover:text-[#f5f5f7] hover:bg-[#12141a] font-medium tracking-tight text-sm uppercase transition-none"
+              data-path="games-library"
+              href="#"
+              ><div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-[18px]"
+                  >stadia_controller</span
+                ><span>Games Library</span>
+              </div>
+              <span class="font-mono text-[10px] tracking-widest text-outline"
+                >03</span
+              ></a
+            ><a
+              class="flex items-center justify-between px-6 py-3.5 border-b border-[#262930] text-[#9ba0ad] hover:text-[#f5f5f7] hover:bg-[#12141a] font-medium tracking-tight text-sm uppercase transition-none"
+              data-path="optimize"
+              href="#"
+              ><div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-[18px]">speed</span
+                ><span>Optimize</span>
+              </div>
+              <span class="font-mono text-[10px] tracking-widest text-outline"
+                >04</span
+              ></a
+            ><a
+              class="flex items-center justify-between px-6 py-3.5 border-b border-[#262930] text-[#9ba0ad] hover:text-[#f5f5f7] hover:bg-[#12141a] font-medium tracking-tight text-sm uppercase transition-none"
+              data-path="safety-and-backups"
+              href="#"
+              ><div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-[18px]"
+                  >security</span
+                ><span>Safety &amp; Backups</span>
+              </div>
+              <span class="font-mono text-[10px] tracking-widest text-outline"
+                >05</span
+              ></a
+            ><a
+              class="flex items-center justify-between px-6 py-3.5 border-b border-[#262930] text-[#9ba0ad] hover:text-[#f5f5f7] hover:bg-[#12141a] font-medium tracking-tight text-sm uppercase transition-none"
+              data-path="system-and-topology"
+              href="#"
+              ><div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-[18px]">memory</span
+                ><span>System &amp; Topology</span>
+              </div>
+              <span class="font-mono text-[10px] tracking-widest text-outline"
+                >06</span
+              ></a
+            >
+          </nav>
+        </div>
+        <div class="flex flex-col border-t border-[#262930] bg-[#090a0d]">
+          <a
+            class="flex items-center justify-between px-6 py-3.5 border-b border-[#262930] text-[#9ba0ad] hover:text-[#f5f5f7] hover:bg-[#12141a] text-sm uppercase font-semibold"
+            data-path="settings"
+            href="#"
+            ><div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-[18px]">settings</span
+              ><span>Settings</span>
+            </div>
+            <span class="font-mono text-[10px]">SYS</span></a
+          >
+          <div
+            class="p-6 bg-[#0d0e11] flex items-center justify-between border-t border-[#262930]"
+          >
+            <div class="flex flex-col">
+              <span
+                class="font-mono text-[10px] text-primary uppercase font-bold tracking-wider"
+                >Chassis</span
+              ><span class="font-mono text-xs text-[#f5f5f7] font-semibold"
+                >Rig-01 Ultra</span
+              >
+            </div>
+            <div class="w-2.5 h-2.5 bg-primary"></div>
+          </div>
+        </div>
+      </aside>
+      <!-- Main Content Area -->
+      <div class="pl-64 w-full flex flex-col min-h-screen">
+        <!-- Top Swiss Header with Raw Monolithic Telemetry Strip -->
+        <header
+          class="fixed top-0 left-64 right-0 h-16 bg-[#090a0d]/95 backdrop-blur-md z-40 flex items-center justify-between border-b-2 border-[#262930] px-8"
+        >
+          <div class="flex items-center divide-x-2 divide-[#262930] h-full">
+            <div class="flex items-center gap-2 pr-6">
+              <span class="w-2 h-2 bg-error"></span
+              ><span
+                class="font-mono text-xs font-bold text-error tracking-widest uppercase"
+                >SYSTEM STATE: DEGRADED // INTERRUPT STORM DETECTED</span
+              >
+            </div>
+            <div
+              class="hidden lg:flex items-center gap-6 px-6 font-mono text-xs"
+            >
+              <div class="flex items-center gap-2">
+                <span class="text-[#5e6370] uppercase">CORE FREQ</span
+                ><span class="text-[#f5f5f7] font-bold">4.85 GHz</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-[#5e6370] uppercase">TEMP</span
+                ><span class="text-primary font-bold">38°C</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-4 h-full">
+            <div
+              class="flex items-center border-l-2 border-[#262930] h-full pl-4"
+            >
+              <span class="w-2 h-2 bg-error"></span
+              ><span
+                class="font-mono text-xs font-bold text-error tracking-widest uppercase"
+                >SYSTEM STATE: DEGRADED // INTERRUPT STORM DETECTED</span
+              >
+            </div>
+            <div
+              class="w-10 h-10 bg-[#20232d] border border-primary flex items-center justify-center"
+            >
+              <span class="material-symbols-outlined text-primary text-[20px]"
+                >person</span
+              >
+            </div>
+          </div>
+        </header>
+        <main class="relative pt-16 w-full bg-[#0d0e11] flex-1">
+          <div class="flex flex-col w-full">
+            <!-- Editorial Monolithic Header Ribbon -->
+            <section class="border-b-2 border-[#262930] bg-[#090a0d] px-8 py-8">
+              <div
+                class="flex flex-col lg:flex-row lg:items-end justify-between gap-6"
+              >
+                <div class="flex flex-col gap-2 max-w-4xl">
+                  <div
+                    class="flex items-center gap-3 font-mono text-xs text-[#9ba0ad]"
+                  >
+                    <span class="w-2 h-2 bg-error"></span
+                    ><span
+                      class="text-error font-bold tracking-widest uppercase"
+                      >Console Telemetry // Node-01 // Alert Mode</span
+                    ><span class="text-[#5e6370]">/</span
+                    ><span class="tracking-wide">Uptime 14h 22m 04s</span>
+                  </div>
+                  <h1
+                    class="text-4xl lg:text-5xl font-black uppercase tracking-tight text-[#f5f5f7]"
+                  >
+                    System State: Degraded
+                  </h1>
+                  <p
+                    class="font-mono text-xs lg:text-sm text-[#9ba0ad] leading-relaxed max-w-3xl"
+                  >
+                    High execution jitter detected. Micro-kernel scheduler
+                    interrupted by unhandled driver ISR storm. Optimization
+                    guarantees suspended until remediation.
+                  </p>
+                </div>
+                <div
+                  class="flex flex-col sm:flex-row items-stretch sm:items-center gap-0 border-2 border-error"
+                >
+                  <div
+                    class="flex items-center gap-3 px-5 py-3 bg-[#12141a] border-b sm:border-b-0 sm:border-r border-error"
+                  >
+                    <span
+                      class="material-symbols-outlined text-[18px] text-error"
+                      >warning</span
+                    >
+                    <div class="flex flex-col">
+                      <span
+                        class="font-mono text-[9px] uppercase font-bold text-error tracking-widest"
+                        >Active Stack:</span
+                      ><span class="font-mono text-xs font-bold text-[#f5f5f7]"
+                        >Esports Ultra [FAULT]</span
+                      >
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3 px-5 py-3 bg-[#0d0e11]">
+                    <span
+                      class="material-symbols-outlined text-[18px] text-[#ffaa00]"
+                      >gpp_maybe</span
+                    ><span
+                      class="font-mono text-xs font-bold text-[#ffaa00] uppercase"
+                      >HVCI Guard: Audit Required</span
+                    >
+                  </div>
+                </div>
+              </div>
+            </section>
+            <!-- Warning Banner / Advisory Bar -->
+            <section
+              class="border-b-2 border-[#262930] bg-[#12141a] px-8 py-3.5"
+            >
+              <div class="flex flex-col gap-4 font-mono text-xs">
+                <div
+                  class="flex flex-col lg:flex-row lg:items-center justify-between pb-3 border-b border-[#262930] gap-2"
+                >
+                  <div class="flex items-center gap-3">
+                    <span
+                      class="px-2.5 py-1 bg-error text-white font-bold tracking-widest uppercase text-[11px]"
+                      >CRITICAL ADVISORY</span
+                    ><span
+                      class="font-bold text-[#f5f5f7] tracking-wider uppercase"
+                      >3 Issues Require Immediate Intervention</span
+                    >
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="w-1.5 h-1.5 bg-error"></span
+                    ><span class="text-[#9ba0ad]"
+                      >Fault Isolation Triggered: 02m ago</span
+                    >
+                  </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div
+                    class="p-3 bg-[#090a0d] border border-error flex flex-col justify-between gap-1.5"
+                  >
+                    <div
+                      class="flex items-center gap-2 text-error font-bold uppercase text-[11px]"
+                    >
+                      <span class="material-symbols-outlined text-[16px]"
+                        >error</span
+                      ><span>1. DPC Jitter Spike: 142 µs</span>
+                    </div>
+                    <p class="text-[#9ba0ad] text-[11px] leading-relaxed">
+                      Exceeding safe budget (&gt;50 µs). Elevated driver latency
+                      flagged from audio stack (RTKVHD64.sys).
+                    </p>
+                  </div>
+                  <div
+                    class="p-3 bg-[#090a0d] border border-[#ffaa00] flex flex-col justify-between gap-1.5"
+                  >
+                    <div
+                      class="flex items-center gap-2 text-[#ffaa00] font-bold uppercase text-[11px]"
+                    >
+                      <span class="material-symbols-outlined text-[16px]"
+                        >restart_alt</span
+                      ><span>2. Reboot Required</span>
+                    </div>
+                    <p class="text-[#9ba0ad] text-[11px] leading-relaxed">
+                      Kernel patch v1.94 pending dispatch. System operating with
+                      out-of-order HAL microcode.
+                    </p>
+                  </div>
+                  <div
+                    class="p-3 bg-[#090a0d] border border-[#ffaa00] flex flex-col justify-between gap-1.5"
+                  >
+                    <div
+                      class="flex items-center gap-2 text-[#ffaa00] font-bold uppercase text-[11px]"
+                    >
+                      <span class="material-symbols-outlined text-[16px]"
+                        >security</span
+                      ><span>3. Security Isolation</span>
+                    </div>
+                    <p class="text-[#9ba0ad] text-[11px] leading-relaxed">
+                      HVCI bypass requires immediate re-audit. Memory integrity
+                      check suspended.
+                    </p>
+                  </div>
+                </div>
+                <div
+                  class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2"
+                >
+                  <div
+                    class="flex items-center gap-3 text-[#9ba0ad] text-[11px]"
+                  >
+                    <span
+                      class="material-symbols-outlined text-[16px] text-error"
+                      >info</span
+                    ><span
+                      >Automatic thread affinity overrides disabled to prevent
+                      system crash.</span
+                    >
+                  </div>
+                  <div class="flex items-center gap-3 w-full sm:w-auto">
+                    <button
+                      class="flex-1 sm:flex-none px-4 py-2 border-2 border-error bg-error text-white font-mono text-xs font-bold uppercase tracking-wider hover:bg-white hover:text-black transition-none cursor-pointer"
+                      type="button"
+                    >
+                      Run Immediate System Repair</button
+                    ><button
+                      class="flex-1 sm:flex-none px-4 py-2 border border-[#262930] hover:border-white bg-[#0d0e11] text-[#f5f5f7] font-mono text-xs font-bold uppercase tracking-wider transition-none cursor-pointer"
+                      type="button"
+                    >
+                      Recovery Rollback Point
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <!-- Brutalist Grid: Monumental Hero Dispatch + Raw Telemetry Meters -->
+            <section
+              class="grid grid-cols-1 xl:grid-cols-12 border-b-2 border-[#262930]"
+            >
+              <!-- Massive Towering Boost Hero (7 cols) -->
+              <div
+                class="xl:col-span-7 border-b-2 xl:border-b-0 xl:border-r-2 border-[#262930] bg-[#090a0d] p-8 lg:p-10 flex flex-col justify-between relative overflow-hidden"
+              >
+                <div class="flex flex-col gap-8 relative z-10">
+                  <div
+                    class="flex items-center justify-between pb-6 border-b border-error"
+                  >
+                    <div
+                      class="flex items-center gap-2 font-mono text-xs tracking-widest uppercase text-error font-bold"
+                    >
+                      <span class="material-symbols-outlined text-[18px]"
+                        >error</span
+                      ><span>Optimization Stalled // System Unstable</span>
+                    </div>
+                    <span
+                      class="font-mono text-xs font-bold px-3 py-1 border border-error bg-error/10 text-error uppercase"
+                      >Bypass Paused</span
+                    >
+                  </div>
+                  <div
+                    class="flex flex-col md:flex-row md:items-center justify-between gap-6 py-2"
+                  >
+                    <div>
+                      <div
+                        class="font-mono text-[11px] text-[#5e6370] uppercase font-bold tracking-widest mb-1"
+                      >
+                        Target Application Thread Halted
+                      </div>
+                      <div
+                        class="text-5xl lg:text-6xl font-black uppercase tracking-tight text-[#f5f5f7]"
+                      >
+                        Apex Legends
+                      </div>
+                      <div class="font-mono text-xs text-error mt-2">
+                        Profile: Incompatible Under Jitter Load // Lock
+                        Suspended
+                      </div>
+                    </div>
+                    <div
+                      class="w-24 h-24 border-2 border-error bg-black flex items-center justify-center shrink-0"
+                    >
+                      <span
+                        class="material-symbols-outlined text-[48px] text-error"
+                        >warning</span
+                      >
+                    </div>
+                  </div>
+                  <!-- High-Density Telemetry Matrix Tiles showing degraded values -->
+                  <div
+                    class="grid grid-cols-1 sm:grid-cols-3 border border-[#262930] divide-y sm:divide-y-0 sm:divide-x divide-[#262930] bg-[#0d0e11]"
+                  >
+                    <div
+                      class="p-4 flex flex-col justify-between gap-2 border-l-2 border-error"
+                    >
+                      <span
+                        class="font-mono text-[10px] uppercase tracking-wider text-[#5e6370]"
+                        >DPC Cadence</span
+                      ><span class="font-mono text-2xl font-black text-error"
+                        >142 µs</span
+                      ><span
+                        class="font-mono text-[11px] text-error font-bold uppercase"
+                        >Critical Spike</span
+                      >
+                    </div>
+                    <div
+                      class="p-4 flex flex-col justify-between gap-2 bg-[#12141a]"
+                    >
+                      <span
+                        class="font-mono text-[10px] uppercase tracking-wider text-[#5e6370]"
+                        >Background Shedding</span
+                      ><span
+                        class="font-mono text-2xl font-black text-[#ffaa00]"
+                        >87 Tasks</span
+                      ><span
+                        class="font-mono text-[11px] text-[#ffaa00] font-bold uppercase"
+                        >Queue Stalled</span
+                      >
+                    </div>
+                    <div class="p-4 flex flex-col justify-between gap-2">
+                      <span
+                        class="font-mono text-[10px] uppercase tracking-wider text-[#5e6370]"
+                        >Thread Priority</span
+                      ><span class="font-mono text-xl font-black text-[#ffaa00]"
+                        >Unassigned</span
+                      ><span
+                        class="font-mono text-[11px] text-[#9ba0ad] uppercase"
+                        >Affinity Drift</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <!-- Monumental Recovery Hero Action Ribbon -->
+                <div
+                  class="pt-8 flex flex-col sm:flex-row gap-0 border-2 border-error mt-8"
+                >
+                  <button
+                    class="flex-1 py-5 px-6 bg-error text-white font-sans font-black text-lg tracking-wider uppercase hover:bg-white hover:text-black transition-none flex items-center justify-center gap-3 cursor-pointer"
+                    id="quickBoostBtn"
+                    type="button"
+                  >
+                    <span class="material-symbols-outlined text-[24px]"
+                      >build_circle</span
+                    ><span id="quickBoostText"
+                      >Resolve Warnings Before Boost</span
+                    ></button
+                  ><button
+                    class="px-8 py-5 bg-[#12141a] border-t-2 sm:border-t-0 sm:border-l-2 border-[#262930] text-[#f5f5f7] font-mono text-xs font-bold uppercase tracking-wider hover:bg-[#20232d] flex items-center justify-center gap-2 transition-none cursor-pointer"
+                    type="button"
+                  >
+                    <span
+                      class="material-symbols-outlined text-[18px] text-[#ffaa00]"
+                      >restart_alt</span
+                    ><span>Trigger Clean Reboot</span>
+                  </button>
+                </div>
+              </div>
+              <!-- Split Telemetry Side Panels (5 cols) -->
+              <div
+                class="xl:col-span-5 flex flex-col divide-y-2 divide-[#262930] bg-[#0d0e11]"
+              >
+                <div
+                  class="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x-2 divide-[#262930]"
+                >
+                  <div
+                    class="p-8 flex flex-col justify-between border-t-2 sm:border-t-0 border-error"
+                  >
+                    <div class="flex items-center justify-between pb-4">
+                      <span
+                        class="font-mono text-xs uppercase tracking-widest text-error font-bold"
+                        >Buffer Health</span
+                      ><span
+                        class="font-mono text-xs font-bold px-1.5 py-0.5 border border-error bg-error text-white"
+                        >DEGRADED</span
+                      >
+                    </div>
+                    <div class="my-6">
+                      <div class="flex items-baseline gap-2">
+                        <span
+                          class="text-6xl font-black font-mono tracking-tight text-error"
+                          >142</span
+                        ><span class="font-mono text-lg text-error font-bold"
+                          >µs</span
+                        >
+                      </div>
+                      <span
+                        class="font-mono text-xs text-error block mt-1 uppercase font-bold"
+                        >Peak Jitter Threshold Exceeded</span
+                      >
+                    </div>
+                    <div class="h-6 w-full flex items-end gap-1.5 pt-2">
+                      <span class="flex-1 bg-error/50 h-3"></span
+                      ><span class="flex-1 bg-error h-5"></span
+                      ><span class="flex-1 bg-error h-6"></span
+                      ><span class="flex-1 bg-error h-6"></span
+                      ><span class="flex-1 bg-error h-5"></span
+                      ><span class="flex-1 bg-error h-6"></span
+                      ><span class="flex-1 bg-error h-6"></span
+                      ><span class="flex-1 bg-error h-6"></span>
+                    </div>
+                  </div>
+                  <div class="p-8 flex flex-col justify-between bg-[#12141a]">
+                    <div class="flex items-center justify-between pb-4">
+                      <span
+                        class="font-mono text-xs uppercase tracking-widest text-[#5e6370]"
+                        >DDR5 Pool</span
+                      ><span class="font-mono text-xs font-bold text-[#ffaa00]"
+                        >88% HIGH ALLOC</span
+                      >
+                    </div>
+                    <div class="my-6">
+                      <div class="flex items-baseline gap-2">
+                        <span
+                          class="text-5xl font-black font-mono tracking-tight text-[#ffaa00]"
+                          >28.1</span
+                        ><span class="font-mono text-sm text-[#9ba0ad]"
+                          >/ 32 GB</span
+                        >
+                      </div>
+                      <span
+                        class="font-mono text-xs text-error block mt-1 uppercase font-bold"
+                        >Standby Leaks Unpurged</span
+                      >
+                    </div>
+                    <div
+                      class="w-full bg-[#262930] h-3 border border-[#262930] overflow-hidden p-[1px]"
+                    >
+                      <div class="bg-[#ffaa00] h-full w-[88%]"></div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Acoustic & Thermal Delta Strip in warning state -->
+                <div class="p-8 bg-[#090a0d]">
+                  <div
+                    class="flex items-center justify-between pb-4 border-b border-[#262930]"
+                  >
+                    <span
+                      class="font-mono text-xs uppercase font-bold tracking-widest text-error"
+                      >Chassis Headroom: Elevated Thermal Load</span
+                    ><span
+                      class="font-mono text-xs text-error font-bold uppercase"
+                      >Pump Max RPM</span
+                    >
+                  </div>
+                  <div class="grid grid-cols-3 divide-x divide-[#262930] pt-6">
+                    <div class="pr-4 flex flex-col">
+                      <span
+                        class="font-mono text-[10px] uppercase text-[#5e6370] tracking-wider"
+                        >Ambient Intake</span
+                      ><span
+                        class="font-mono text-xl font-bold text-[#f5f5f7] mt-1"
+                        >27.8°C</span
+                      >
+                    </div>
+                    <div class="px-4 flex flex-col">
+                      <span
+                        class="font-mono text-[10px] uppercase text-[#5e6370] tracking-wider"
+                        >Coolant Delta</span
+                      ><span class="font-mono text-xl font-bold text-error mt-1"
+                        >+14.8°C</span
+                      >
+                    </div>
+                    <div class="pl-4 flex flex-col">
+                      <span
+                        class="font-mono text-[10px] uppercase text-[#5e6370] tracking-wider"
+                        >Fan Acoustic Mode</span
+                      ><span class="font-mono text-xl font-bold text-error mt-1"
+                        >100% Emergency</span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <!-- Silicon Health Matrix: Stark Swiss Modular Blocks -->
+            <section class="border-b-2 border-[#262930] bg-[#0d0e11]">
+              <div
+                class="px-8 py-5 bg-[#090a0d] border-b-2 border-[#262930] flex items-center justify-between"
+              >
+                <div class="flex items-center gap-3">
+                  <span
+                    class="material-symbols-outlined text-[20px] text-primary"
+                    >memory</span
+                  >
+                  <h2
+                    class="text-xl font-bold uppercase tracking-tight text-[#f5f5f7]"
+                  >
+                    Silicon Health Matrix
+                  </h2>
+                </div>
+                <span
+                  class="font-mono text-xs text-[#9ba0ad] uppercase tracking-widest"
+                  >Polled 250ms interval</span
+                >
+              </div>
+              <div
+                class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 divide-y md:divide-y-0 md:divide-x-2 divide-[#262930]"
+              >
+                <!-- CPU Tile flagged with thermal caution -->
+                <div
+                  class="p-8 bg-[#0d0e11] flex flex-col justify-between border-t-2 md:border-t-0 border-error"
+                >
+                  <div class="flex flex-col gap-2">
+                    <div
+                      class="flex items-center justify-between pb-2 border-b border-[#262930]"
+                    >
+                      <span
+                        class="font-mono text-[11px] text-error uppercase font-bold tracking-wider"
+                        >CPU Core Clocks</span
+                      ><span
+                        class="font-mono text-[10px] px-1.5 py-0.5 border border-error bg-error text-white font-bold"
+                        >Thermal Throttle</span
+                      >
+                    </div>
+                    <div class="flex items-baseline gap-2 pt-4">
+                      <span
+                        class="text-5xl font-black font-mono tracking-tight text-[#f5f5f7]"
+                        >3.92</span
+                      ><span class="font-mono text-sm text-error font-bold"
+                        >GHz (-930MHz)</span
+                      >
+                    </div>
+                    <span class="font-mono text-xs text-[#9ba0ad] mt-1"
+                      >16 Cores · Clock Modulation Engaged</span
+                    >
+                  </div>
+                  <div class="pt-8">
+                    <div
+                      class="flex justify-between font-mono text-xs text-[#9ba0ad] mb-2 uppercase"
+                    >
+                      <span>Package Temp</span
+                      ><span class="text-error font-bold">89°C CAUTION</span>
+                    </div>
+                    <div class="w-full bg-[#181a22] h-2 border border-error">
+                      <div class="bg-error h-full w-[89%]"></div>
+                    </div>
+                  </div>
+                </div>
+                <!-- GPU Tile -->
+                <div class="p-8 bg-[#12141a] flex flex-col justify-between">
+                  <div class="flex flex-col gap-2">
+                    <div
+                      class="flex items-center justify-between pb-2 border-b border-[#262930]"
+                    >
+                      <span
+                        class="font-mono text-[11px] text-[#5e6370] uppercase font-bold tracking-wider"
+                        >GPU Rasterization</span
+                      ><span
+                        class="font-mono text-[10px] px-1.5 py-0.5 border border-[#ffaa00] text-[#ffaa00]"
+                        >Throttled Wait</span
+                      >
+                    </div>
+                    <div class="pt-4">
+                      <span
+                        class="text-4xl lg:text-5xl font-black tracking-tight text-[#f5f5f7]"
+                        >RTX 4080S</span
+                      >
+                    </div>
+                    <span class="font-mono text-xs text-[#9ba0ad] mt-1"
+                      >VRAM: 14.8 GB / 16.0 GB In Use</span
+                    >
+                  </div>
+                  <div class="pt-8">
+                    <div
+                      class="flex justify-between font-mono text-xs text-[#9ba0ad] mb-2 uppercase"
+                    >
+                      <span>Thermal Junction</span
+                      ><span class="text-[#ffaa00] font-bold">78°C Warm</span>
+                    </div>
+                    <div
+                      class="w-full bg-[#181a22] h-2 border border-[#262930]"
+                    >
+                      <div class="bg-[#ffaa00] h-full w-[78%]"></div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Power Subsystem Tile -->
+                <div class="p-8 bg-[#0d0e11] flex flex-col justify-between">
+                  <div class="flex flex-col gap-2">
+                    <div
+                      class="flex items-center justify-between pb-2 border-b border-[#262930]"
+                    >
+                      <span
+                        class="font-mono text-[11px] text-[#5e6370] uppercase font-bold tracking-wider"
+                        >VRM Delivery</span
+                      ><span
+                        class="font-mono text-[10px] px-1.5 py-0.5 border border-error text-error font-bold"
+                        >1.345V Fluctuation</span
+                      >
+                    </div>
+                    <div class="flex items-baseline gap-2 pt-4">
+                      <span
+                        class="text-5xl font-black font-mono tracking-tight text-[#f5f5f7]"
+                        >284</span
+                      ><span class="font-mono text-sm text-error"
+                        >Watts Total</span
+                      >
+                    </div>
+                    <span class="font-mono text-xs text-[#9ba0ad] mt-1"
+                      >PCIe Rail: 11.82V // 3.8% Ripple Spike</span
+                    >
+                  </div>
+                  <div class="pt-8">
+                    <div
+                      class="flex justify-between font-mono text-xs text-[#9ba0ad] mb-2 uppercase"
+                    >
+                      <span>Power Budget Envelope</span
+                      ><span class="text-error font-bold">92% CRITICAL</span>
+                    </div>
+                    <div class="w-full bg-[#181a22] h-2 border border-error">
+                      <div class="bg-error h-full w-[92%]"></div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Interrupt Service Routing Tile with Audio Driver IRQ Conflict -->
+                <div
+                  class="p-8 bg-[#12141a] flex flex-col justify-between border-t-2 md:border-t-0 border-error"
+                >
+                  <div class="flex flex-col gap-2">
+                    <div
+                      class="flex items-center justify-between pb-2 border-b border-[#262930]"
+                    >
+                      <span
+                        class="font-mono text-[11px] text-error uppercase font-bold tracking-wider"
+                        >IRQ Steering</span
+                      ><span
+                        class="font-mono text-[10px] px-1.5 py-0.5 border border-error bg-error text-white font-bold"
+                        >IRQ CONFLICT</span
+                      >
+                    </div>
+                    <div class="flex items-baseline gap-2 pt-4">
+                      <span
+                        class="text-5xl font-black font-mono tracking-tight text-error"
+                        >1.42</span
+                      ><span class="font-mono text-sm text-error"
+                        >ms Spike</span
+                      >
+                    </div>
+                    <span class="font-mono text-xs text-error mt-1"
+                      >Realtek Audio Driver (IRQ 16 Conflict)</span
+                    >
+                  </div>
+                  <div class="pt-8">
+                    <div
+                      class="flex justify-between font-mono text-xs text-[#9ba0ad] mb-2 uppercase"
+                    >
+                      <span>Packet Pacing Index</span
+                      ><span class="text-error font-bold">DEGRADED</span>
+                    </div>
+                    <div class="w-full bg-[#181a22] h-2 border border-error">
+                      <div class="bg-error h-full w-[24%]"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <!-- Quick Boost Dispatcher Shelf -->
+            <section class="bg-[#090a0d]">
+              <div
+                class="px-8 py-5 border-b-2 border-[#262930] flex items-center justify-between"
+              >
+                <div class="flex items-center gap-3">
+                  <span
+                    class="material-symbols-outlined text-[20px] text-primary"
+                    >history</span
+                  >
+                  <h2
+                    class="text-xl font-bold uppercase tracking-tight text-[#f5f5f7]"
+                  >
+                    Quick Boost Dispatcher
+                  </h2>
+                </div>
+                <a
+                  class="font-mono text-xs text-primary hover:text-white uppercase font-bold tracking-wider border-b border-primary transition-none"
+                  href="#"
+                  >Manage Game Library →</a
+                >
+              </div>
+              <div
+                class="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x-2 divide-[#262930] border-b-2 border-[#262930]"
+              >
+                <!-- Title 1: Apex Legends -->
+                <div
+                  class="p-8 bg-[#0d0e11] hover:bg-[#12141a] flex flex-col justify-between transition-none"
+                >
+                  <div class="flex items-start justify-between pb-6">
+                    <div class="flex flex-col">
+                      <span
+                        class="font-mono text-[10px] text-primary uppercase font-bold tracking-wider"
+                        >Profile // Esports Low-DPC</span
+                      >
+                      <h3
+                        class="text-2xl font-black uppercase text-[#f5f5f7] pt-1"
+                      >
+                        Apex Legends
+                      </h3>
+                      <span class="font-mono text-xs text-[#9ba0ad] mt-1"
+                        >Last launched today, 11:40</span
+                      >
+                    </div>
+                    <span
+                      class="material-symbols-outlined text-[24px] text-primary"
+                      >check_circle</span
+                    >
+                  </div>
+                  <div
+                    class="pt-8 border-t border-[#262930] flex items-center justify-between"
+                  >
+                    <div
+                      class="flex items-center gap-2 font-mono text-xs text-[#9ba0ad]"
+                    >
+                      <span
+                        class="material-symbols-outlined text-[16px] text-primary"
+                        >speed</span
+                      ><span>240 Hz Cap</span>
+                    </div>
+                    <button
+                      class="px-4 py-2 border-2 border-primary bg-primary text-black font-mono text-xs font-bold uppercase tracking-wider"
+                      type="button"
+                    >
+                      Boosted
+                    </button>
+                  </div>
+                </div>
+                <!-- Title 2: Counter-Strike 2 -->
+                <div
+                  class="p-8 bg-[#0d0e11] hover:bg-[#12141a] flex flex-col justify-between transition-none"
+                >
+                  <div class="flex items-start justify-between pb-6">
+                    <div class="flex flex-col">
+                      <span
+                        class="font-mono text-[10px] text-[#ffaa00] uppercase font-bold tracking-wider"
+                        >Profile // Reflex Sub-Tick</span
+                      >
+                      <h3
+                        class="text-2xl font-black uppercase text-[#f5f5f7] pt-1"
+                      >
+                        Counter-Strike 2
+                      </h3>
+                      <span class="font-mono text-xs text-[#9ba0ad] mt-1"
+                        >Last launched yesterday</span
+                      >
+                    </div>
+                    <span
+                      class="material-symbols-outlined text-[24px] text-[#5e6370]"
+                      >sports_esports</span
+                    >
+                  </div>
+                  <div
+                    class="pt-8 border-t border-[#262930] flex items-center justify-between"
+                  >
+                    <div
+                      class="flex items-center gap-2 font-mono text-xs text-[#9ba0ad]"
+                    >
+                      <span
+                        class="material-symbols-outlined text-[16px] text-[#ffaa00]"
+                        >timer</span
+                      ><span>Ultra Low Reflex</span>
+                    </div>
+                    <button
+                      class="px-4 py-2 border-2 border-[#262930] hover:border-primary hover:bg-primary hover:text-black text-[#f5f5f7] font-mono text-xs font-bold uppercase tracking-wider transition-none"
+                      type="button"
+                    >
+                      Trigger Boost
+                    </button>
+                  </div>
+                </div>
+                <!-- Title 3: Cyberpunk 2077 -->
+                <div
+                  class="p-8 bg-[#0d0e11] hover:bg-[#12141a] flex flex-col justify-between transition-none"
+                >
+                  <div class="flex items-start justify-between pb-6">
+                    <div class="flex flex-col">
+                      <span
+                        class="font-mono text-[10px] text-[#ff7700] uppercase font-bold tracking-wider"
+                        >Profile // Max Fidelity Thermal</span
+                      >
+                      <h3
+                        class="text-2xl font-black uppercase text-[#f5f5f7] pt-1"
+                      >
+                        Cyberpunk 2077
+                      </h3>
+                      <span class="font-mono text-xs text-[#9ba0ad] mt-1"
+                        >Last launched 3 days ago</span
+                      >
+                    </div>
+                    <span
+                      class="material-symbols-outlined text-[24px] text-[#5e6370]"
+                      >hdr_on</span
+                    >
+                  </div>
+                  <div
+                    class="pt-8 border-t border-[#262930] flex items-center justify-between"
+                  >
+                    <div
+                      class="flex items-center gap-2 font-mono text-xs text-[#9ba0ad]"
+                    >
+                      <span
+                        class="material-symbols-outlined text-[16px] text-primary"
+                        >memory</span
+                      ><span>DLSS Frame Gen</span>
+                    </div>
+                    <button
+                      class="px-4 py-2 border-2 border-[#262930] hover:border-primary hover:bg-primary hover:text-black text-[#f5f5f7] font-mono text-xs font-bold uppercase tracking-wider transition-none"
+                      type="button"
+                    >
+                      Trigger Boost
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <script>
+              (function () {
+                const btn = document.getElementById("quickBoostBtn");
+                const text = document.getElementById("quickBoostText");
+                if (!btn || !text) return;
+
+                let boosted = false;
+                btn.addEventListener("click", () => {
+                  boosted = !boosted;
+                  if (boosted) {
+                    text.textContent = "Active: Profile Engaged (22µs)";
+                    btn.classList.remove("bg-primary", "text-black");
+                    btn.classList.add("bg-[#ffaa00]", "text-black");
+                  } else {
+                    text.textContent = "Quick Boost Active Profile";
+                    btn.classList.remove("bg-[#ffaa00]", "text-black");
+                    btn.classList.add("bg-primary", "text-black");
+                  }
+                });
+              })();
+            </script>
+          </div>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

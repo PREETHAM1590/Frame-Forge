@@ -1,0 +1,1577 @@
+<!doctype html>
+<html class="dark" lang="en" style="">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta content="web_dashboard" name="shell-type" />
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700;800;900&amp;family=Space+Grotesk:wght@400;500;700;900&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      @layer base {
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+        }
+        body {
+          overscroll-behavior: none;
+        }
+        main > :first-child {
+          margin-top: 0 !important;
+        }
+        main > :last-child {
+          margin-bottom: 0 !important;
+        }
+      }
+      ::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-container": "#ff5708",
+              "primary-fixed": "#ffdbcf",
+              "tertiary-fixed": "#ffddb4",
+              "secondary-container": "#fe7600",
+              secondary: "#ffb68d",
+              "on-tertiary": "#452b00",
+              "surface-container-low": "#090a0d",
+              "outline-variant": "#5c4037",
+              "inverse-surface": "#e3e2e6",
+              primary: "#ffb59c",
+              "surface-container": "#1f1f23",
+              "inverse-on-surface": "#303034",
+              "surface-tint": "#ffb59c",
+              "inverse-primary": "#aa3600",
+              "surface-container-highest": "#343538",
+              "on-secondary-fixed": "#331200",
+              "on-secondary": "#532200",
+              "on-surface-variant": "#e5beb2",
+              "on-surface": "#f5f5f7",
+              error: "#ff3b30",
+              "surface-dim": "#121316",
+              surface: "#12141a",
+              "surface-container-lowest": "#050608",
+              "primary-fixed-dim": "#ffb59c",
+              "error-container": "#93000a",
+              "tertiary-container": "#c68300",
+              "surface-variant": "#343538",
+              "surface-container-high": "#292a2d",
+              "on-secondary-container": "#5a2600",
+              "on-secondary-fixed-variant": "#763300",
+              "on-primary": "#5c1900",
+              "on-background": "#e3e2e6",
+              "secondary-fixed": "#ffdbc9",
+              tertiary: "#ffb952",
+              "on-tertiary-fixed-variant": "#633f00",
+              outline: "#5e6370",
+              "on-error-container": "#ffdad6",
+              "on-tertiary-container": "#3c2500",
+              "on-primary-container": "#511500",
+              background: "#121316",
+              "tertiary-fixed-dim": "#ffb952",
+              "surface-bright": "#38393c",
+              "on-primary-fixed": "#390c00",
+              "on-tertiary-fixed": "#291800",
+              "secondary-fixed-dim": "#ffb68d",
+              "on-error": "#690005",
+              "on-primary-fixed-variant": "#822700",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              "space-sm": "0.5rem",
+              margin: "2rem",
+              "space-md": "1rem",
+              gutter: "0px",
+              "space-xl": "2rem",
+              "space-xs": "0.25rem",
+              "space-lg": "1.5rem",
+            },
+            fontFamily: {
+              "display-lg-mobile": ["Space Grotesk"],
+              "body-md": ["Space Grotesk"],
+              "headline-md": ["Space Grotesk"],
+              "label-lg": ["JetBrains Mono"],
+              "body-sm": ["Space Grotesk"],
+              "telemetry-numeral-lg": ["JetBrains Mono"],
+              "headline-sm": ["Space Grotesk"],
+              "telemetry-numeral-md": ["JetBrains Mono"],
+              "headline-lg": ["Space Grotesk"],
+              "label-sm": ["JetBrains Mono"],
+              "label-md": ["JetBrains Mono"],
+              "body-lg": ["Space Grotesk"],
+              "headline-lg-mobile": ["Space Grotesk"],
+              "label-xs": ["JetBrains Mono"],
+              "display-lg": ["Space Grotesk"],
+            },
+            fontSize: {
+              "display-lg-mobile": [
+                "2.25rem",
+                {
+                  lineHeight: "1.1",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "900",
+                },
+              ],
+              "body-md": [
+                "0.875rem",
+                { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" },
+              ],
+              "headline-md": [
+                "1.5rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-lg": [
+                "0.875rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.05em",
+                  fontWeight: "700",
+                },
+              ],
+              "body-sm": [
+                "0.75rem",
+                { lineHeight: "1.4", letterSpacing: "0", fontWeight: "400" },
+              ],
+              "telemetry-numeral-lg": [
+                "3.75rem",
+                {
+                  lineHeight: "1",
+                  letterSpacing: "-0.03em",
+                  fontWeight: "900",
+                },
+              ],
+              "headline-sm": [
+                "1.25rem",
+                {
+                  lineHeight: "1.3",
+                  letterSpacing: "-0.01em",
+                  fontWeight: "700",
+                },
+              ],
+              "telemetry-numeral-md": [
+                "1.5rem",
+                { lineHeight: "1.1", letterSpacing: "0", fontWeight: "800" },
+              ],
+              "headline-lg": [
+                "3rem",
+                {
+                  lineHeight: "1.1",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "900",
+                },
+              ],
+              "label-sm": [
+                "0.6875rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.1em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-md": [
+                "0.75rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.08em",
+                  fontWeight: "700",
+                },
+              ],
+              "body-lg": [
+                "1.125rem",
+                { lineHeight: "1.5", letterSpacing: "0", fontWeight: "500" },
+              ],
+              "headline-lg-mobile": [
+                "2rem",
+                {
+                  lineHeight: "1.15",
+                  letterSpacing: "-0.015em",
+                  fontWeight: "900",
+                },
+              ],
+              "label-xs": [
+                "0.5625rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.12em",
+                  fontWeight: "700",
+                },
+              ],
+              "display-lg": [
+                "3.75rem",
+                {
+                  lineHeight: "1",
+                  letterSpacing: "-0.025em",
+                  fontWeight: "900",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-surface-container-lowest text-on-surface font-body-md text-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen"
+  >
+    <aside
+      class="fixed left-0 top-0 h-full w-72 bg-surface-container-low z-50 flex flex-col justify-between border-r border-outline-variant"
+    >
+      <div class="flex flex-col">
+        <div
+          class="h-14 px-space-md border-b border-outline-variant flex items-center justify-between bg-surface-container-lowest"
+        >
+          <div class="flex items-center gap-space-sm">
+            <div class="w-2.5 h-2.5 bg-primary-container"></div>
+            <span
+              class="font-headline-sm text-headline-sm uppercase tracking-tight text-on-surface font-black"
+              >AURA</span
+            >
+          </div>
+          <span
+            class="font-label-xs text-label-xs px-1.5 py-0.5 bg-primary-container text-on-primary-container uppercase font-bold tracking-widest"
+            >v2.4</span
+          >
+        </div>
+        <div
+          class="px-space-md py-space-xs border-b border-outline-variant bg-surface-container-low flex items-center justify-between"
+        >
+          <span
+            class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+            >DISPATCH INTERFACE</span
+          ><span
+            class="font-label-xs text-label-xs text-primary-container uppercase tracking-widest"
+            >SYS_RDY</span
+          >
+        </div>
+        <nav
+          class="flex flex-col py-space-xs"
+          data-active-classes="bg-primary-container text-on-primary-container border-l-4 border-secondary-container"
+        >
+          <a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md tracking-wider"
+            data-path="home"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]"
+                >grid_view</span
+              ><span class="">Home</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >01</span
+            ></a
+          >
+          <a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md tracking-wider"
+            data-path="game-mode"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]"
+                >sports_esports</span
+              ><span class="">Game Mode</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >02</span
+            ></a
+          >
+          <a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md tracking-wider"
+            data-path="games-library"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]"
+                >stadia_controller</span
+              ><span class="">Games Library</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >03</span
+            ></a
+          >
+          <a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md tracking-wider"
+            data-path="optimize"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]">speed</span
+              ><span class="">Optimize</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >04</span
+            ></a
+          >
+          <a
+            aria-current="page"
+            class="flex items-center justify-between px-space-md py-3 transition-none font-label-md tracking-wider bg-primary-container text-on-primary-container border-l-4 border-secondary-container"
+            data-path="safety-and-backups"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-on-primary-container"
+                >security</span
+              ><span class="">Safety &amp; Backups</span></span
+            ><span
+              class="font-mono text-[10px] tracking-widest text-on-primary-container font-bold"
+              >05</span
+            ></a
+          >
+          <a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md tracking-wider"
+            data-path="system-and-topology"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]">memory</span
+              ><span class="">System &amp; Topology</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >06</span
+            ></a
+          >
+        </nav>
+      </div>
+      <div
+        class="flex flex-col border-t border-outline-variant bg-surface-container-lowest"
+      >
+        <a
+          class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none font-label-md text-label-md tracking-wider border-b border-outline-variant"
+          data-path="settings"
+          href="#"
+          ><span class="flex items-center gap-space-sm"
+            ><span
+              class="material-symbols-outlined text-[18px] text-outline group-hover:text-on-surface"
+              >settings</span
+            ><span class="">Settings</span></span
+          ><span class="font-mono text-[10px]">SYS</span></a
+        >
+        <div class="p-space-md flex flex-col gap-space-xs">
+          <div class="flex items-center justify-between">
+            <span
+              class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+              >TARGET NODE</span
+            ><span
+              class="flex items-center gap-1.5 font-label-xs text-label-xs text-tertiary font-bold"
+              ><span
+                class="w-1.5 h-1.5 bg-primary-container animate-pulse"
+              ></span
+              >ONLINE</span
+            >
+          </div>
+          <div
+            class="font-headline-sm text-headline-sm uppercase text-on-surface tracking-tight font-bold"
+          >
+            Rig-01 Ultra
+          </div>
+          <div
+            class="flex justify-between items-center text-outline font-label-xs text-label-xs mt-1"
+          >
+            <span class="uppercase">KERNEL TELEMETRY</span
+            ><span class="font-mono">v4.19.0-OC</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="pl-72">
+      <header
+        class="fixed top-0 left-72 right-0 h-14 bg-surface-container-low/95 backdrop-blur-md z-40 border-b border-outline-variant flex items-center justify-between px-space-md"
+      >
+        <div class="flex items-center gap-space-md">
+          <div
+            class="flex items-center gap-2 border-r border-outline-variant pr-space-md"
+          >
+            <span class="font-label-xs text-label-xs text-outline uppercase"
+              >STATUS</span
+            ><span
+              class="font-label-sm text-label-sm font-bold uppercase text-primary-container tracking-wider"
+              >SYSTEM EQUILIBRIUM: NOMINAL</span
+            >
+          </div>
+          <div
+            class="hidden lg:flex items-center gap-space-md font-label-sm text-label-sm"
+          >
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >CORE FREQ</span
+              ><span class="font-bold font-mono text-on-surface">4.85 GHz</span>
+            </div>
+            <span class="text-outline-variant">/</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >TEMP</span
+              ><span class="font-bold font-mono text-tertiary">38°C</span>
+            </div>
+            <span class="text-outline-variant">/</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >BUS LOAD</span
+              ><span class="font-bold font-mono text-on-surface">14%</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-space-sm">
+          <div
+            class="flex items-center mr-space-sm pr-space-sm border-r border-outline-variant"
+          >
+            <div
+              class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"
+            >
+              <span
+                class="material-symbols-outlined text-on-primary text-[18px]"
+                >person</span
+              >
+            </div>
+          </div>
+          <div class="flex items-center border border-outline-variant">
+            <button
+              class="w-9 h-9 flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface text-on-surface-variant transition-none border-r border-outline-variant"
+              title="Minimize Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >minimize</span
+              ></button
+            ><button
+              class="w-9 h-9 flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface text-on-surface-variant transition-none border-r border-outline-variant"
+              title="Maximize Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >crop_square</span
+              ></button
+            ><button
+              class="w-9 h-9 flex items-center justify-center hover:bg-error hover:text-on-error text-on-surface-variant transition-none"
+              title="Close Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          </div>
+        </div>
+      </header>
+      <main class="relative pt-14 w-full min-h-screen bg-surface">
+        <div class="flex flex-col w-full">
+          <!-- MASTHEAD COMMAND PROTOCOL STRIP -->
+          <section class="bg-surface-container-low px-space-xl py-space-lg">
+            <div
+              class="flex flex-col lg:flex-row lg:items-center justify-between gap-space-lg"
+            >
+              <div class="flex flex-col gap-space-xs">
+                <div class="flex items-center gap-space-sm flex-wrap">
+                  <span
+                    class="font-label-xs text-label-xs bg-primary-container text-on-primary-container px-2 py-0.5 tracking-widest uppercase font-bold"
+                    >NODE // 05</span
+                  >
+                  <span
+                    class="font-label-xs text-label-xs text-secondary tracking-widest uppercase"
+                    >DISPATCH ENGINE ACTIVE</span
+                  >
+                  <span class="text-outline">/</span>
+                  <span
+                    class="font-label-xs text-label-xs text-tertiary flex items-center gap-1.5 uppercase font-bold"
+                  >
+                    <span class="w-1.5 h-1.5 bg-tertiary animate-pulse"></span
+                    >ACTIVE_LEDGER: HEALTHY
+                  </span>
+                </div>
+                <h1
+                  class="font-headline-lg text-headline-lg uppercase tracking-tight text-on-surface"
+                >
+                  SAFETY &amp; RECOVERY
+                </h1>
+                <p
+                  class="font-label-sm text-label-sm text-outline uppercase tracking-wider"
+                >
+                  KERNEL LEVEL FAILSAFE CONTROLLER // RESTORE SUBSYSTEM V4.19
+                </p>
+              </div>
+              <!-- MASTER CONTROLS -->
+              <div class="flex flex-wrap items-center gap-space-sm">
+                <button
+                  class="bg-surface-container hover:bg-surface-container-high text-on-surface px-space-lg py-3 font-label-md text-label-md uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-none"
+                  id="btn-create-snapshot"
+                >
+                  <span
+                    class="material-symbols-outlined text-[18px] text-tertiary"
+                    >add_circle</span
+                  >
+                  <span class="">[ + CREATE MANUAL SNAPSHOT ]</span>
+                </button>
+                <button
+                  class="bg-primary-container hover:bg-primary-fixed-dim text-on-primary-container px-space-lg py-3 font-label-md text-label-md uppercase tracking-wider flex items-center gap-2 font-bold cursor-pointer transition-none"
+                  id="btn-restore-all"
+                >
+                  <span class="material-symbols-outlined text-[18px]"
+                    >warning</span
+                  >
+                  <span class="">[ RESTORE ALL SECURITY SETTINGS ]</span>
+                </button>
+              </div>
+            </div>
+            <!-- QUICK SAFETY METRICS ROW -->
+            <div
+              class="grid grid-cols-1 md:grid-cols-3 gap-space-sm mt-space-lg"
+            >
+              <div
+                class="bg-surface-container-lowest p-space-md flex flex-col justify-between"
+              >
+                <div
+                  class="flex items-center justify-between text-outline font-label-xs text-label-xs uppercase"
+                >
+                  <span class="">INTEGRITY VERIFICATION</span>
+                  <span class="text-primary-container">SHA-256</span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                  <span
+                    class="font-telemetry-numeral-md text-telemetry-numeral-md text-on-surface font-mono"
+                    >100%</span
+                  >
+                  <span
+                    class="font-label-xs text-label-xs text-tertiary uppercase font-bold"
+                    >VERIFIED CONSISTENT</span
+                  >
+                </div>
+                <div class="w-full bg-surface-container-highest h-1.5 mt-2">
+                  <div class="bg-primary-container h-full w-full"></div>
+                </div>
+              </div>
+              <div
+                class="bg-surface-container-lowest p-space-md flex flex-col justify-between"
+              >
+                <div
+                  class="flex items-center justify-between text-outline font-label-xs text-label-xs uppercase"
+                >
+                  <span class="">VOLUME SHADOW ARCHIVES</span>
+                  <span class="text-tertiary">VSS POOL</span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                  <span
+                    class="font-telemetry-numeral-md text-telemetry-numeral-md text-on-surface font-mono"
+                    >03</span
+                  >
+                  <span
+                    class="font-label-xs text-label-xs text-outline uppercase font-bold"
+                    >DISPATCHABLE IMAGES</span
+                  >
+                </div>
+                <div class="flex gap-1 mt-2">
+                  <div class="h-1.5 bg-primary-container flex-1"></div>
+                  <div class="h-1.5 bg-primary-container flex-1"></div>
+                  <div class="h-1.5 bg-primary-container flex-1"></div>
+                  <div class="h-1.5 bg-surface-container-highest flex-1"></div>
+                </div>
+              </div>
+              <div
+                class="bg-surface-container-lowest p-space-md flex flex-col justify-between"
+              >
+                <div
+                  class="flex items-center justify-between text-outline font-label-xs text-label-xs uppercase"
+                >
+                  <span class="">TRIGGER POLICY</span>
+                  <span class="text-primary-container">AUTO-INTERCEPT</span>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                  <span
+                    class="font-telemetry-numeral-md text-telemetry-numeral-md text-secondary uppercase font-mono"
+                    >ARMED</span
+                  >
+                  <span
+                    class="font-label-xs text-label-xs text-outline uppercase"
+                    >PRE-OPTIMIZE GUARD</span
+                  >
+                </div>
+                <div
+                  class="w-full bg-surface-container-highest h-1.5 mt-2 flex"
+                >
+                  <div class="bg-secondary-container h-full w-4/5"></div>
+                  <div class="bg-tertiary h-full w-1/5 animate-pulse"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+          <!-- TWO-COLUMN RECOVERY ENGINE -->
+          <section
+            class="grid grid-cols-1 xl:grid-cols-12 gap-space-sm p-space-sm bg-surface-container-lowest"
+          >
+            <!-- LEFT COLUMN: RESTORE POINTS & HIVE CARTRIDGES (7 COLS) -->
+            <div class="xl:col-span-7 flex flex-col gap-space-sm">
+              <!-- CARD: LATEST RESTORE POINT -->
+              <div class="bg-surface-container p-space-lg flex flex-col">
+                <div class="flex items-center justify-between pb-space-sm">
+                  <div class="flex items-center gap-space-sm">
+                    <span class="w-2.5 h-2.5 bg-primary-container"></span>
+                    <span
+                      class="font-label-md text-label-md uppercase tracking-wider text-on-surface font-bold"
+                      >CURRENT ACTIVE RESTORE POINT</span
+                    >
+                  </div>
+                  <span
+                    class="font-label-xs text-label-xs bg-surface-container-highest text-primary px-2 py-0.5 uppercase tracking-widest font-mono"
+                    >HOT-SNAPSHOT</span
+                  >
+                </div>
+                <div
+                  class="grid grid-cols-1 lg:grid-cols-12 gap-space-md py-space-md"
+                >
+                  <div class="lg:col-span-8 flex flex-col justify-between">
+                    <div>
+                      <div
+                        class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                      >
+                        TARGET_TAG: RP-085
+                      </div>
+                      <div
+                        class="font-headline-md text-headline-md uppercase text-on-surface tracking-tight mt-1"
+                      >
+                        PRE-ESPORTS TWEAK #2024-10-24_1140
+                      </div>
+                      <p
+                        class="font-body-sm text-body-sm text-on-surface-variant mt-2"
+                      >
+                        Captured before applying dynamic affinity masks and
+                        kernel interrupt balancing. Includes raw SAM runtime
+                        registry hive.
+                      </p>
+                    </div>
+                    <div
+                      class="grid grid-cols-3 gap-space-xs mt-space-md bg-surface-container-lowest p-space-sm"
+                    >
+                      <div>
+                        <span
+                          class="font-label-xs text-label-xs text-outline block uppercase"
+                          >GENERATED</span
+                        >
+                        <span
+                          class="font-label-sm text-label-sm text-on-surface font-mono font-bold"
+                          >42 MIN AGO</span
+                        >
+                      </div>
+                      <div>
+                        <span
+                          class="font-label-xs text-label-xs text-outline block uppercase"
+                          >STRUCTURE</span
+                        >
+                        <span
+                          class="font-label-sm text-label-sm text-on-surface font-mono font-bold"
+                          >SYS + HIVES</span
+                        >
+                      </div>
+                      <div>
+                        <span
+                          class="font-label-xs text-label-xs text-outline block uppercase"
+                          >FOOTPRINT</span
+                        >
+                        <span
+                          class="font-label-sm text-label-sm text-tertiary font-mono font-bold"
+                          >1.40 GB</span
+                        >
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    class="lg:col-span-4 flex flex-col justify-end gap-space-xs"
+                  >
+                    <div
+                      class="bg-surface-container-lowest p-space-sm flex flex-col items-center justify-center"
+                    >
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+                        >CHECKSUM SIGNATURE</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-primary font-mono mt-1 text-center truncate w-full"
+                        id="checksum-display"
+                        >8F2A9C00B4EE789A...</span
+                      >
+                      <button
+                        class="mt-2 w-full py-1.5 bg-surface-container-high hover:bg-surface-bright text-on-surface font-label-xs text-label-xs uppercase tracking-wider text-center cursor-pointer transition-none"
+                        id="btn-verify-hash"
+                      >
+                        VERIFY MD5 HASH
+                      </button>
+                    </div>
+                    <button
+                      class="w-full bg-primary-container hover:bg-white hover:text-surface-container-lowest text-on-primary-container py-3 font-label-md text-label-md uppercase tracking-wider font-bold flex items-center justify-center gap-2 cursor-pointer transition-none"
+                      id="btn-rollback-quick"
+                    >
+                      <span class="material-symbols-outlined text-[18px]"
+                        >replay</span
+                      >
+                      <span class="">ONE-CLICK ROLLBACK</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <!-- HISTORICAL RESTORE POINTS TABLE -->
+              <div class="bg-surface-container p-space-lg flex flex-col">
+                <div class="flex items-center justify-between pb-space-sm">
+                  <div class="flex items-center gap-space-sm">
+                    <span class="w-2.5 h-2.5 bg-outline"></span>
+                    <span
+                      class="font-label-md text-label-md uppercase tracking-wider text-on-surface font-bold"
+                      >IMMUTABLE SNAPSHOT REGISTRY</span
+                    >
+                  </div>
+                  <span
+                    class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                    >TOTAL RECORDED: 04</span
+                  >
+                </div>
+                <div class="w-full overflow-x-auto mt-space-sm">
+                  <table class="w-full text-left font-label-sm text-label-sm">
+                    <thead>
+                      <tr
+                        class="bg-surface-container-lowest text-outline font-label-xs text-label-xs uppercase"
+                      >
+                        <th class="py-2.5 px-3">INDEX / TAG</th>
+                        <th class="py-2.5 px-3">DESCRIPTION</th>
+                        <th class="py-2.5 px-3">AGE / TIMESTAMP</th>
+                        <th class="py-2.5 px-3">STATE</th>
+                        <th class="py-2.5 px-3 text-right">DISPATCH</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y-0">
+                      <tr
+                        class="bg-surface-container-low hover:bg-surface-container-high transition-none group"
+                      >
+                        <td class="py-3 px-3 font-mono font-bold text-primary">
+                          RP-084
+                        </td>
+                        <td
+                          class="py-3 px-3 text-on-surface font-mono font-medium"
+                        >
+                          Windows Update Baseline KB5034441
+                        </td>
+                        <td class="py-3 px-3 text-outline font-mono">
+                          Yesterday 18:22
+                        </td>
+                        <td class="py-3 px-3">
+                          <span
+                            class="px-1.5 py-0.5 bg-surface-container text-tertiary font-mono font-bold font-label-xs text-label-xs uppercase"
+                            >STABLE</span
+                          >
+                        </td>
+                        <td class="py-3 px-3 text-right">
+                          <button
+                            class="px-2.5 py-1 bg-surface-container hover:bg-primary-container hover:text-on-primary-container text-on-surface font-label-xs text-label-xs uppercase font-mono cursor-pointer transition-none"
+                          >
+                            MOUNT
+                          </button>
+                        </td>
+                      </tr>
+                      <tr
+                        class="bg-surface-container-lowest hover:bg-surface-container-high transition-none group"
+                      >
+                        <td
+                          class="py-3 px-3 font-mono font-bold text-on-surface-variant"
+                        >
+                          RP-083
+                        </td>
+                        <td
+                          class="py-3 px-3 text-on-surface font-mono font-medium"
+                        >
+                          Clean GPU Driver 552.12 Clean Install
+                        </td>
+                        <td class="py-3 px-3 text-outline font-mono">
+                          3 days ago
+                        </td>
+                        <td class="py-3 px-3">
+                          <span
+                            class="px-1.5 py-0.5 bg-surface-container text-outline font-mono font-bold font-label-xs text-label-xs uppercase"
+                            >ARCHIVED</span
+                          >
+                        </td>
+                        <td class="py-3 px-3 text-right">
+                          <button
+                            class="px-2.5 py-1 bg-surface-container hover:bg-primary-container hover:text-on-primary-container text-on-surface font-label-xs text-label-xs uppercase font-mono cursor-pointer transition-none"
+                          >
+                            MOUNT
+                          </button>
+                        </td>
+                      </tr>
+                      <tr
+                        class="bg-surface-container-low hover:bg-surface-container-high transition-none group"
+                      >
+                        <td class="py-3 px-3 font-mono font-bold text-tertiary">
+                          RP-082
+                        </td>
+                        <td
+                          class="py-3 px-3 text-on-surface font-mono font-medium"
+                        >
+                          Factory Default OS Provision State
+                        </td>
+                        <td class="py-3 px-3 text-outline font-mono">
+                          Oct 12, 09:00
+                        </td>
+                        <td class="py-3 px-3">
+                          <span
+                            class="px-1.5 py-0.5 bg-tertiary-container text-on-tertiary-container font-mono font-bold font-label-xs text-label-xs uppercase"
+                            >GOLD MASTER</span
+                          >
+                        </td>
+                        <td class="py-3 px-3 text-right">
+                          <button
+                            class="px-2.5 py-1 bg-surface-container hover:bg-primary-container hover:text-on-primary-container text-on-surface font-label-xs text-label-xs uppercase font-mono cursor-pointer transition-none"
+                          >
+                            DEPLOY
+                          </button>
+                        </td>
+                      </tr>
+                      <tr
+                        class="bg-surface-container-lowest hover:bg-surface-container-high transition-none group"
+                      >
+                        <td class="py-3 px-3 font-mono font-bold text-outline">
+                          RP-081
+                        </td>
+                        <td
+                          class="py-3 px-3 text-on-surface font-mono font-medium"
+                        >
+                          OEM Base Deployment Image
+                        </td>
+                        <td class="py-3 px-3 text-outline font-mono">
+                          Sep 28, 14:15
+                        </td>
+                        <td class="py-3 px-3">
+                          <span
+                            class="px-1.5 py-0.5 bg-surface-container text-outline font-mono font-bold font-label-xs text-label-xs uppercase"
+                            >LOCKED</span
+                          >
+                        </td>
+                        <td class="py-3 px-3 text-right">
+                          <button
+                            class="px-2.5 py-1 bg-surface-container-highest text-outline font-label-xs text-label-xs uppercase font-mono cursor-not-allowed"
+                          >
+                            READONLY
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <!-- COMPONENT RECOVERY BAY -->
+              <div class="bg-surface-container p-space-lg flex flex-col">
+                <div class="flex items-center justify-between pb-space-sm">
+                  <div class="flex items-center gap-space-sm">
+                    <span class="w-2.5 h-2.5 bg-secondary"></span>
+                    <span
+                      class="font-label-md text-label-md uppercase tracking-wider text-on-surface font-bold"
+                      >ISOLATED SUBSYSTEM EXPORTS</span
+                    >
+                  </div>
+                  <span
+                    class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                    >GRANULAR CARTRIDGES</span
+                  >
+                </div>
+                <div
+                  class="grid grid-cols-1 md:grid-cols-3 gap-space-sm mt-space-sm"
+                >
+                  <div
+                    class="bg-surface-container-lowest p-space-md flex flex-col justify-between"
+                  >
+                    <div>
+                      <div class="flex items-center justify-between">
+                        <span
+                          class="font-label-xs text-label-xs text-primary uppercase font-mono"
+                          >REGISTRY HIVE</span
+                        >
+                        <span
+                          class="material-symbols-outlined text-outline text-[16px]"
+                          >terminal</span
+                        >
+                      </div>
+                      <div
+                        class="font-headline-sm text-headline-sm text-on-surface mt-2 font-mono"
+                      >
+                        CLONE.REG
+                      </div>
+                      <p
+                        class="font-body-sm text-body-sm text-on-surface-variant mt-1"
+                      >
+                        Full HKLM / HKCU binary serialization.
+                      </p>
+                    </div>
+                    <div
+                      class="mt-space-md pt-space-xs flex justify-between items-center"
+                    >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >142 MB</span
+                      >
+                      <button
+                        class="px-2.5 py-1 bg-surface-container hover:bg-primary-container hover:text-on-primary-container text-on-surface font-label-xs text-label-xs uppercase font-mono cursor-pointer transition-none"
+                      >
+                        RESTORE
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    class="bg-surface-container-lowest p-space-md flex flex-col justify-between"
+                  >
+                    <div>
+                      <div class="flex items-center justify-between">
+                        <span
+                          class="font-label-xs text-label-xs text-tertiary uppercase font-mono"
+                          >DIRECTX SHADER</span
+                        >
+                        <span
+                          class="material-symbols-outlined text-outline text-[16px]"
+                          >videogame_asset</span
+                        >
+                      </div>
+                      <div
+                        class="font-headline-sm text-headline-sm text-on-surface mt-2 font-mono"
+                      >
+                        CACHE_DX12
+                      </div>
+                      <p
+                        class="font-body-sm text-body-sm text-on-surface-variant mt-1"
+                      >
+                        DXGKRNL PSO blob and pipeline binaries.
+                      </p>
+                    </div>
+                    <div
+                      class="mt-space-md pt-space-xs flex justify-between items-center"
+                    >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >819 MB</span
+                      >
+                      <button
+                        class="px-2.5 py-1 bg-surface-container hover:bg-tertiary hover:text-on-tertiary text-on-surface font-label-xs text-label-xs uppercase font-mono cursor-pointer transition-none"
+                      >
+                        PURGE/FLUSH
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    class="bg-surface-container-lowest p-space-md flex flex-col justify-between"
+                  >
+                    <div>
+                      <div class="flex items-center justify-between">
+                        <span
+                          class="font-label-xs text-label-xs text-secondary uppercase font-mono"
+                          >NETWORKING</span
+                        >
+                        <span
+                          class="material-symbols-outlined text-outline text-[16px]"
+                          >settings_ethernet</span
+                        >
+                      </div>
+                      <div
+                        class="font-headline-sm text-headline-sm text-on-surface mt-2 font-mono"
+                      >
+                        TCP_STACK.CFG
+                      </div>
+                      <p
+                        class="font-body-sm text-body-sm text-on-surface-variant mt-1"
+                      >
+                        Netsh winsock catalog, congestion profile.
+                      </p>
+                    </div>
+                    <div
+                      class="mt-space-md pt-space-xs flex justify-between items-center"
+                    >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >1.2 MB</span
+                      >
+                      <button
+                        class="px-2.5 py-1 bg-surface-container hover:bg-secondary-container hover:text-on-secondary-container text-on-surface font-label-xs text-label-xs uppercase font-mono cursor-pointer transition-none"
+                      >
+                        RELOAD
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- RIGHT COLUMN: AUDIT LEDGER & IMMUTABLE STREAM (5 COLS) -->
+            <div class="xl:col-span-5 flex flex-col gap-space-sm">
+              <div class="bg-surface-container p-space-lg flex flex-col h-full">
+                <div class="flex items-center justify-between pb-space-sm">
+                  <div class="flex items-center gap-space-sm">
+                    <span class="w-2.5 h-2.5 bg-primary-container"></span>
+                    <span
+                      class="font-label-md text-label-md uppercase tracking-wider text-on-surface font-bold"
+                      >AUDIT LEDGER &amp; ACTIVITY LOG</span
+                    >
+                  </div>
+                  <span
+                    class="font-label-xs text-label-xs text-primary font-mono font-bold uppercase tracking-widest animate-pulse"
+                    >STREAM_LIVE</span
+                  >
+                </div>
+                <!-- QUICK AUDIT FILTER BADGES -->
+                <div class="flex items-center gap-1.5 flex-wrap py-space-sm">
+                  <button
+                    class="filter-chip bg-primary-container text-on-primary-container font-label-xs text-label-xs px-2.5 py-1 uppercase font-bold font-mono cursor-pointer transition-none"
+                    data-filter="all"
+                  >
+                    ALL (28)
+                  </button>
+                  <button
+                    class="filter-chip bg-surface-container-lowest hover:bg-surface-container-high text-outline hover:text-on-surface font-label-xs text-label-xs px-2.5 py-1 uppercase font-bold font-mono cursor-pointer transition-none"
+                    data-filter="tweak"
+                  >
+                    TWEAKS (14)
+                  </button>
+                  <button
+                    class="filter-chip bg-surface-container-lowest hover:bg-surface-container-high text-outline hover:text-on-surface font-label-xs text-label-xs px-2.5 py-1 uppercase font-bold font-mono cursor-pointer transition-none"
+                    data-filter="snapshot"
+                  >
+                    SNAPSHOTS (4)
+                  </button>
+                  <button
+                    class="filter-chip bg-surface-container-lowest hover:bg-surface-container-high text-outline hover:text-on-surface font-label-xs text-label-xs px-2.5 py-1 uppercase font-bold font-mono cursor-pointer transition-none"
+                    data-filter="warning"
+                  >
+                    RISK:HIGH (3)
+                  </button>
+                  <button
+                    class="filter-chip bg-surface-container-lowest hover:bg-surface-container-high text-outline hover:text-on-surface font-label-xs text-label-xs px-2.5 py-1 uppercase font-bold font-mono cursor-pointer transition-none"
+                    data-filter="revert"
+                  >
+                    REVERTS (2)
+                  </button>
+                </div>
+                <!-- CHRONOLOGICAL STREAM -->
+                <div
+                  class="flex flex-col gap-space-xs mt-space-sm overflow-y-auto max-h-[580px] pr-1"
+                  id="ledger-stream"
+                >
+                  <!-- ITEM 1: CRITICAL TWEAK -->
+                  <div
+                    class="ledger-item bg-surface-container-lowest p-space-md flex flex-col gap-space-xs"
+                    data-category="warning tweak"
+                  >
+                    <div class="flex items-center justify-between">
+                      <span
+                        class="font-label-xs text-label-xs font-mono text-outline"
+                        >11:40:12 AM // DISPATCH #891</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs bg-error text-on-error font-mono font-bold px-1.5 py-0.5 uppercase"
+                        >RISK: HIGH</span
+                      >
+                    </div>
+                    <div
+                      class="font-headline-sm text-headline-sm text-on-surface uppercase"
+                    >
+                      HVCI Hypervisor Disabled
+                    </div>
+                    <p
+                      class="font-body-sm text-body-sm text-on-surface-variant"
+                    >
+                      Memory integrity virtualization container halted to reduce
+                      frame rendering jitter.
+                    </p>
+                    <div
+                      class="flex items-center justify-between mt-2 pt-2 bg-surface-container-low p-2"
+                    >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >IMPACT: +4.2% MIN 1% FPS</span
+                      >
+                      <button
+                        class="revert-btn text-primary hover:text-white font-label-xs text-label-xs uppercase font-mono font-bold flex items-center gap-1 cursor-pointer transition-none"
+                      >
+                        <span class="material-symbols-outlined text-[14px]"
+                          >undo</span
+                        >
+                        [REVERT THIS CHANGE]
+                      </button>
+                    </div>
+                  </div>
+                  <!-- ITEM 2: CORE ISOLATION -->
+                  <div
+                    class="ledger-item bg-surface-container-lowest p-space-md flex flex-col gap-space-xs"
+                    data-category="warning tweak"
+                  >
+                    <div class="flex items-center justify-between">
+                      <span
+                        class="font-label-xs text-label-xs font-mono text-outline"
+                        >11:40:08 AM // DISPATCH #890</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs bg-secondary-container text-on-secondary-container font-mono font-bold px-1.5 py-0.5 uppercase"
+                        >SECURITY BYPASS</span
+                      >
+                    </div>
+                    <div
+                      class="font-headline-sm text-headline-sm text-on-surface uppercase"
+                    >
+                      Core Isolation Protection Bypassed
+                    </div>
+                    <p
+                      class="font-body-sm text-body-sm text-on-surface-variant"
+                    >
+                      System memory integrity driver enforcement set to manual
+                      exclusion mode.
+                    </p>
+                    <div
+                      class="flex items-center justify-between mt-2 pt-2 bg-surface-container-low p-2"
+                    >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >STATUS: UNENFORCED</span
+                      >
+                      <button
+                        class="revert-btn text-primary hover:text-white font-label-xs text-label-xs uppercase font-mono font-bold flex items-center gap-1 cursor-pointer transition-none"
+                      >
+                        <span class="material-symbols-outlined text-[14px]"
+                          >undo</span
+                        >
+                        [REVERT]
+                      </button>
+                    </div>
+                  </div>
+                  <!-- ITEM 3: SNAPSHOT CREATED -->
+                  <div
+                    class="ledger-item bg-surface-container-lowest p-space-md flex flex-col gap-space-xs"
+                    data-category="snapshot"
+                  >
+                    <div class="flex items-center justify-between">
+                      <span
+                        class="font-label-xs text-label-xs font-mono text-outline"
+                        >11:39:55 AM // AUTOMATION</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs bg-surface-container text-tertiary font-mono font-bold px-1.5 py-0.5 uppercase"
+                        >VSS_SUCCESS</span
+                      >
+                    </div>
+                    <div
+                      class="font-headline-sm text-headline-sm text-on-surface uppercase"
+                    >
+                      Auto-Snapshot #2024-10-24_1140
+                    </div>
+                    <p
+                      class="font-body-sm text-body-sm text-on-surface-variant"
+                    >
+                      Pre-optimization checkpoint written to disk sector
+                      C:\_AURA_SNAPSHOTS\RP-085.
+                    </p>
+                    <div
+                      class="flex items-center justify-between mt-2 pt-2 bg-surface-container-low p-2"
+                    >
+                      <span
+                        class="font-label-xs text-label-xs text-tertiary font-mono"
+                        >MD5 VERIFIED: 100% INTACT</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >1.4 GB</span
+                      >
+                    </div>
+                  </div>
+                  <!-- ITEM 4: RING-0 AUTH -->
+                  <div
+                    class="ledger-item bg-surface-container-lowest p-space-md flex flex-col gap-space-xs"
+                    data-category="tweak"
+                  >
+                    <div class="flex items-center justify-between">
+                      <span
+                        class="font-label-xs text-label-xs font-mono text-outline"
+                        >10:14:02 AM // COLD BOOT</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs bg-surface-container text-primary font-mono font-bold px-1.5 py-0.5 uppercase"
+                        >RING-0 DRIVER</span
+                      >
+                    </div>
+                    <div
+                      class="font-headline-sm text-headline-sm text-on-surface uppercase"
+                    >
+                      Kernel Hooks Authenticated
+                    </div>
+                    <p
+                      class="font-body-sm text-body-sm text-on-surface-variant"
+                    >
+                      AuraLowLatency.sys initialized with WHQL code-signing
+                      certificate.
+                    </p>
+                    <div
+                      class="flex items-center justify-between mt-2 pt-2 bg-surface-container-low p-2"
+                    >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >HANDLE: 0x000004FC</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-primary font-mono"
+                        >OK</span
+                      >
+                    </div>
+                  </div>
+                  <!-- ITEM 5: GAME PROFILE -->
+                  <div
+                    class="ledger-item bg-surface-container-lowest p-space-md flex flex-col gap-space-xs"
+                    data-category="tweak"
+                  >
+                    <div class="flex items-center justify-between">
+                      <span
+                        class="font-label-xs text-label-xs font-mono text-outline"
+                        >Yesterday 22:15 // LAUNCHER</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs bg-surface-container-high text-on-surface font-mono font-bold px-1.5 py-0.5 uppercase"
+                        >PROFILE_ENGAGED</span
+                      >
+                    </div>
+                    <div
+                      class="font-headline-sm text-headline-sm text-on-surface uppercase"
+                    >
+                      Apex Legends 240Hz Affinity
+                    </div>
+                    <p
+                      class="font-body-sm text-body-sm text-on-surface-variant"
+                    >
+                      Assigned physical cores 0-7 exclusively to r5apex.exe.
+                      Hyper-threading parking active.
+                    </p>
+                    <div
+                      class="flex items-center justify-between mt-2 pt-2 bg-surface-container-low p-2"
+                    >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >LATENCY REDUCTION: -2.8ms</span
+                      >
+                      <button
+                        class="revert-btn text-primary hover:text-white font-label-xs text-label-xs uppercase font-mono font-bold flex items-center gap-1 cursor-pointer transition-none"
+                      >
+                        <span class="material-symbols-outlined text-[14px]"
+                          >undo</span
+                        >
+                        [RESET AFFINITY]
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  class="mt-space-md pt-space-sm bg-surface-container-lowest p-space-sm flex items-center justify-between"
+                >
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                      >STORAGE EXHAUSTION:</span
+                    >
+                    <span
+                      class="font-label-xs text-label-xs text-on-surface font-mono font-bold"
+                      >14.8 / 100 GB</span
+                    >
+                  </div>
+                  <button
+                    class="text-tertiary hover:text-white font-label-xs text-label-xs uppercase font-mono tracking-wider font-bold cursor-pointer transition-none"
+                  >
+                    PURGE OLD LOGS (&gt;30D)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <!-- BOTTOM FAIL-SAFE RUNTIME & REBOOT CONTROLLER -->
+          <footer class="bg-surface-container-lowest px-space-xl py-space-md">
+            <div
+              class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-md"
+            >
+              <div
+                class="flex flex-col sm:flex-row sm:items-center gap-space-md"
+              >
+                <div
+                  class="w-3 h-10 bg-primary-container hidden sm:block"
+                ></div>
+                <div>
+                  <div
+                    class="flex items-center gap-space-xs font-label-xs text-label-xs"
+                  >
+                    <span
+                      class="text-primary-container font-mono font-bold uppercase"
+                      >EMERGENCY SAFE REBOOT RUNTIME</span
+                    >
+                    <span class="text-outline">/</span>
+                    <span class="text-outline uppercase font-mono"
+                      >BCD BOOT SECTOR AUTOMATION</span
+                    >
+                  </div>
+                  <div
+                    class="font-headline-sm text-headline-sm uppercase text-on-surface tracking-tight mt-0.5"
+                  >
+                    FAIL-SAFE ENVIRONMENT PRE-ARMED
+                  </div>
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-space-md">
+                <!-- WINRE SHORTCUT TOGGLE -->
+                <div
+                  class="bg-surface-container px-space-md py-2 flex items-center gap-space-md"
+                >
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                      >NEXT REBOOT TARGET</span
+                    >
+                    <span
+                      class="font-label-sm text-label-sm text-on-surface font-mono font-bold uppercase"
+                      id="target-boot-label"
+                      >WIN RECOVERY (WinRE)</span
+                    >
+                  </div>
+                  <button
+                    class="px-3 py-1 bg-primary-container text-on-primary-container font-label-xs text-label-xs uppercase font-mono font-bold cursor-pointer transition-none"
+                    id="toggle-winre"
+                  >
+                    ARMED
+                  </button>
+                </div>
+                <!-- WATCHDOG HARDWARE STATE -->
+                <div
+                  class="bg-surface-container px-space-md py-2 flex items-center gap-space-md"
+                >
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                      >BIOS WATCHDOG TIMER</span
+                    >
+                    <span
+                      class="font-label-sm text-label-sm text-tertiary font-mono font-bold uppercase"
+                      >HARDWARE POST-GUARD: ACTIVE</span
+                    >
+                  </div>
+                  <span class="w-3 h-3 bg-tertiary animate-ping"></span>
+                </div>
+                <!-- REBOOT CTA -->
+                <button
+                  class="bg-surface-container hover:bg-error hover:text-on-error text-error px-space-lg py-2.5 font-label-sm text-label-sm uppercase tracking-wider font-mono font-bold flex items-center gap-2 cursor-pointer transition-none"
+                  id="btn-reboot-emergency"
+                >
+                  <span class="material-symbols-outlined text-[18px]"
+                    >restart_alt</span
+                  >
+                  <span class="">EXECUTE REBOOT</span>
+                </button>
+              </div>
+            </div>
+          </footer>
+          <!-- TOAST NOTIFICATION CONTAINER (INLINE BRUTALIST) -->
+          <div
+            class="fixed bottom-6 right-6 bg-surface-container-highest text-on-surface p-space-md hidden z-50 flex items-center gap-space-md shadow-none font-mono font-label-sm text-label-sm"
+            id="toast-message"
+          >
+            <span class="material-symbols-outlined text-primary-container"
+              >info</span
+            >
+            <span id="toast-text" class="">SYSTEM INSTRUCTION QUEUED</span>
+          </div>
+        </div>
+        <script>
+          (function () {
+            const toast = document.getElementById("toast-message");
+            const toastText = document.getElementById("toast-text");
+
+            function notify(msg) {
+              if (!toast || !toastText) return;
+              toastText.textContent = msg;
+              toast.classList.remove("hidden");
+              setTimeout(() => {
+                toast.classList.add("hidden");
+              }, 3500);
+            }
+
+            // Hash check trigger
+            const hashBtn = document.getElementById("btn-verify-hash");
+            const hashDisplay = document.getElementById("checksum-display");
+            if (hashBtn && hashDisplay) {
+              hashBtn.addEventListener("click", () => {
+                hashBtn.textContent = "COMPUTING...";
+                setTimeout(() => {
+                  hashDisplay.textContent = "SHA256: 3F7B29A...VALID [0x00]";
+                  hashBtn.textContent = "VERIFIED";
+                  hashBtn.classList.add("bg-tertiary", "text-on-tertiary");
+                  notify(
+                    "MD5/SHA256 HASH VERIFICATION: CHECKSUM INTEGRITY AT 100%",
+                  );
+                }, 700);
+              });
+            }
+
+            // Quick Rollback button
+            const rollbackBtn = document.getElementById("btn-rollback-quick");
+            if (rollbackBtn) {
+              rollbackBtn.addEventListener("click", () => {
+                const confirmed = confirm(
+                  "AURA RECOVERY: Rollback to RP-085 (Pre-Esports Tweak)? System registry hives will be restored immediately.",
+                );
+                if (confirmed) {
+                  notify(
+                    "ROLLBACK DISPATCHED: Hive replacement scheduled. Reboot required.",
+                  );
+                }
+              });
+            }
+
+            // Restore All Security Settings
+            const restoreAllBtn = document.getElementById("btn-restore-all");
+            if (restoreAllBtn) {
+              restoreAllBtn.addEventListener("click", () => {
+                const ok = confirm(
+                  "CRITICAL: Re-enable HVCI, Core Isolation, and standard Windows Defender telemetry?",
+                );
+                if (ok) {
+                  notify(
+                    "POLICY RESTORED: All security controls returned to factory default state.",
+                  );
+                }
+              });
+            }
+
+            // Create Snapshot
+            const createSnapBtn = document.getElementById(
+              "btn-create-snapshot",
+            );
+            if (createSnapBtn) {
+              createSnapBtn.addEventListener("click", () => {
+                notify(
+                  "GENERATING SNAPSHOT: Volume shadow copy initiated for sector C:",
+                );
+              });
+            }
+
+            // Ledger stream category filtering
+            const filterBtns = document.querySelectorAll(".filter-chip");
+            const ledgerItems = document.querySelectorAll(".ledger-item");
+
+            filterBtns.forEach((btn) => {
+              btn.addEventListener("click", () => {
+                filterBtns.forEach((b) => {
+                  b.classList.remove(
+                    "bg-primary-container",
+                    "text-on-primary-container",
+                  );
+                  b.classList.add(
+                    "bg-surface-container-lowest",
+                    "text-outline",
+                  );
+                });
+                btn.classList.add(
+                  "bg-primary-container",
+                  "text-on-primary-container",
+                );
+                btn.classList.remove(
+                  "bg-surface-container-lowest",
+                  "text-outline",
+                );
+
+                const filter = btn.getAttribute("data-filter");
+                ledgerItems.forEach((item) => {
+                  const category = item.getAttribute("data-category") || "";
+                  if (filter === "all" || category.includes(filter)) {
+                    item.style.display = "flex";
+                  } else {
+                    item.style.display = "none";
+                  }
+                });
+              });
+            });
+
+            // Revert buttons in the stream
+            const revertButtons = document.querySelectorAll(".revert-btn");
+            revertButtons.forEach((btn) => {
+              btn.addEventListener("click", (e) => {
+                const parent = btn.closest(".ledger-item");
+                const title = parent
+                  ? parent.querySelector(".font-headline-sm").textContent
+                  : "Selected change";
+                btn.innerHTML =
+                  '<span class="material-symbols-outlined text-[14px]">done</span> [REVERTED]';
+                btn.classList.remove("text-primary");
+                btn.classList.add("text-tertiary");
+                notify(
+                  `REVERT TRIGGERED: ${title} restored to previous snapshot baseline.`,
+                );
+              });
+            });
+
+            // WinRE toggle
+            const toggleWinRE = document.getElementById("toggle-winre");
+            const bootLabel = document.getElementById("target-boot-label");
+            let winREArmed = true;
+
+            if (toggleWinRE && bootLabel) {
+              toggleWinRE.addEventListener("click", () => {
+                winREArmed = !winREArmed;
+                if (winREArmed) {
+                  toggleWinRE.textContent = "ARMED";
+                  toggleWinRE.classList.remove(
+                    "bg-surface-container-highest",
+                    "text-outline",
+                  );
+                  toggleWinRE.classList.add(
+                    "bg-primary-container",
+                    "text-on-primary-container",
+                  );
+                  bootLabel.textContent = "WIN RECOVERY (WinRE)";
+                  bootLabel.classList.remove("text-outline");
+                  bootLabel.classList.add("text-on-surface");
+                  notify("BCD FLAG: /bootsequence {winre-guid} configured.");
+                } else {
+                  toggleWinRE.textContent = "STANDBY";
+                  toggleWinRE.classList.remove(
+                    "bg-primary-container",
+                    "text-on-primary-container",
+                  );
+                  toggleWinRE.classList.add(
+                    "bg-surface-container-highest",
+                    "text-outline",
+                  );
+                  bootLabel.textContent = "STANDARD WINDOWS BOOT";
+                  bootLabel.classList.remove("text-on-surface");
+                  bootLabel.classList.add("text-outline");
+                  notify("BCD FLAG: Reset to standard bootloader sequence.");
+                }
+              });
+            }
+
+            // Emergency Reboot CTA
+            const rebootBtn = document.getElementById("btn-reboot-emergency");
+            if (rebootBtn) {
+              rebootBtn.addEventListener("click", () => {
+                const action = winREArmed
+                  ? "WinRE Diagnostics"
+                  : "Normal Windows";
+                if (
+                  confirm(
+                    `DISPATCH IMMEDIATE REBOOT: Restart PC into ${action}?`,
+                  )
+                ) {
+                  notify(
+                    "KERNEL REBOOT SIGNAL DISPATCHED. Synchronizing disk cache...",
+                  );
+                }
+              });
+            }
+          })();
+        </script>
+      </main>
+    </div>
+  </body>
+</html>

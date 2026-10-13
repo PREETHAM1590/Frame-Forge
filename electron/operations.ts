@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { catalogue } from "../shared/catalogue.js";
+import { catalogue, restartText, type Restart } from "../shared/catalogue.js";
 import {
   SnapshotSchema,
   builtInPowerPlans,
@@ -10,6 +10,44 @@ import {
 } from "../shared/contracts.js";
 import type { Platform } from "./platform.js";
 import { Repository } from "./repository.js";
+const restartOrder: Restart[] = [
+  "none",
+  "wallpaper",
+  "browser",
+  "signin",
+  "explorer",
+  "signout",
+  "reboot",
+];
+const itemOf = (id: OperationId) => catalogue.find((o) => o.id === id)!;
+const highestRestart = (ids: OperationId[]): Restart =>
+  ids
+    .map((id) => itemOf(id).restart)
+    .reduce(
+      (a, b) => (restartOrder.indexOf(b) > restartOrder.indexOf(a) ? b : a),
+      "none" as Restart,
+    );
+// What a value becomes: the exact target from the helper, or the legacy "0" for snapshots saved before targets were recorded.
+const afterText = (value: Snapshot["values"][number]) =>
+  value.target === undefined
+    ? value.kind === "String"
+      ? "0"
+      : "0 (DWORD)"
+    : value.target === null
+      ? "Removed (not set)"
+      : value.kind === "String"
+        ? `"${value.target}"`
+        : `${value.target} (DWORD)`;
+// The helper's own words for a refused or failed step (for example a declined or failed administrator step), kept short.
+const detail = (error: unknown) =>
+  error instanceof Error &&
+  error.message &&
+  !["Cancelled", "Verification failed"].includes(error.message) &&
+  /^(The machine-level step|Administrator|The administrator)/.test(
+    error.message,
+  )
+    ? `: ${error.message.slice(0, 400)}`
+    : "";
 const planName = (scheme: string, name?: string) =>
   name ?? builtInPowerPlans[scheme.toLowerCase()] ?? `Custom plan ${scheme}`;
 // Snapshots saved before the target was recorded always meant High performance.
@@ -60,6 +98,10 @@ export class OperationEngine {
     this.noBoost(ids);
     if (this.busy) throw new Error("Another operation is running.");
     const snapshot = await this.platform.capture(ids);
+    // Read-only: what Defender itself reports, shown beside the policy change.
+    const defender = ids.includes("defender-off")
+      ? await this.platform.defenderStatus?.().catch(() => null)
+      : null;
     const token = randomUUID();
     const expires = this.now() + 300000;
     for (const [key, value] of this.previews)
@@ -75,7 +117,7 @@ export class OperationEngine {
           id: value.operation,
           setting: `${value.path} / ${value.name}`,
           before: value.existed ? String(value.value) : "Not set",
-          after: value.kind === "String" ? "0" : "0 (DWORD)",
+          after: afterText(value),
         })),
         ...(snapshot.scheme
           ? [
@@ -96,8 +138,23 @@ export class OperationEngine {
               `${targetLabel(snapshot)} is already the active plan. Applying leaves the power plan unchanged.`,
             ]
           : []),
-        ...ids.map((id) => catalogue.find((o) => o.id === id)!.rollback),
+        ...(defender ? [`Windows Defender now: ${defender}`] : []),
+        ...ids.map((id) => itemOf(id).rollback),
+        ...ids
+          .filter((id) => itemOf(id).consequence)
+          .map((id) => `${itemOf(id).name}: ${itemOf(id).consequence}`),
+        ...(highestRestart(ids) !== "none"
+          ? [restartText[highestRestart(ids)]]
+          : []),
+        ...(ids.some((id) => itemOf(id).admin)
+          ? [
+              "This change needs administrator rights, so Windows will ask for approval. Frameforge only asks for the machine settings listed above.",
+            ]
+          : []),
       ],
+      restart: highestRestart(ids),
+      admin: ids.some((id) => itemOf(id).admin),
+      security: ids.filter((id) => itemOf(id).tier === "security"),
     };
   }
   cancel() {
@@ -105,7 +162,10 @@ export class OperationEngine {
     this.controller.abort();
     return true;
   }
-  async confirm(token: string): Promise<Activity> {
+  async confirm(
+    token: string,
+    acknowledged: OperationId[] = [],
+  ): Promise<Activity> {
     if (this.busy) throw new Error("Another operation is running.");
     const preview = this.previews.get(token);
     this.previews.delete(token);
@@ -114,11 +174,20 @@ export class OperationEngine {
       throw new Error("Preview expired. Review the settings again.");
     this.supported(preview.ids);
     this.noBoost(preview.ids);
+    // Security trade-offs are applied only when the person named each one; the dialog cannot be skipped by a stray call.
+    const missing = preview.ids.filter(
+      (id) => itemOf(id).tier === "security" && !acknowledged.includes(id),
+    );
+    if (missing.length)
+      throw new Error(
+        `Acknowledge that this lowers your PC's security first: ${missing.map((id) => itemOf(id).name).join(", ")}.`,
+      );
     this.busy = true;
     this.controller = new AbortController();
     let record: Activity | undefined;
+    let notKept = false;
     try {
-      const current = await this.platform.capture(preview.ids);
+      const current = await this.platform.capture(preview.ids, true);
       if (JSON.stringify(current) !== JSON.stringify(preview.snapshot))
         throw new Error(
           "Windows settings changed after preview. Review a new preview.",
@@ -128,15 +197,20 @@ export class OperationEngine {
       if (this.controller.signal.aborted) throw new Error("Cancelled");
       await this.platform.apply(preview.ids, this.controller.signal, current);
       if (this.controller.signal.aborted) throw new Error("Cancelled");
-      if (!(await this.platform.verify(preview.ids)))
+      if (!(await this.platform.verify(preview.ids))) {
+        notKept = true;
         throw new Error("Verification failed");
+      }
       if (this.controller.signal.aborted) throw new Error("Cancelled");
+      const after = preview.ids.includes("defender-off")
+        ? await this.platform.defenderStatus?.().catch(() => null)
+        : null;
       return this.repo.finish(
         record.id,
         "success",
         alreadyOnTarget(current)
           ? `Windows settings re-read and verified. ${targetLabel(current)} was already active, so the power plan was not changed.`
-          : "Windows settings re-read and verified. See the operation details for when Windows reloads them.",
+          : `Windows settings re-read and verified.${after ? ` Windows Defender now: ${after} Only the policy values are verified, not that Defender is off.` : ""} ${restartText[highestRestart(preview.ids)]}`,
       );
     } catch (e) {
       if (!record) throw e;
@@ -145,7 +219,9 @@ export class OperationEngine {
         return this.repo.finish(
           record.id,
           this.controller.signal.aborted ? "cancelled" : "failed",
-          "The operation did not complete. The captured Windows state was restored.",
+          notKept
+            ? "Windows reverted or did not keep the change when it was read back, so nothing was reported as applied. The captured Windows state was restored."
+            : `The operation did not complete${detail(e)}. The captured Windows state was restored.`,
           false,
         );
       } catch {
@@ -177,11 +253,14 @@ export class OperationEngine {
       throw new Error("This operation is unavailable on this installation.");
     this.busy = true;
     try {
-      await this.platform.restore(SnapshotSchema.parse(row.snapshot), false);
+      const note = await this.platform.restore(
+        SnapshotSchema.parse(row.snapshot),
+        false,
+      );
       return this.repo.finish(
         id,
         "rolled-back",
-        "The captured Windows state was restored and verified.",
+        `The captured Windows state was restored and verified.${note ? ` ${note}` : ""}`,
         false,
       );
     } catch {

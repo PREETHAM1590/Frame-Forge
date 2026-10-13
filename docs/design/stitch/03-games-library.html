@@ -1,0 +1,1573 @@
+<!doctype html>
+<html class="dark" lang="en" style="">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta content="web_dashboard" name="shell-type" />
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700;800;900&amp;family=Space+Grotesk:wght@400;500;700;900&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      @layer base {
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+        }
+        body {
+          overscroll-behavior: none;
+        }
+        main > :first-child {
+          margin-top: 0 !important;
+        }
+        main > :last-child {
+          margin-bottom: 0 !important;
+        }
+      }
+      ::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-container": "#ff5708",
+              "primary-fixed": "#ffdbcf",
+              "tertiary-fixed": "#ffddb4",
+              "secondary-container": "#fe7600",
+              secondary: "#ffb68d",
+              "on-tertiary": "#452b00",
+              "surface-container-low": "#090a0d",
+              "outline-variant": "#5c4037",
+              "inverse-surface": "#e3e2e6",
+              primary: "#ffb59c",
+              "surface-container": "#1f1f23",
+              "inverse-on-surface": "#303034",
+              "surface-tint": "#ffb59c",
+              "inverse-primary": "#aa3600",
+              "surface-container-highest": "#343538",
+              "on-secondary-fixed": "#331200",
+              "on-secondary": "#532200",
+              "on-surface-variant": "#e5beb2",
+              "on-surface": "#f5f5f7",
+              error: "#ff3b30",
+              "surface-dim": "#121316",
+              surface: "#12141a",
+              "surface-container-lowest": "#050608",
+              "primary-fixed-dim": "#ffb59c",
+              "error-container": "#93000a",
+              "tertiary-container": "#c68300",
+              "surface-variant": "#343538",
+              "surface-container-high": "#292a2d",
+              "on-secondary-container": "#5a2600",
+              "on-secondary-fixed-variant": "#763300",
+              "on-primary": "#5c1900",
+              "on-background": "#e3e2e6",
+              "secondary-fixed": "#ffdbc9",
+              tertiary: "#ffb952",
+              "on-tertiary-fixed-variant": "#633f00",
+              outline: "#5e6370",
+              "on-error-container": "#ffdad6",
+              "on-tertiary-container": "#3c2500",
+              "on-primary-container": "#511500",
+              background: "#121316",
+              "tertiary-fixed-dim": "#ffb952",
+              "surface-bright": "#38393c",
+              "on-primary-fixed": "#390c00",
+              "on-tertiary-fixed": "#291800",
+              "secondary-fixed-dim": "#ffb68d",
+              "on-error": "#690005",
+              "on-primary-fixed-variant": "#822700",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              "space-sm": "0.5rem",
+              margin: "2rem",
+              "space-md": "1rem",
+              gutter: "0px",
+              "space-xl": "2rem",
+              "space-xs": "0.25rem",
+              "space-lg": "1.5rem",
+            },
+            fontFamily: {
+              "display-lg-mobile": ["Space Grotesk"],
+              "body-md": ["Space Grotesk"],
+              "headline-md": ["Space Grotesk"],
+              "label-lg": ["JetBrains Mono"],
+              "body-sm": ["Space Grotesk"],
+              "telemetry-numeral-lg": ["JetBrains Mono"],
+              "headline-sm": ["Space Grotesk"],
+              "telemetry-numeral-md": ["JetBrains Mono"],
+              "headline-lg": ["Space Grotesk"],
+              "label-sm": ["JetBrains Mono"],
+              "label-md": ["JetBrains Mono"],
+              "body-lg": ["Space Grotesk"],
+              "headline-lg-mobile": ["Space Grotesk"],
+              "label-xs": ["JetBrains Mono"],
+              "display-lg": ["Space Grotesk"],
+            },
+            fontSize: {
+              "display-lg-mobile": [
+                "2.25rem",
+                {
+                  lineHeight: "1.1",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "900",
+                },
+              ],
+              "body-md": [
+                "0.875rem",
+                { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" },
+              ],
+              "headline-md": [
+                "1.5rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-lg": [
+                "0.875rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.05em",
+                  fontWeight: "700",
+                },
+              ],
+              "body-sm": [
+                "0.75rem",
+                { lineHeight: "1.4", letterSpacing: "0", fontWeight: "400" },
+              ],
+              "telemetry-numeral-lg": [
+                "3.75rem",
+                {
+                  lineHeight: "1",
+                  letterSpacing: "-0.03em",
+                  fontWeight: "900",
+                },
+              ],
+              "headline-sm": [
+                "1.25rem",
+                {
+                  lineHeight: "1.3",
+                  letterSpacing: "-0.01em",
+                  fontWeight: "700",
+                },
+              ],
+              "telemetry-numeral-md": [
+                "1.5rem",
+                { lineHeight: "1.1", letterSpacing: "0", fontWeight: "800" },
+              ],
+              "headline-lg": [
+                "3rem",
+                {
+                  lineHeight: "1.1",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "900",
+                },
+              ],
+              "label-sm": [
+                "0.6875rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.1em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-md": [
+                "0.75rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.08em",
+                  fontWeight: "700",
+                },
+              ],
+              "body-lg": [
+                "1.125rem",
+                { lineHeight: "1.5", letterSpacing: "0", fontWeight: "500" },
+              ],
+              "headline-lg-mobile": [
+                "2rem",
+                {
+                  lineHeight: "1.15",
+                  letterSpacing: "-0.015em",
+                  fontWeight: "900",
+                },
+              ],
+              "label-xs": [
+                "0.5625rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.12em",
+                  fontWeight: "700",
+                },
+              ],
+              "display-lg": [
+                "3.75rem",
+                {
+                  lineHeight: "1",
+                  letterSpacing: "-0.025em",
+                  fontWeight: "900",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-surface-container-lowest text-on-surface font-body-md text-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen"
+  >
+    <aside
+      class="fixed left-0 top-0 h-full w-72 bg-surface-container-low z-50 flex flex-col justify-between border-r border-outline-variant"
+    >
+      <div class="flex flex-col">
+        <div
+          class="h-14 px-space-md border-b border-outline-variant flex items-center justify-between bg-surface-container-lowest"
+        >
+          <div class="flex items-center gap-space-sm">
+            <div class="w-2.5 h-2.5 bg-primary-container"></div>
+            <span
+              class="font-headline-sm text-headline-sm uppercase tracking-tight text-on-surface font-black"
+              >AURA</span
+            >
+          </div>
+          <span
+            class="font-label-xs text-label-xs px-1.5 py-0.5 bg-primary-container text-on-primary-container uppercase font-bold tracking-widest"
+            >v2.4</span
+          >
+        </div>
+        <div
+          class="px-space-md py-space-xs border-b border-outline-variant bg-surface-container-low flex items-center justify-between"
+        >
+          <span
+            class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+            >DISPATCH INTERFACE</span
+          ><span
+            class="font-label-xs text-label-xs text-primary-container uppercase tracking-widest"
+            >SYS_RDY</span
+          >
+        </div>
+        <nav
+          class="flex flex-col py-space-xs"
+          data-active-classes="bg-primary-container text-on-primary-container border-l-4 border-secondary-container"
+        >
+          <a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md tracking-wider"
+            data-path="home"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-outline group-hover:text-on-surface"
+                >grid_view</span
+              ><span class="">Home</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >01</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md tracking-wider"
+            data-path="game-mode"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-outline group-hover:text-on-surface"
+                >sports_esports</span
+              ><span class="">Game Mode</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >02</span
+            ></a
+          ><a
+            aria-current="page"
+            class="flex items-center justify-between px-space-md py-3 transition-none font-label-md tracking-wider bg-primary-container text-on-primary-container border-l-4 border-secondary-container"
+            data-path="games-library"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-on-primary-container"
+                >stadia_controller</span
+              ><span class="">Games Library</span></span
+            ><span
+              class="font-mono text-[10px] tracking-widest text-on-primary-container font-bold"
+              >03</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md tracking-wider"
+            data-path="optimize"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-outline group-hover:text-on-surface"
+                >speed</span
+              ><span class="">Optimize</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >04</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md tracking-wider"
+            data-path="safety-and-backups"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-outline group-hover:text-on-surface"
+                >security</span
+              ><span class="">Safety &amp; Backups</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >05</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md tracking-wider"
+            data-path="system-and-topology"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-outline group-hover:text-on-surface"
+                >memory</span
+              ><span class="">System &amp; Topology</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >06</span
+            ></a
+          >
+        </nav>
+      </div>
+      <div
+        class="flex flex-col border-t border-outline-variant bg-surface-container-lowest"
+      >
+        <a
+          class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none font-label-md text-label-md uppercase tracking-wider border-b border-outline-variant"
+          data-path="settings"
+          href="#"
+          ><span class="flex items-center gap-space-sm"
+            ><span class="material-symbols-outlined text-[18px] text-outline"
+              >settings</span
+            ><span class="">Settings</span></span
+          ><span class="font-mono text-[10px]">SYS</span></a
+        >
+        <div class="p-space-md flex flex-col gap-space-xs">
+          <div class="flex items-center justify-between">
+            <span
+              class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+              >TARGET NODE</span
+            ><span
+              class="flex items-center gap-1.5 font-label-xs text-label-xs text-tertiary font-bold"
+              ><span
+                class="w-1.5 h-1.5 bg-primary-container animate-pulse"
+              ></span
+              >ONLINE</span
+            >
+          </div>
+          <div
+            class="font-headline-sm text-headline-sm uppercase text-on-surface tracking-tight font-bold"
+          >
+            Rig-01 Ultra
+          </div>
+          <div
+            class="flex justify-between items-center text-outline font-label-xs text-label-xs mt-1"
+          >
+            <span class="uppercase">KERNEL TELEMETRY</span
+            ><span class="font-mono">v4.19.0-OC</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="pl-72">
+      <header
+        class="fixed top-0 left-72 right-0 h-14 bg-surface-container-low/95 backdrop-blur-md z-40 border-b border-outline-variant flex items-center justify-between px-space-md"
+      >
+        <div class="flex items-center gap-space-md">
+          <div
+            class="flex items-center gap-2 border-r border-outline-variant pr-space-md"
+          >
+            <span class="font-label-xs text-label-xs text-outline uppercase"
+              >STATUS</span
+            ><span
+              class="font-label-sm text-label-sm font-bold uppercase text-primary-container tracking-wider"
+              >SYSTEM EQUILIBRIUM: NOMINAL</span
+            >
+          </div>
+          <div
+            class="hidden lg:flex items-center gap-space-md font-label-sm text-label-sm"
+          >
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >CORE FREQ</span
+              ><span class="font-bold font-mono text-on-surface">4.85 GHz</span>
+            </div>
+            <span class="text-outline-variant">/</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >TEMP</span
+              ><span class="font-bold font-mono text-tertiary">38°C</span>
+            </div>
+            <span class="text-outline-variant">/</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >BUS LOAD</span
+              ><span class="font-bold font-mono text-on-surface">14%</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-space-sm">
+          <div
+            class="flex items-center mr-space-sm pr-space-sm border-r border-outline-variant"
+          >
+            <div
+              class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"
+            >
+              <span
+                class="material-symbols-outlined text-on-primary text-[18px]"
+                >person</span
+              >
+            </div>
+          </div>
+          <div class="flex items-center border border-outline-variant">
+            <button
+              class="w-9 h-9 flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface text-on-surface-variant transition-none border-r border-outline-variant"
+              title="Minimize Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >minimize</span
+              ></button
+            ><button
+              class="w-9 h-9 flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface text-on-surface-variant transition-none border-r border-outline-variant"
+              title="Maximize Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >crop_square</span
+              ></button
+            ><button
+              class="w-9 h-9 flex items-center justify-center hover:bg-error hover:text-on-error text-on-surface-variant transition-none"
+              title="Close Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          </div>
+        </div>
+      </header>
+      <main class="relative pt-14 w-full min-h-screen bg-surface">
+        <div class="flex flex-col w-full">
+          <!-- Top Command Matrix & Header Banner -->
+          <div
+            class="w-full bg-surface-container-low px-space-xl py-space-lg flex flex-col gap-space-md"
+          >
+            <!-- Superheader Telemetry Line -->
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <div class="flex items-center gap-space-sm">
+                <span class="w-3 h-3 bg-primary-container inline-block"></span>
+                <span
+                  class="font-label-md text-label-md uppercase tracking-wider text-primary-container"
+                  >SYSTEM TARGET INDEX // NODE RIG-01</span
+                >
+                <span class="text-outline font-label-xs text-label-xs">/</span>
+                <span
+                  class="font-label-xs text-label-xs text-outline uppercase tracking-widest"
+                  >NVME VOL_01 &amp; VOL_02 MOUNTED</span
+                >
+              </div>
+              <div
+                class="flex items-center gap-space-md font-label-xs text-label-xs"
+              >
+                <div class="flex items-center gap-1.5 text-on-surface-variant">
+                  <span class="text-outline">DRIVE POOL IOPS:</span>
+                  <span class="text-on-surface font-bold font-mono"
+                    >1.2M 4K RND</span
+                  >
+                </div>
+                <span class="text-outline-variant">|</span>
+                <div class="flex items-center gap-1.5">
+                  <span
+                    class="w-2 h-2 bg-primary-container animate-ping inline-block"
+                  ></span>
+                  <span
+                    class="text-primary-container font-bold uppercase tracking-widest"
+                    >Scanning NVMe Pools...</span
+                  >
+                </div>
+              </div>
+            </div>
+            <!-- Main Title & Brutalist Action Bay -->
+            <div
+              class="flex flex-col xl:flex-row xl:items-end justify-between gap-space-lg"
+            >
+              <div>
+                <h1
+                  class="font-headline-lg text-headline-lg uppercase tracking-tight text-on-surface font-black"
+                >
+                  REGISTERED GAME REPOSITORY
+                </h1>
+                <div class="flex items-center gap-space-sm mt-1">
+                  <span
+                    class="font-label-sm text-label-sm text-outline uppercase tracking-widest"
+                    >14 DETECTED TARGETS</span
+                  >
+                  <span class="text-outline-variant font-mono">::</span>
+                  <span
+                    class="font-label-sm text-label-sm text-secondary uppercase font-bold tracking-wider"
+                    >KERNEL DISPATCH HOOK ACTIVE</span
+                  >
+                </div>
+              </div>
+              <!-- Action Cluster -->
+              <div class="flex flex-wrap items-center gap-space-sm">
+                <button
+                  class="bg-surface-container hover:bg-surface-container-high text-on-surface px-space-md py-3 font-label-md text-label-md uppercase tracking-wider flex items-center gap-2 group transition-none"
+                  type="button"
+                >
+                  <span
+                    class="material-symbols-outlined text-[16px] text-primary-container"
+                    >add_box</span
+                  >
+                  <span class="">ADD CUSTOM GAME / EXEC</span>
+                </button>
+                <button
+                  class="bg-surface-container hover:bg-surface-container-high text-on-surface px-space-md py-3 font-label-md text-label-md uppercase tracking-wider flex items-center gap-2 group transition-none"
+                  type="button"
+                >
+                  <span
+                    class="material-symbols-outlined text-[16px] text-tertiary"
+                    >sync</span
+                  >
+                  <span class="">SCAN DRIVES NOW</span>
+                </button>
+              </div>
+            </div>
+            <!-- Segmented Filter Matrix & Query Deck -->
+            <div
+              class="grid grid-cols-1 lg:grid-cols-12 gap-space-md pt-space-xs"
+            >
+              <!-- State Tabs -->
+              <div
+                class="lg:col-span-8 flex flex-wrap items-center bg-surface-container-lowest p-1 gap-1"
+              >
+                <button
+                  class="bg-primary-container text-on-primary-container px-space-md py-2 font-label-sm text-label-sm uppercase font-bold tracking-wider flex items-center gap-2"
+                  type="button"
+                >
+                  <span class="">ALL GAMES</span>
+                  <span
+                    class="bg-surface-container-lowest/30 px-1.5 py-0.2 font-mono text-[10px]"
+                    >14</span
+                  >
+                </button>
+                <button
+                  class="text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-2 font-label-sm text-label-sm uppercase font-bold tracking-wider flex items-center gap-2"
+                  type="button"
+                >
+                  <span class="">BOOST READY</span>
+                  <span
+                    class="bg-surface-container px-1.5 py-0.2 font-mono text-[10px] text-primary-container"
+                    >10</span
+                  >
+                </button>
+                <button
+                  class="text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-2 font-label-sm text-label-sm uppercase font-bold tracking-wider flex items-center gap-2"
+                  type="button"
+                >
+                  <span class="">CUSTOM PROFILES</span>
+                  <span
+                    class="bg-surface-container px-1.5 py-0.2 font-mono text-[10px] text-tertiary"
+                    >4</span
+                  >
+                </button>
+                <button
+                  class="text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-2 font-label-sm text-label-sm uppercase font-bold tracking-wider flex items-center gap-2"
+                  type="button"
+                >
+                  <span class="">REMOVED / HIDDEN</span>
+                  <span
+                    class="bg-surface-container px-1.5 py-0.2 font-mono text-[10px] text-outline"
+                    >2</span
+                  >
+                </button>
+              </div>
+              <!-- Platform Tags Filter & Query Input -->
+              <div class="lg:col-span-4 flex items-center gap-2">
+                <div
+                  class="relative flex-1 bg-surface-container flex items-center px-space-sm py-2"
+                >
+                  <span
+                    class="material-symbols-outlined text-outline text-[18px] mr-2"
+                    >search</span
+                  >
+                  <input
+                    class="bg-transparent border-none text-on-surface font-label-sm text-label-sm placeholder:text-outline focus:outline-none w-full uppercase"
+                    placeholder="FILTER TARGET_ID / EXE..."
+                    type="text"
+                  />
+                </div>
+                <div
+                  class="flex items-center gap-1 bg-surface-container-lowest p-1"
+                >
+                  <button
+                    class="w-8 h-8 flex items-center justify-center font-label-xs text-label-xs font-bold uppercase bg-surface-container text-on-surface hover:bg-primary-container hover:text-on-primary-container"
+                    title="Steam Platform"
+                    type="button"
+                  >
+                    STM
+                  </button>
+                  <button
+                    class="w-8 h-8 flex items-center justify-center font-label-xs text-label-xs font-bold uppercase bg-primary-container text-on-primary-container"
+                    title="Riot Games"
+                    type="button"
+                  >
+                    RGT
+                  </button>
+                  <button
+                    class="w-8 h-8 flex items-center justify-center font-label-xs text-label-xs font-bold uppercase bg-surface-container text-on-surface hover:bg-primary-container hover:text-on-primary-container"
+                    title="Epic Games Store"
+                    type="button"
+                  >
+                    EPC
+                  </button>
+                  <button
+                    class="w-8 h-8 flex items-center justify-center font-label-xs text-label-xs font-bold uppercase bg-surface-container text-on-surface hover:bg-primary-container hover:text-on-primary-container"
+                    title="Battle.net"
+                    type="button"
+                  >
+                    B.NET
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Primary Workspace: Split Canvas Grid + Active Inspect Drawer -->
+          <div
+            class="w-full grid grid-cols-1 xl:grid-cols-12 min-h-0 bg-surface"
+          >
+            <!-- LEFT COLUMN: Brutalist Game Target Grid (7 cols) -->
+            <div
+              class="xl:col-span-7 p-space-lg flex flex-col gap-space-lg bg-surface"
+            >
+              <!-- Section Tag -->
+              <div
+                class="flex items-center justify-between pb-2 bg-surface-container-lowest p-space-sm"
+              >
+                <div class="flex items-center gap-2">
+                  <span
+                    class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+                    >EXECUTION TILES</span
+                  >
+                  <span class="text-outline font-mono text-[10px]"
+                    >[GRID_DISPATCH_VIEW]</span
+                  >
+                </div>
+                <div
+                  class="flex items-center gap-3 font-label-xs text-label-xs text-outline"
+                >
+                  <span class="">SORT: RUNTIME FREQ</span>
+                  <span class="text-primary-container font-mono font-bold"
+                    >DESC</span
+                  >
+                </div>
+              </div>
+              <!-- Tile Mosaic -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+                <!-- CARD 1: VALORANT (SELECTED / INSPECT ACTIVE) -->
+                <div
+                  class="relative bg-surface-container-low p-space-md flex flex-col justify-between group cursor-pointer transition-none bg-surface-container"
+                >
+                  <div
+                    class="absolute top-0 left-0 right-0 h-1 bg-primary-container"
+                  ></div>
+                  <div
+                    class="flex items-start justify-between gap-2 mb-space-sm"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="font-label-xs text-label-xs bg-primary-container text-on-primary-container px-1 py-0.5 font-bold uppercase"
+                        >ACTIVE INSPECT</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                        >ID: VAL_01</span
+                      >
+                    </div>
+                    <span
+                      class="font-label-xs text-label-xs text-primary-container font-bold font-mono"
+                      >P-CORE #0-7 LOCKED</span
+                    >
+                  </div>
+                  <!-- Cover Image Slot -->
+                  <div
+                    class="relative w-full h-44 bg-surface-container-lowest overflow-hidden mb-space-sm"
+                  >
+                    <img
+                      class="w-full h-full object-cover grayscale contrast-125 group-hover:grayscale-0 transition-none"
+                      data-alt="Dark tactical first person tactical shooter key art featuring stylized geometric agent silhouette in red and solar orange neon glows on obsidian brutalist background, hyper-detailed high contrast esports aesthetic"
+                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuAeCDntKwE2ZIDF2Gpr6qMhCzyrZHLCN7mkkIsrSiMlBzG6acyiqxqO5e-2BRJ-pg8xtlG_YJa1BuUYqW8XaGpZFDrtaZfhKDyqcSfmW_DZSrUWpvrzLlz8UZHP09GPdJoLwMrY9l5et0P1Gcfa7p7Lc2dXhZH_TQPh4dh1BndoDUSNBy9VPQxTgJYjrKa98Eu_gJAJRXrhY5wvYWopqHrXby6hteMTqgRFizy6LDHL-swOKVCi-qKfCw"
+                    />
+                    <div
+                      class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent opacity-90"
+                    ></div>
+                    <div
+                      class="absolute bottom-2 left-2 right-2 flex justify-between items-end"
+                    >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-primary-container uppercase font-mono font-bold"
+                        >RIOT VANGUARD RING-0</span
+                      >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface uppercase font-mono"
+                        >1024x768 STRETCH</span
+                      >
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <div class="flex items-baseline justify-between">
+                      <h2
+                        class="font-headline-sm text-headline-sm uppercase text-on-surface font-black tracking-tight group-hover:text-primary-container"
+                      >
+                        VALORANT
+                      </h2>
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >LAST RUN: 22M AGO</span
+                      >
+                    </div>
+                    <div
+                      class="flex items-center justify-between text-outline font-label-xs text-label-xs pt-2"
+                    >
+                      <span class="text-on-surface-variant font-mono"
+                        >PATH: riot_games/valorant/live</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs px-1.5 py-0.5 bg-primary-container/20 text-primary-container font-bold uppercase"
+                        >BOOST READY</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <!-- CARD 2: APEX LEGENDS -->
+                <div
+                  class="relative bg-surface-container-low p-space-md flex flex-col justify-between group cursor-pointer hover:bg-surface-container transition-none"
+                >
+                  <div
+                    class="flex items-start justify-between gap-2 mb-space-sm"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="font-label-xs text-label-xs bg-surface-container text-on-surface-variant px-1 py-0.5 font-bold uppercase"
+                        >STEAM</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                        >ID: APX_02</span
+                      >
+                    </div>
+                    <span
+                      class="font-label-xs text-label-xs text-tertiary font-bold font-mono"
+                      >240HZ FPS CAP</span
+                    >
+                  </div>
+                  <div
+                    class="relative w-full h-44 bg-surface-container-lowest overflow-hidden mb-space-sm"
+                  >
+                    <img
+                      class="w-full h-full object-cover grayscale contrast-125 group-hover:grayscale-0 transition-none"
+                      data-alt="Futuristic sci-fi battle royale hero champion portrait under sharp direct orange spotlighting with high contrast dark carbon mechanical textures and hard edge brutalist composition"
+                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuCQECWntWN54oW5MrVHvJOKy-E8YBR8k-Td-CyqaXlDpBe_3x8uoAj5ncbYmOHeNJ0UZw21--VO7dwhPmDZxUVuRqcHvW9S-BYZprnGIOL7CHbPLlz2WO_0HpEUq7dw5im9MDzK6tTpHqjBXuaF_NaW_ishKJ4wG5nT8XAufxT98F0njxC_PR1dI0bwHd0GWXxADr7hviV_udRbMZWHDERWJYM_jzbM9QOPak4dcGyHrhzGiKc8ccclVA"
+                    />
+                    <div
+                      class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent opacity-90"
+                    ></div>
+                    <div
+                      class="absolute bottom-2 left-2 right-2 flex justify-between items-end"
+                    >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface-variant uppercase font-mono"
+                        >EAC HOOKED</span
+                      >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface uppercase font-mono"
+                        >DX12 BETA</span
+                      >
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <div class="flex items-baseline justify-between">
+                      <h2
+                        class="font-headline-sm text-headline-sm uppercase text-on-surface font-black tracking-tight group-hover:text-primary-container"
+                      >
+                        APEX LEGENDS
+                      </h2>
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >LAST RUN: 4H AGO</span
+                      >
+                    </div>
+                    <div
+                      class="flex items-center justify-between text-outline font-label-xs text-label-xs pt-2"
+                    >
+                      <span class="text-on-surface-variant font-mono"
+                        >PATH: steamapps/common/apex</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs px-1.5 py-0.5 bg-surface-container text-tertiary font-bold uppercase"
+                        >CUSTOM ESPORTS PROFILE</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <!-- CARD 3: COUNTER-STRIKE 2 -->
+                <div
+                  class="relative bg-surface-container-low p-space-md flex flex-col justify-between group cursor-pointer hover:bg-surface-container transition-none"
+                >
+                  <div
+                    class="flex items-start justify-between gap-2 mb-space-sm"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="font-label-xs text-label-xs bg-surface-container text-on-surface-variant px-1 py-0.5 font-bold uppercase"
+                        >STEAM</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                        >ID: CS2_03</span
+                      >
+                    </div>
+                    <span
+                      class="font-label-xs text-label-xs text-primary-container font-bold font-mono"
+                      >SUB-TICK OPTIMIZED</span
+                    >
+                  </div>
+                  <div
+                    class="relative w-full h-44 bg-surface-container-lowest overflow-hidden mb-space-sm"
+                  >
+                    <img
+                      class="w-full h-full object-cover grayscale contrast-125 group-hover:grayscale-0 transition-none"
+                      data-alt="Tactical smoke grenade dispersion and counter-terrorist tactical gear silhouette in deep moody monochrome with harsh solar flare amber highlights and gritty textures"
+                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuB9lR5aFOOWCW79IZFF4hPD1T_qs6CepKn0e_nIy69wg2oOOroX_1LTOum4UocRBhbn41B-2HHNmPjnL2WJ4Zowd2SYh4o7QkTeFwP8GM0irVTnmCFSnsZIE9LDvUnE5Ngdz9HoubThzkRkCNFptLbGS6u7nsAOHbToiAZyhGetoT_wd7zfehORxo8O40czOHOEBHPoyI0mqTfnVwg2TZFlVdg4rHVT3dpLq1S4pKL3SIb_LWrAIoT_Ew"
+                    />
+                    <div
+                      class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent opacity-90"
+                    ></div>
+                    <div
+                      class="absolute bottom-2 left-2 right-2 flex justify-between items-end"
+                    >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface-variant uppercase font-mono"
+                        >VAC SECURE</span
+                      >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface uppercase font-mono"
+                        >REFLEX + BOOST</span
+                      >
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <div class="flex items-baseline justify-between">
+                      <h2
+                        class="font-headline-sm text-headline-sm uppercase text-on-surface font-black tracking-tight group-hover:text-primary-container"
+                      >
+                        COUNTER-STRIKE 2
+                      </h2>
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >LAST RUN: YESTERDAY</span
+                      >
+                    </div>
+                    <div
+                      class="flex items-center justify-between text-outline font-label-xs text-label-xs pt-2"
+                    >
+                      <span class="text-on-surface-variant font-mono"
+                        >PATH: steamapps/common/csgo</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs px-1.5 py-0.5 bg-primary-container/20 text-primary-container font-bold uppercase"
+                        >REFLEX SUB-TICK</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <!-- CARD 4: CYBERPUNK 2077 -->
+                <div
+                  class="relative bg-surface-container-low p-space-md flex flex-col justify-between group cursor-pointer hover:bg-surface-container transition-none"
+                >
+                  <div
+                    class="flex items-start justify-between gap-2 mb-space-sm"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="font-label-xs text-label-xs bg-surface-container text-on-surface-variant px-1 py-0.5 font-bold uppercase"
+                        >GOG GALAXY</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                        >ID: CP77_04</span
+                      >
+                    </div>
+                    <span
+                      class="font-label-xs text-label-xs text-outline font-bold font-mono"
+                      >PT + DLSS RAY RECON</span
+                    >
+                  </div>
+                  <div
+                    class="relative w-full h-44 bg-surface-container-lowest overflow-hidden mb-space-sm"
+                  >
+                    <img
+                      class="w-full h-full object-cover grayscale contrast-125 group-hover:grayscale-0 transition-none"
+                      data-alt="Brutalist cyberpunk megastructure skyscraper canyon with neon signs and glowing headlights cutting through heavy rain in dark basalt black and vivid solar orange"
+                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuBY0S5U7gyFyjTdcqlcmX4XSrioA3pZOT-6rNEZGYtZIt5FRAhEVWo5STFYQCb1KcJR24rw61FmTA41c_oZRFhNNRqASH2x8u9QmWw2E7qgGs5W7dNkB56p4vAQRpI8mho7I6jG071FYNyswggxgk-LMfW2gnMW3hp2UgzIbF5f3OLs6HfH6SqP5ZVQxeMSyr9au07T4MMi5x6sQQLHLznBzN2Yu3M3UQoBP3LPUpr_ncFLehnm2-UKIw"
+                    />
+                    <div
+                      class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent opacity-90"
+                    ></div>
+                    <div
+                      class="absolute bottom-2 left-2 right-2 flex justify-between items-end"
+                    >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface-variant uppercase font-mono"
+                        >STANDALONE</span
+                      >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface uppercase font-mono"
+                        >REDENGINE 4</span
+                      >
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <div class="flex items-baseline justify-between">
+                      <h2
+                        class="font-headline-sm text-headline-sm uppercase text-on-surface font-black tracking-tight group-hover:text-primary-container"
+                      >
+                        CYBERPUNK 2077
+                      </h2>
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >LAST RUN: 3D AGO</span
+                      >
+                    </div>
+                    <div
+                      class="flex items-center justify-between text-outline font-label-xs text-label-xs pt-2"
+                    >
+                      <span class="text-on-surface-variant font-mono"
+                        >PATH: gog_games/cyberpunk2077</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs px-1.5 py-0.5 bg-surface-container text-secondary font-bold uppercase"
+                        >MAX FIDELITY THERMAL</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <!-- CARD 5: ELDEN RING -->
+                <div
+                  class="relative bg-surface-container-low p-space-md flex flex-col justify-between group cursor-pointer hover:bg-surface-container transition-none"
+                >
+                  <div
+                    class="flex items-start justify-between gap-2 mb-space-sm"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="font-label-xs text-label-xs bg-surface-container text-on-surface-variant px-1 py-0.5 font-bold uppercase"
+                        >STEAM</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                        >ID: ELD_05</span
+                      >
+                    </div>
+                    <span
+                      class="font-label-xs text-label-xs text-primary-container font-bold font-mono"
+                      >DLL HOOKED</span
+                    >
+                  </div>
+                  <div
+                    class="relative w-full h-44 bg-surface-container-lowest overflow-hidden mb-space-sm"
+                  >
+                    <img
+                      class="w-full h-full object-cover grayscale contrast-125 group-hover:grayscale-0 transition-none"
+                      data-alt="Monolithic fantasy tree silhouette burning with golden amber sparks across a desolate black ruin landscape, austere brutalist frame and cinematic chiaroscuro lighting"
+                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuBl2CMYc8Xhi0kLehzG73qXqWBagUBXEuysAaqEw0jLTHldywBG5Tmz8IIvLqUuM2iGLUCIzByzwiBc2K1khuOWqGYL2IMO03twTN7PSepAkXwMWrV7wfsQuKISKUY03hcXTMX2aBdKFH4k8v_jd0pwIAgifyTdjidUFOxzBCrJpYB6QZqQeB3rhMHHsA31WFUB6Ud2mk4DBpMkqVc8Ue9L4muJ69XrG0jtwinrlq333yfNbrXO3ynSyw"
+                    />
+                    <div
+                      class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent opacity-90"
+                    ></div>
+                    <div
+                      class="absolute bottom-2 left-2 right-2 flex justify-between items-end"
+                    >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface-variant uppercase font-mono"
+                        >OFFLINE INJECT</span
+                      >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface uppercase font-mono"
+                        >ULTRAWIDE 21:9</span
+                      >
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <div class="flex items-baseline justify-between">
+                      <h2
+                        class="font-headline-sm text-headline-sm uppercase text-on-surface font-black tracking-tight group-hover:text-primary-container"
+                      >
+                        ELDEN RING
+                      </h2>
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >LAST RUN: 5D AGO</span
+                      >
+                    </div>
+                    <div
+                      class="flex items-center justify-between text-outline font-label-xs text-label-xs pt-2"
+                    >
+                      <span class="text-on-surface-variant font-mono"
+                        >PATH: steamapps/common/eldenring</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs px-1.5 py-0.5 bg-surface-container text-tertiary font-bold uppercase"
+                        >UNLOCKED 120HZ HOOK</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <!-- CARD 6: OVERWATCH 2 -->
+                <div
+                  class="relative bg-surface-container-low p-space-md flex flex-col justify-between group cursor-pointer hover:bg-surface-container transition-none"
+                >
+                  <div
+                    class="flex items-start justify-between gap-2 mb-space-sm"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="font-label-xs text-label-xs bg-surface-container text-on-surface-variant px-1 py-0.5 font-bold uppercase"
+                        >BATTLE.NET</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase font-mono"
+                        >ID: OW2_06</span
+                      >
+                    </div>
+                    <span
+                      class="font-label-xs text-label-xs text-on-surface-variant font-bold font-mono"
+                      >STOCK PROFILE</span
+                    >
+                  </div>
+                  <div
+                    class="relative w-full h-44 bg-surface-container-lowest overflow-hidden mb-space-sm"
+                  >
+                    <img
+                      class="w-full h-full object-cover grayscale contrast-125 group-hover:grayscale-0 transition-none"
+                      data-alt="Industrial robot warrior visor lens glowing hot orange in shadow, futuristic heavy mechanical plating and brutalist stark composition in black and deep iron gray"
+                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuBX50NxXqfCKlBBvZV2HdUdiwex1lyBVyLkkBE0mTZQn8AhYgmSs803_VutMbxK_jLMhDMjNq3SSIIbsFCY9y9_ppRZ53SOo7D7ehT2X_LU87mYLF8DN0RkPfeRQysX5RPN6UWymocft4tyFixQGKUFWrxn3cwjzHe6aKtG5lR-NP6ikam5fxx7sqh30MwpY36-BLP55jksTjrN22_-sDUVj6tce04eUNtUJsZ0ZT1Btb-sAKjTdCWxpA"
+                    />
+                    <div
+                      class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent opacity-90"
+                    ></div>
+                    <div
+                      class="absolute bottom-2 left-2 right-2 flex justify-between items-end"
+                    >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface-variant uppercase font-mono"
+                        >BLIZZARD AUTH</span
+                      >
+                      <span
+                        class="bg-surface-container-lowest/90 px-1.5 py-0.5 font-label-xs text-label-xs text-on-surface uppercase font-mono"
+                        >LOW LATENCY NV</span
+                      >
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <div class="flex items-baseline justify-between">
+                      <h2
+                        class="font-headline-sm text-headline-sm uppercase text-on-surface font-black tracking-tight group-hover:text-primary-container"
+                      >
+                        OVERWATCH 2
+                      </h2>
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >LAST RUN: 1W AGO</span
+                      >
+                    </div>
+                    <div
+                      class="flex items-center justify-between text-outline font-label-xs text-label-xs pt-2"
+                    >
+                      <span class="text-on-surface-variant font-mono"
+                        >PATH: battlenet/overwatch</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs px-1.5 py-0.5 bg-surface-container text-on-surface-variant font-bold uppercase"
+                        >READY</span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- RIGHT COLUMN: Selected Game Details Drawer / Side Inspector (5 cols) -->
+            <div
+              class="xl:col-span-5 bg-surface-container-low p-space-lg flex flex-col justify-between"
+            >
+              <div class="flex flex-col gap-space-md">
+                <!-- Inspector Header Strip -->
+                <div
+                  class="flex items-center justify-between pb-space-xs bg-surface-container-lowest p-space-sm"
+                >
+                  <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 bg-primary-container"></span>
+                    <span
+                      class="font-label-xs text-label-xs font-bold uppercase tracking-widest text-primary-container"
+                      >TARGET INSPECTOR DISPATCH</span
+                    >
+                  </div>
+                  <span
+                    class="font-label-xs text-label-xs text-outline font-mono"
+                    >LOCK: STABLE</span
+                  >
+                </div>
+                <!-- Target Title & File Metadata -->
+                <div
+                  class="bg-surface-container p-space-md flex flex-col gap-2"
+                >
+                  <div class="flex items-center justify-between">
+                    <span
+                      class="font-label-xs text-label-xs text-primary-container uppercase font-mono font-bold"
+                      >RIOT GAMES CLIENT // SHOOTER</span
+                    >
+                    <span
+                      class="font-label-xs text-label-xs text-outline font-mono"
+                      >HASH: 9F8A2D3C41</span
+                    >
+                  </div>
+                  <h2
+                    class="font-headline-md text-headline-md uppercase text-on-surface font-black tracking-tight"
+                  >
+                    VALORANT
+                  </h2>
+                  <div
+                    class="bg-surface-container-lowest p-space-sm font-label-xs text-label-xs font-mono text-outline break-all"
+                  >
+                    VALORANT.EXE // C:\Riot
+                    Games\VALORANT\live\ShooterGame\Binaries\Win64\VALORANT-Win64-Shipping.exe
+                  </div>
+                </div>
+                <!-- Profile Preset Selector Block -->
+                <div
+                  class="bg-surface-container p-space-md flex flex-col gap-space-sm"
+                >
+                  <div class="flex items-center justify-between">
+                    <span
+                      class="font-label-xs text-label-xs uppercase tracking-wider text-outline"
+                      >ACTIVE BOOST PROFILE SPECIFICATION</span
+                    >
+                    <span
+                      class="font-label-xs text-label-xs text-tertiary uppercase font-mono font-bold"
+                      >PRO_TIER</span
+                    >
+                  </div>
+                  <div
+                    class="bg-surface-container-lowest p-space-sm flex items-center justify-between"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="material-symbols-outlined text-primary-container text-[18px]"
+                        >bolt</span
+                      >
+                      <div>
+                        <div
+                          class="font-label-sm text-label-sm text-on-surface font-bold uppercase"
+                        >
+                          Esports Ultra Low-Latency
+                        </div>
+                        <div
+                          class="font-label-xs text-label-xs text-outline font-mono"
+                        >
+                          Frametime variance &lt; 0.4ms target
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      class="bg-surface-container hover:bg-surface-container-high px-2 py-1 font-label-xs text-label-xs uppercase text-on-surface font-bold"
+                      type="button"
+                    >
+                      SWITCH
+                    </button>
+                  </div>
+                </div>
+                <!-- Telemetry Topology Overview Mini-Chart -->
+                <div
+                  class="bg-surface-container p-space-md flex flex-col gap-2"
+                >
+                  <div
+                    class="flex justify-between items-center text-outline font-label-xs text-label-xs uppercase"
+                  >
+                    <span class="">DISPATCH AFFINITY ALLOCATION</span>
+                    <span class="font-mono text-primary-container"
+                      >8 PERFORMANCE CORES ASSIGNED</span
+                    >
+                  </div>
+                  <div class="grid grid-cols-8 gap-1 py-1">
+                    <div
+                      class="bg-primary-container h-6 flex items-center justify-center font-label-xs text-label-xs text-on-primary-container font-mono font-bold"
+                    >
+                      P0
+                    </div>
+                    <div
+                      class="bg-primary-container h-6 flex items-center justify-center font-label-xs text-label-xs text-on-primary-container font-mono font-bold"
+                    >
+                      P1
+                    </div>
+                    <div
+                      class="bg-primary-container h-6 flex items-center justify-center font-label-xs text-label-xs text-on-primary-container font-mono font-bold"
+                    >
+                      P2
+                    </div>
+                    <div
+                      class="bg-primary-container h-6 flex items-center justify-center font-label-xs text-label-xs text-on-primary-container font-mono font-bold"
+                    >
+                      P3
+                    </div>
+                    <div
+                      class="bg-primary-container h-6 flex items-center justify-center font-label-xs text-label-xs text-on-primary-container font-mono font-bold"
+                    >
+                      P4
+                    </div>
+                    <div
+                      class="bg-primary-container h-6 flex items-center justify-center font-label-xs text-label-xs text-on-primary-container font-mono font-bold"
+                    >
+                      P5
+                    </div>
+                    <div
+                      class="bg-primary-container h-6 flex items-center justify-center font-label-xs text-label-xs text-on-primary-container font-mono font-bold"
+                    >
+                      P6
+                    </div>
+                    <div
+                      class="bg-primary-container h-6 flex items-center justify-center font-label-xs text-label-xs text-on-primary-container font-mono font-bold"
+                    >
+                      P7
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-8 gap-1">
+                    <div
+                      class="bg-surface-container-highest h-4 flex items-center justify-center font-label-xs text-label-xs text-outline font-mono"
+                    >
+                      E8
+                    </div>
+                    <div
+                      class="bg-surface-container-highest h-4 flex items-center justify-center font-label-xs text-label-xs text-outline font-mono"
+                    >
+                      E9
+                    </div>
+                    <div
+                      class="bg-surface-container-highest h-4 flex items-center justify-center font-label-xs text-label-xs text-outline font-mono"
+                    >
+                      E10
+                    </div>
+                    <div
+                      class="bg-surface-container-highest h-4 flex items-center justify-center font-label-xs text-label-xs text-outline font-mono"
+                    >
+                      E11
+                    </div>
+                    <div
+                      class="bg-surface-container-highest h-4 flex items-center justify-center font-label-xs text-label-xs text-outline font-mono"
+                    >
+                      E12
+                    </div>
+                    <div
+                      class="bg-surface-container-highest h-4 flex items-center justify-center font-label-xs text-label-xs text-outline font-mono"
+                    >
+                      E13
+                    </div>
+                    <div
+                      class="bg-surface-container-highest h-4 flex items-center justify-center font-label-xs text-label-xs text-outline font-mono"
+                    >
+                      E14
+                    </div>
+                    <div
+                      class="bg-surface-container-highest h-4 flex items-center justify-center font-label-xs text-label-xs text-outline font-mono"
+                    >
+                      E15
+                    </div>
+                  </div>
+                  <div
+                    class="flex justify-between items-center text-outline font-label-xs text-label-xs pt-1"
+                  >
+                    <span class="">E-CORES PARKED / SYSTEM ISOLATED</span>
+                    <span class="text-tertiary font-mono"
+                      >INTERRUPT AFFINITY #02</span
+                    >
+                  </div>
+                </div>
+                <!-- Launch Settings & Overrides Switchboard -->
+                <div
+                  class="bg-surface-container p-space-md flex flex-col gap-2"
+                >
+                  <div
+                    class="font-label-xs text-label-xs uppercase text-outline tracking-wider pb-1"
+                  >
+                    EXECUTION OVERRIDES &amp; HOOK CONTROLS
+                  </div>
+                  <!-- Switch 1 -->
+                  <div
+                    class="flex items-center justify-between p-space-xs hover:bg-surface-container-high transition-none"
+                  >
+                    <div class="flex flex-col">
+                      <span
+                        class="font-label-sm text-label-sm font-bold uppercase text-on-surface"
+                        >Force High Performance GPU</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >NVIDIA RTX 4080S FORCED // CLOCK +150MHz</span
+                      >
+                    </div>
+                    <button
+                      class="w-12 h-6 bg-primary-container p-0.5 flex items-center justify-end"
+                      type="button"
+                    >
+                      <span
+                        class="w-5 h-5 bg-on-primary-container block"
+                      ></span>
+                    </button>
+                  </div>
+                  <!-- Switch 2 -->
+                  <div
+                    class="flex items-center justify-between p-space-xs hover:bg-surface-container-high transition-none"
+                  >
+                    <div class="flex flex-col">
+                      <span
+                        class="font-label-sm text-label-sm font-bold uppercase text-on-surface"
+                        >Disable Fullscreen Optimizations</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >DIRECTX INDEPENDENT EXCLUSIVE DISPATCH</span
+                      >
+                    </div>
+                    <button
+                      class="w-12 h-6 bg-primary-container p-0.5 flex items-center justify-end"
+                      type="button"
+                    >
+                      <span
+                        class="w-5 h-5 bg-on-primary-container block"
+                      ></span>
+                    </button>
+                  </div>
+                  <!-- Switch 3 -->
+                  <div
+                    class="flex items-center justify-between p-space-xs hover:bg-surface-container-high transition-none"
+                  >
+                    <div class="flex flex-col">
+                      <span
+                        class="font-label-sm text-label-sm font-bold uppercase text-on-surface"
+                        >Auto-Launch Aura Game Mode</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >KERNEL HOOK TRIGGERED ON PID DETECTION</span
+                      >
+                    </div>
+                    <button
+                      class="w-12 h-6 bg-primary-container p-0.5 flex items-center justify-end"
+                      type="button"
+                    >
+                      <span
+                        class="w-5 h-5 bg-on-primary-container block"
+                      ></span>
+                    </button>
+                  </div>
+                  <!-- Switch 4 (OFF) -->
+                  <div
+                    class="flex items-center justify-between p-space-xs hover:bg-surface-container-high transition-none"
+                  >
+                    <div class="flex flex-col">
+                      <span
+                        class="font-label-sm text-label-sm font-bold uppercase text-on-surface-variant"
+                        >In-Game HUD &amp; OSD Telemetry Banner</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >OVERLAY RENDER HOOK DISABLED</span
+                      >
+                    </div>
+                    <button
+                      class="w-12 h-6 bg-surface-container-highest p-0.5 flex items-center justify-start"
+                      type="button"
+                    >
+                      <span class="w-5 h-5 bg-outline block"></span>
+                    </button>
+                  </div>
+                  <!-- Switch 5 -->
+                  <div
+                    class="flex items-center justify-between p-space-xs hover:bg-surface-container-high transition-none"
+                  >
+                    <div class="flex flex-col">
+                      <span
+                        class="font-label-sm text-label-sm font-bold uppercase text-on-surface"
+                        >High DPI Scaling Override</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-outline font-mono"
+                        >APPLICATION STRICT RESOLUTION CONTROL</span
+                      >
+                    </div>
+                    <button
+                      class="w-12 h-6 bg-primary-container p-0.5 flex items-center justify-end"
+                      type="button"
+                    >
+                      <span
+                        class="w-5 h-5 bg-on-primary-container block"
+                      ></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <!-- Main Action Station -->
+              <div class="flex flex-col gap-space-sm pt-space-lg">
+                <!-- Massive Solar Flare Primary Execute Button -->
+                <button
+                  class="w-full bg-primary-container hover:bg-tertiary text-on-primary-container py-4 px-space-lg font-headline-sm text-headline-sm uppercase font-black tracking-tight flex items-center justify-center gap-3 transition-none cursor-pointer"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[24px]"
+                    >bolt</span
+                  >
+                  <span class="">LAUNCH WITH AURA BOOST</span>
+                </button>
+                <!-- Secondary Control Matrix -->
+                <div class="grid grid-cols-2 gap-space-sm">
+                  <button
+                    class="bg-surface-container hover:bg-surface-container-high text-on-surface p-space-sm font-label-xs text-label-xs uppercase font-bold tracking-wider flex items-center justify-center gap-1.5 transition-none"
+                    type="button"
+                  >
+                    <span
+                      class="material-symbols-outlined text-[16px] text-primary"
+                      >tune</span
+                    >
+                    <span class="">EDIT ADVANCED AFFINITY</span>
+                  </button>
+                  <button
+                    class="bg-surface-container hover:bg-error hover:text-on-error text-on-surface-variant p-space-sm font-label-xs text-label-xs uppercase font-bold tracking-wider flex items-center justify-center gap-1.5 transition-none"
+                    type="button"
+                  >
+                    <span class="material-symbols-outlined text-[16px]"
+                      >delete</span
+                    >
+                    <span class="">REMOVE FROM LIBRARY</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Bottom Accordion Bar: Removed & Excluded Targets -->
+          <div
+            class="w-full bg-surface-container-low px-space-xl py-space-md flex flex-col gap-space-sm"
+          >
+            <div class="flex items-center justify-between cursor-pointer group">
+              <div class="flex items-center gap-space-md">
+                <span
+                  class="font-label-sm text-label-sm uppercase font-bold text-outline group-hover:text-on-surface"
+                >
+                  REMOVED &amp; EXCLUDED TARGETS (2)
+                </span>
+                <span
+                  class="font-label-xs text-label-xs text-outline-variant font-mono"
+                  >AUTO-DISPATCH BYPASSED</span
+                >
+              </div>
+              <div class="flex items-center gap-2">
+                <span
+                  class="font-label-xs text-label-xs text-outline font-mono uppercase"
+                  >COLLAPSED POOL</span
+                >
+                <span class="material-symbols-outlined text-outline text-[18px]"
+                  >expand_more</span
+                >
+              </div>
+            </div>
+            <!-- Excluded Items Row -->
+            <div
+              class="grid grid-cols-1 md:grid-cols-2 gap-space-md pt-space-xs"
+            >
+              <!-- Excluded Target 1 -->
+              <div
+                class="bg-surface-container-lowest p-space-sm flex items-center justify-between"
+              >
+                <div class="flex items-center gap-space-sm">
+                  <span
+                    class="material-symbols-outlined text-outline text-[18px]"
+                    >visibility_off</span
+                  >
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-sm text-label-sm uppercase font-bold text-on-surface-variant"
+                      >MINECRAFT.EXE // JAVA W10</span
+                    >
+                    <span
+                      class="font-label-xs text-label-xs text-outline font-mono"
+                      >User Excluded: Oct 24 2024</span
+                    >
+                  </div>
+                </div>
+                <button
+                  class="bg-surface-container hover:bg-primary-container hover:text-on-primary-container text-on-surface px-space-md py-1.5 font-label-xs text-label-xs uppercase font-bold tracking-wider flex items-center gap-1"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[14px]"
+                    >restore</span
+                  >
+                  <span class="">RESTORE TARGET</span>
+                </button>
+              </div>
+              <!-- Excluded Target 2 -->
+              <div
+                class="bg-surface-container-lowest p-space-sm flex items-center justify-between"
+              >
+                <div class="flex items-center gap-space-sm">
+                  <span
+                    class="material-symbols-outlined text-outline text-[18px]"
+                    >visibility_off</span
+                  >
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-sm text-label-sm uppercase font-bold text-on-surface-variant"
+                      >STARFIELD.EXE // XBOX APP</span
+                    >
+                    <span
+                      class="font-label-xs text-label-xs text-outline font-mono"
+                      >User Excluded: Nov 02 2024</span
+                    >
+                  </div>
+                </div>
+                <button
+                  class="bg-surface-container hover:bg-primary-container hover:text-on-primary-container text-on-surface px-space-md py-1.5 font-label-xs text-label-xs uppercase font-bold tracking-wider flex items-center gap-1"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[14px]"
+                    >restore</span
+                  >
+                  <span class="">RESTORE TARGET</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

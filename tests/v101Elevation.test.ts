@@ -5,8 +5,10 @@ import { Repository } from "../electron/repository";
 import {
   ElevationGate,
   MockPlatform,
+  WindowsPlatform,
   type SessionChannel,
 } from "../electron/platform";
+import { adminIds } from "../shared/catalogue";
 import { BoostEngine } from "../electron/booster";
 import { AppService } from "../electron/service";
 import {
@@ -752,5 +754,33 @@ describe("review follow-ups", () => {
     ).rejects.toThrow(/Revert this game's launch settings/);
     expect(repo.state().games[0]?.executablePath).toBeNull();
     repo.close();
+  });
+  it("runs administrator optimizations through the shared prompt gate", async () => {
+    const platform = new WindowsPlatform("unused.exe");
+    const seen: Array<string | null> = [];
+    (platform as unknown as { call: () => Promise<object> }).call =
+      async () => {
+        seen.push(platform.elevation.current);
+        return { ok: true, message: "ok", verified: true };
+      };
+    const ids = [adminIds[0]!];
+    await platform.apply(ids, new AbortController().signal, {
+      values: [],
+    } as never);
+    expect(seen).toEqual(["optimize"]);
+    expect(platform.elevation.current).toBeNull();
+    // Another prompt is open: the optimization is refused before the helper is asked, so two prompts never coexist.
+    platform.elevation.hold("restore");
+    await expect(
+      platform.apply(ids, new AbortController().signal, {} as never),
+    ).rejects.toThrow(/never open together/);
+    expect(seen).toHaveLength(1);
+    platform.elevation.release("restore");
+    // And while an optimization prompt is open, restore points and the timer wait their turn.
+    platform.elevation.hold("optimize");
+    expect(() => platform.elevation.hold("timer")).toThrow(
+      /never open together/,
+    );
+    platform.elevation.release("optimize");
   });
 });

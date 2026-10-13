@@ -1,0 +1,1357 @@
+<!doctype html>
+<html class="dark" lang="en" style="">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta content="web_dashboard" name="shell-type" />
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700;800;900&amp;family=Space+Grotesk:wght@400;500;700;900&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      @layer base {
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+        }
+        body {
+          overscroll-behavior: none;
+        }
+        main > :first-child {
+          margin-top: 0 !important;
+        }
+        main > :last-child {
+          margin-bottom: 0 !important;
+        }
+      }
+      ::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-container": "#ff5708",
+              "primary-fixed": "#ffdbcf",
+              "tertiary-fixed": "#ffddb4",
+              "secondary-container": "#fe7600",
+              secondary: "#ffb68d",
+              "on-tertiary": "#452b00",
+              "surface-container-low": "#090a0d",
+              "outline-variant": "#5c4037",
+              "inverse-surface": "#e3e2e6",
+              primary: "#ffb59c",
+              "surface-container": "#1f1f23",
+              "inverse-on-surface": "#303034",
+              "surface-tint": "#ffb59c",
+              "inverse-primary": "#aa3600",
+              "surface-container-highest": "#343538",
+              "on-secondary-fixed": "#331200",
+              "on-secondary": "#532200",
+              "on-surface-variant": "#e5beb2",
+              "on-surface": "#f5f5f7",
+              error: "#ff3b30",
+              "surface-dim": "#121316",
+              surface: "#12141a",
+              "surface-container-lowest": "#050608",
+              "primary-fixed-dim": "#ffb59c",
+              "error-container": "#93000a",
+              "tertiary-container": "#c68300",
+              "surface-variant": "#343538",
+              "surface-container-high": "#292a2d",
+              "on-secondary-container": "#5a2600",
+              "on-secondary-fixed-variant": "#763300",
+              "on-primary": "#5c1900",
+              "on-background": "#e3e2e6",
+              "secondary-fixed": "#ffdbc9",
+              tertiary: "#ffb952",
+              "on-tertiary-fixed-variant": "#633f00",
+              outline: "#5e6370",
+              "on-error-container": "#ffdad6",
+              "on-tertiary-container": "#3c2500",
+              "on-primary-container": "#511500",
+              background: "#121316",
+              "tertiary-fixed-dim": "#ffb952",
+              "surface-bright": "#38393c",
+              "on-primary-fixed": "#390c00",
+              "on-tertiary-fixed": "#291800",
+              "secondary-fixed-dim": "#ffb68d",
+              "on-error": "#690005",
+              "on-primary-fixed-variant": "#822700",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              "space-sm": "0.5rem",
+              margin: "2rem",
+              "space-md": "1rem",
+              gutter: "0px",
+              "space-xl": "2rem",
+              "space-xs": "0.25rem",
+              "space-lg": "1.5rem",
+            },
+            fontFamily: {
+              "display-lg-mobile": ["Space Grotesk"],
+              "body-md": ["Space Grotesk"],
+              "headline-md": ["Space Grotesk"],
+              "label-lg": ["JetBrains Mono"],
+              "body-sm": ["Space Grotesk"],
+              "telemetry-numeral-lg": ["JetBrains Mono"],
+              "headline-sm": ["Space Grotesk"],
+              "telemetry-numeral-md": ["JetBrains Mono"],
+              "headline-lg": ["Space Grotesk"],
+              "label-sm": ["JetBrains Mono"],
+              "label-md": ["JetBrains Mono"],
+              "body-lg": ["Space Grotesk"],
+              "headline-lg-mobile": ["Space Grotesk"],
+              "label-xs": ["JetBrains Mono"],
+              "display-lg": ["Space Grotesk"],
+            },
+            fontSize: {
+              "display-lg-mobile": [
+                "2.25rem",
+                {
+                  lineHeight: "1.1",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "900",
+                },
+              ],
+              "body-md": [
+                "0.875rem",
+                { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" },
+              ],
+              "headline-md": [
+                "1.5rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-lg": [
+                "0.875rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.05em",
+                  fontWeight: "700",
+                },
+              ],
+              "body-sm": [
+                "0.75rem",
+                { lineHeight: "1.4", letterSpacing: "0", fontWeight: "400" },
+              ],
+              "telemetry-numeral-lg": [
+                "3.75rem",
+                {
+                  lineHeight: "1",
+                  letterSpacing: "-0.03em",
+                  fontWeight: "900",
+                },
+              ],
+              "headline-sm": [
+                "1.25rem",
+                {
+                  lineHeight: "1.3",
+                  letterSpacing: "-0.01em",
+                  fontWeight: "700",
+                },
+              ],
+              "telemetry-numeral-md": [
+                "1.5rem",
+                { lineHeight: "1.1", letterSpacing: "0", fontWeight: "800" },
+              ],
+              "headline-lg": [
+                "3rem",
+                {
+                  lineHeight: "1.1",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "900",
+                },
+              ],
+              "label-sm": [
+                "0.6875rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.1em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-md": [
+                "0.75rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.08em",
+                  fontWeight: "700",
+                },
+              ],
+              "body-lg": [
+                "1.125rem",
+                { lineHeight: "1.5", letterSpacing: "0", fontWeight: "500" },
+              ],
+              "headline-lg-mobile": [
+                "2rem",
+                {
+                  lineHeight: "1.15",
+                  letterSpacing: "-0.015em",
+                  fontWeight: "900",
+                },
+              ],
+              "label-xs": [
+                "0.5625rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.12em",
+                  fontWeight: "700",
+                },
+              ],
+              "display-lg": [
+                "3.75rem",
+                {
+                  lineHeight: "1",
+                  letterSpacing: "-0.025em",
+                  fontWeight: "900",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-surface-container-lowest text-on-surface font-body-md text-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen"
+  >
+    <aside
+      class="fixed left-0 top-0 h-full w-72 bg-surface-container-low z-50 flex flex-col justify-between border-r border-outline-variant"
+    >
+      <div class="flex flex-col">
+        <div
+          class="h-14 px-space-md border-b border-outline-variant flex items-center justify-between bg-surface-container-lowest"
+        >
+          <div class="flex items-center gap-space-sm">
+            <div class="w-2.5 h-2.5 bg-primary-container"></div>
+            <span
+              class="font-headline-sm text-headline-sm uppercase tracking-tight text-on-surface font-black"
+              >AURA</span
+            >
+          </div>
+          <span
+            class="font-label-xs text-label-xs px-1.5 py-0.5 bg-primary-container text-on-primary-container uppercase font-bold tracking-widest"
+            >v2.4</span
+          >
+        </div>
+        <div
+          class="px-space-md py-space-xs border-b border-outline-variant bg-surface-container-low flex items-center justify-between"
+        >
+          <span
+            class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+            >DISPATCH INTERFACE</span
+          ><span
+            class="font-label-xs text-label-xs text-primary-container uppercase tracking-widest"
+            >SYS_RDY</span
+          >
+        </div>
+        <nav
+          class="flex flex-col py-space-xs"
+          data-active-classes="bg-primary-container text-on-primary-container border-l-4 border-secondary-container"
+        >
+          <a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="home"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]"
+                >grid_view</span
+              ><span class="">Home</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >01</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="game-mode"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]"
+                >sports_esports</span
+              ><span class="">Game Mode</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >02</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="games-library"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]"
+                >stadia_controller</span
+              ><span class="">Games Library</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >03</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="optimize"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]">speed</span
+              ><span class="">Optimize</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >04</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="safety-and-backups"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]"
+                >security</span
+              ><span class="">Safety &amp; Backups</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >05</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 bg-primary-container text-on-primary-container transition-none border-l-4 border-secondary-container font-label-md text-label-md uppercase tracking-wider font-bold"
+            data-path="system-and-topology"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span class="material-symbols-outlined text-[18px]">memory</span
+              ><span class="">System &amp; Topology</span></span
+            ><span
+              class="font-mono text-[10px] tracking-widest text-on-primary font-bold"
+              >06</span
+            ></a
+          >
+        </nav>
+      </div>
+      <div
+        class="flex flex-col border-t border-outline-variant bg-surface-container-lowest"
+      >
+        <a
+          class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none font-label-md text-label-md uppercase tracking-wider border-b border-outline-variant"
+          data-path="settings"
+          href="#"
+          ><span class="flex items-center gap-space-sm"
+            ><span class="material-symbols-outlined text-[18px]">settings</span
+            ><span class="">Settings</span></span
+          ><span class="font-mono text-[10px]">SYS</span></a
+        >
+        <div class="p-space-md flex flex-col gap-space-xs">
+          <div class="flex items-center justify-between">
+            <span
+              class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+              >TARGET NODE</span
+            ><span
+              class="flex items-center gap-1.5 font-label-xs text-label-xs text-tertiary font-bold"
+              ><span
+                class="w-1.5 h-1.5 bg-primary-container animate-pulse"
+              ></span
+              >ONLINE</span
+            >
+          </div>
+          <div
+            class="font-headline-sm text-headline-sm uppercase text-on-surface tracking-tight font-bold"
+          >
+            Rig-01 Ultra
+          </div>
+          <div
+            class="flex justify-between items-center text-outline font-label-xs text-label-xs mt-1"
+          >
+            <span class="uppercase">KERNEL TELEMETRY</span
+            ><span class="font-mono">v4.19.0-OC</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="pl-72">
+      <header
+        class="fixed top-0 left-72 right-0 h-14 bg-surface-container-low/95 backdrop-blur-md z-40 border-b border-outline-variant flex items-center justify-between px-space-md"
+      >
+        <div class="flex items-center gap-space-md">
+          <div
+            class="flex items-center gap-2 border-r border-outline-variant pr-space-md"
+          >
+            <span class="font-label-xs text-label-xs text-outline uppercase"
+              >STATUS</span
+            ><span
+              class="font-label-sm text-label-sm font-bold uppercase text-primary-container tracking-wider"
+              >SYSTEM EQUILIBRIUM: NOMINAL</span
+            >
+          </div>
+          <div
+            class="hidden lg:flex items-center gap-space-md font-label-sm text-label-sm"
+          >
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >CORE FREQ</span
+              ><span class="font-bold font-mono text-on-surface">4.85 GHz</span>
+            </div>
+            <span class="text-outline-variant">/</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >TEMP</span
+              ><span class="font-bold font-mono text-tertiary">38°C</span>
+            </div>
+            <span class="text-outline-variant">/</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >BUS LOAD</span
+              ><span class="font-bold font-mono text-on-surface">14%</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-space-sm">
+          <div
+            class="flex items-center mr-space-sm pr-space-sm border-r border-outline-variant"
+          >
+            <div
+              class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"
+            >
+              <span
+                class="material-symbols-outlined text-on-primary text-[18px]"
+                >person</span
+              >
+            </div>
+          </div>
+          <div class="flex items-center border border-outline-variant">
+            <button
+              class="w-9 h-9 flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface text-on-surface-variant transition-none border-r border-outline-variant"
+              title="Minimize Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >minimize</span
+              ></button
+            ><button
+              class="w-9 h-9 flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface text-on-surface-variant transition-none border-r border-outline-variant"
+              title="Maximize Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >crop_square</span
+              ></button
+            ><button
+              class="w-9 h-9 flex items-center justify-center hover:bg-error hover:text-on-error text-on-surface-variant transition-none"
+              title="Close Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          </div>
+        </div>
+      </header>
+      <main class="relative pt-14 w-full min-h-screen bg-surface">
+        <div class="flex flex-col w-full">
+          <!-- CRITICAL ALERT TELEMETRY BANNER -->
+          <div
+            class="w-full bg-error text-on-error p-space-md flex flex-wrap items-center justify-between gap-space-sm select-none"
+          >
+            <div class="flex items-center gap-space-md min-w-0">
+              <div
+                class="flex items-center justify-center bg-black text-error w-8 h-8 px-1"
+              >
+                <span
+                  class="material-symbols-outlined text-[20px] animate-pulse"
+                  >warning</span
+                >
+              </div>
+              <div class="flex flex-col">
+                <span
+                  class="font-label-xs text-label-xs uppercase tracking-widest text-on-error/80"
+                  >KERNEL INTERRUPT // DIRECT DISPATCH TRAP</span
+                >
+                <span
+                  class="font-headline-sm text-headline-sm tracking-tight uppercase font-black"
+                >
+                  STATUS: THERMAL THROTTLING DETECTED // CORE FREQ 3.82 GHz
+                  (DOWNCLOCKED) // TEMP 98°C CRITICAL // BUS LOAD 94%
+                </span>
+              </div>
+            </div>
+            <div class="flex items-center gap-space-sm">
+              <span
+                class="font-label-xs text-label-xs bg-black text-on-surface px-2 py-1 font-mono tracking-widest uppercase"
+                >ERR_CODE: 0x8892_PROCHOT</span
+              >
+              <button
+                class="bg-surface-container-lowest hover:bg-black text-on-surface hover:text-white px-3 py-1 font-label-sm text-label-sm uppercase transition-none"
+                id="override-silence-btn"
+                onclick="this.innerText = 'ACKNOWLEDGED // OVERRIDE ACTIVE'"
+              >
+                ACKNOWLEDGE ALERT
+              </button>
+            </div>
+          </div>
+          <!-- SECONDARY MITIGATION DISPATCH ADVISORY -->
+          <div
+            class="w-full bg-surface-container-low px-space-md py-space-sm flex flex-col md:flex-row md:items-center justify-between gap-space-sm"
+          >
+            <div class="flex items-center gap-space-sm">
+              <span class="w-2.5 h-2.5 bg-error animate-ping"></span>
+              <span
+                class="font-label-md text-label-md uppercase text-error tracking-wider font-black"
+                >AUTOMATIC MITIGATION SUGGESTED:</span
+              >
+              <span
+                class="font-body-md text-body-md text-on-surface tracking-tight"
+                >SHED AVX2 WORKLOAD OR FLUSH P-CORE AFFINITIES IMMEDIATELY TO
+                PREVENT SILICON LATCH-UP.</span
+              >
+            </div>
+            <div class="flex items-center gap-space-md">
+              <span
+                class="font-label-xs text-label-xs text-outline font-mono uppercase"
+                >INTERCONNECT_STATE: RING_BUS_STALL</span
+              >
+              <span
+                class="font-label-xs text-label-xs bg-error text-on-error px-1.5 py-0.5 uppercase tracking-widest font-black"
+                >PROCHOT_ACTIVE</span
+              >
+            </div>
+          </div>
+          <!-- WORKSPACE GRID LAYOUT -->
+          <div class="grid grid-cols-1 xl:grid-cols-12 gap-space-md p-space-md">
+            <!-- [MOD_01] HARDWARE SPECIFICATION DECK -->
+            <div class="xl:col-span-4 flex flex-col gap-space-md">
+              <!-- HARDWARE UNIT CELL -->
+              <div
+                class="bg-surface-container-lowest p-space-lg flex flex-col gap-space-md"
+              >
+                <!-- HEADER METRIC -->
+                <div class="flex items-start justify-between">
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase tracking-widest"
+                      >[MOD_01] TELEMETRY DISPATCH</span
+                    >
+                    <span
+                      class="font-headline-md text-headline-md font-black uppercase text-on-surface"
+                      >INTEL CORE i9-14900K</span
+                    >
+                    <span
+                      class="font-label-xs text-label-xs text-on-surface-variant font-mono"
+                      >SOCKET LGA1700 // 8P + 16E ARCHITECTURE</span
+                    >
+                  </div>
+                  <div
+                    class="bg-error text-on-error px-2 py-0.5 font-label-xs text-label-xs uppercase font-black"
+                  >
+                    TJMAX REACHED
+                  </div>
+                </div>
+                <!-- TELEMETRY HIGHLIGHT CRITICAL METERS -->
+                <div class="flex flex-col gap-space-xs">
+                  <div class="flex justify-between items-baseline">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase"
+                      >PACKAGE TEMP LIMIT</span
+                    >
+                    <span
+                      class="font-telemetry-numeral-md text-telemetry-numeral-md text-error"
+                      >98.4°C</span
+                    >
+                  </div>
+                  <div class="h-3 w-full bg-surface-container flex">
+                    <div class="h-full bg-error" style="width: 98.4%"></div>
+                  </div>
+                  <div
+                    class="flex justify-between text-outline font-label-xs text-label-xs"
+                  >
+                    <span class="">IDLE: 34°C</span>
+                    <span class="">SPEC: 100°C CRIT</span>
+                  </div>
+                </div>
+                <!-- WARNING TAGS MATRIX -->
+                <div class="flex flex-col gap-space-xs">
+                  <div
+                    class="p-space-sm bg-error/10 text-error flex flex-col gap-1"
+                  >
+                    <div
+                      class="flex items-center justify-between font-label-xs text-label-xs font-black"
+                    >
+                      <span class="">WARNING TAG: THERMAL EXCEEDED</span>
+                      <span class="">FAULT #01</span>
+                    </div>
+                    <div
+                      class="font-label-sm text-label-sm tracking-tight uppercase font-mono"
+                    >
+                      PACKAGE TEMP: 98.4°C [CRITICAL THERMAL LIMIT EXCEEDED]
+                    </div>
+                  </div>
+                  <div
+                    class="p-space-sm bg-surface-container text-tertiary flex flex-col gap-1"
+                  >
+                    <div
+                      class="flex items-center justify-between font-label-xs text-label-xs font-bold"
+                    >
+                      <span class="">VOLTAGE REGULATOR WARN</span>
+                      <span class="">1.392V</span>
+                    </div>
+                    <div
+                      class="font-label-sm text-label-sm tracking-tight uppercase font-mono"
+                    >
+                      CORE VOLTAGE: 1.392V (OVERVOLT PROTECT INTERCEPT)
+                    </div>
+                  </div>
+                  <div
+                    class="p-space-sm bg-surface-container text-outline flex flex-col gap-1"
+                  >
+                    <div
+                      class="flex items-center justify-between font-label-xs text-label-xs"
+                    >
+                      <span class="text-error font-bold">DISENGAGED</span>
+                      <span class="font-mono">TVB_SYS</span>
+                    </div>
+                    <div
+                      class="font-label-sm text-label-sm tracking-tight uppercase font-mono text-on-surface"
+                    >
+                      THERMAL VELOCITY BOOST: DISENGAGED (TJMAX REACHED)
+                    </div>
+                  </div>
+                  <div
+                    class="p-space-sm bg-error text-on-error flex items-center justify-between"
+                  >
+                    <span
+                      class="font-label-xs text-label-xs font-mono font-black uppercase"
+                    >
+                      THROTTLING EVENT: PROCHOT_EXT TRIGGERED 41s AGO
+                    </span>
+                    <span class="material-symbols-outlined text-[16px]"
+                      >priority_high</span
+                    >
+                  </div>
+                </div>
+                <!-- BUS LOAD GAUGE -->
+                <div class="flex flex-col gap-space-xs pt-space-xs">
+                  <div
+                    class="flex justify-between items-baseline font-label-xs text-label-xs uppercase"
+                  >
+                    <span class="text-outline">RING BUS UTILIZATION</span>
+                    <span class="font-mono font-black text-error"
+                      >94% BOTTLENECK</span
+                    >
+                  </div>
+                  <div class="h-2 w-full bg-surface-container flex gap-0.5">
+                    <div
+                      class="h-full bg-primary-container"
+                      style="width: 70%"
+                    ></div>
+                    <div
+                      class="h-full bg-error animate-pulse"
+                      style="width: 24%"
+                    ></div>
+                    <div
+                      class="h-full bg-surface-container-highest"
+                      style="width: 6%"
+                    ></div>
+                  </div>
+                  <div
+                    class="flex justify-between text-outline font-label-xs text-label-xs"
+                  >
+                    <span class="">NOMINAL: &lt;65%</span>
+                    <span class="">OVERHEAD: 6% REMAINING</span>
+                  </div>
+                </div>
+                <!-- SENSOR READOUT MINI-GRID -->
+                <div
+                  class="grid grid-cols-2 gap-space-xs text-outline font-label-xs text-label-xs"
+                >
+                  <div class="bg-surface-container p-space-sm flex flex-col">
+                    <span class="">CURRENT DRAW (EDP)</span>
+                    <span
+                      class="font-telemetry-numeral-md text-telemetry-numeral-md text-error"
+                      >307A</span
+                    >
+                    <span class="text-error font-mono">CLAMP ACTIVE</span>
+                  </div>
+                  <div class="bg-surface-container p-space-sm flex flex-col">
+                    <span class="">PACKAGE POWER (PL2)</span>
+                    <span
+                      class="font-telemetry-numeral-md text-telemetry-numeral-md text-tertiary"
+                      >253W</span
+                    >
+                    <span class="text-tertiary font-mono">SUSTAINED CLAMP</span>
+                  </div>
+                </div>
+              </div>
+              <!-- KERNEL LOG STREAM -->
+              <div
+                class="bg-surface-container-lowest p-space-md flex flex-col gap-space-xs font-mono text-outline"
+              >
+                <div class="flex items-center justify-between pb-space-xs">
+                  <span
+                    class="font-label-xs text-label-xs uppercase tracking-widest text-on-surface"
+                    >TRACE DISPATCH CONSOLE</span
+                  >
+                  <span
+                    class="font-label-xs text-label-xs text-error font-bold animate-pulse"
+                    >REC_LIVE</span
+                  >
+                </div>
+                <div
+                  class="flex flex-col gap-1 font-label-xs text-label-xs leading-none"
+                >
+                  <div class="text-error">
+                    [T-00:41] PROCHOT_ASSERTED: CPU_THERM_TRIP_LVL2 reached
+                  </div>
+                  <div class="text-tertiary">
+                    [T-00:39] P-CORE RATIO DOWN-STEPPED: 54x -&gt; 42x (P00,
+                    P01, P03)
+                  </div>
+                  <div class="text-outline">
+                    [T-00:24] RING_FREQ DEGRADED: 4.80GHz -&gt; 3.60GHz
+                  </div>
+                  <div class="text-error">
+                    [T-00:12] RING BUS STALL TRAP: 118.4ns INTERCONNECT DELAY
+                  </div>
+                  <div class="text-primary-container">
+                    [T-00:03] FAN_01 PUMP RPM: 2800 RPM (MAX CEILING SATURATED)
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- [MOD_02] CPU TOPOLOGY HEATMAP & INTERCONNECT MESH -->
+            <div class="xl:col-span-8 flex flex-col gap-space-md">
+              <!-- INTERCONNECT HEATMAP CONTAINER -->
+              <div
+                class="bg-surface-container-lowest p-space-lg flex flex-col gap-space-md"
+              >
+                <!-- HEADER -->
+                <div
+                  class="flex flex-wrap items-center justify-between gap-space-sm"
+                >
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase tracking-widest"
+                      >[MOD_02] TOPOLOGY HEATMAP</span
+                    >
+                    <h2
+                      class="font-headline-md text-headline-md uppercase font-black text-on-surface"
+                    >
+                      SILICON CORE INTERCONNECT MESH
+                    </h2>
+                  </div>
+                  <div class="flex items-center gap-space-xs">
+                    <span
+                      class="bg-error text-on-error px-2 py-0.5 font-label-xs text-label-xs uppercase font-mono font-black"
+                    >
+                      RING BUS STALL: 118.4 ns
+                    </span>
+                    <span
+                      class="bg-surface-container px-2 py-0.5 font-label-xs text-label-xs uppercase font-mono text-outline"
+                    >
+                      BASELINE: 24.2 ns
+                    </span>
+                  </div>
+                </div>
+                <!-- TOPOLOGY INTERCONNECT LATENCY VISUALIZER -->
+                <div
+                  class="bg-surface-container p-space-md flex flex-col gap-space-sm"
+                >
+                  <div
+                    class="flex items-center justify-between font-label-xs text-label-xs uppercase"
+                  >
+                    <span class="text-error font-bold flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[16px]"
+                        >sync_problem</span
+                      >
+                      RING BUS CROSSBAR LATENCY METRIC (INTERCONNECT BOTTLENECK)
+                    </span>
+                    <span class="text-error font-mono font-black"
+                      >STALL WARNING ACTIVE</span
+                    >
+                  </div>
+                  <!-- Latency Gauge with Segmented Indicators -->
+                  <div class="grid grid-cols-12 gap-1 h-3">
+                    <div class="bg-primary-container col-span-3"></div>
+                    <div class="bg-tertiary col-span-2"></div>
+                    <div class="bg-error col-span-5"></div>
+                    <div class="bg-surface-container-highest col-span-2"></div>
+                  </div>
+                  <div
+                    class="flex justify-between font-label-xs text-label-xs text-outline font-mono"
+                  >
+                    <span class="">L3 TILE ACCESS: 18.2ns</span>
+                    <span class="">CROSSBAR STALL: 118.4ns [LIMIT]</span>
+                    <span class="">QUEUE DEPTH: 64/64 FULL</span>
+                  </div>
+                </div>
+                <!-- RAPTOR COVE PERFORMANCE CORES (P-CORES: 8 BLOCKS) -->
+                <div class="flex flex-col gap-space-xs">
+                  <div class="flex items-center justify-between">
+                    <span
+                      class="font-label-sm text-label-sm text-on-surface uppercase font-black tracking-wider"
+                    >
+                      RAPTOR COVE PERFORMANCE CORES (P-CORES: 8 UNITS)
+                    </span>
+                    <span
+                      class="font-label-xs text-label-xs text-error font-mono uppercase"
+                    >
+                      3 UNITS CRITICAL THROTTLE
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-space-sm">
+                    <!-- P00 CRITICAL -->
+                    <div
+                      class="bg-error/15 p-space-md flex flex-col gap-space-xs relative overflow-hidden"
+                    >
+                      <div class="flex justify-between items-start">
+                        <span
+                          class="font-headline-sm text-headline-sm font-black text-on-surface"
+                          >P00</span
+                        >
+                        <span
+                          class="bg-error text-on-error font-label-xs text-label-xs px-1 font-mono uppercase font-black"
+                          >99°C</span
+                        >
+                      </div>
+                      <div class="flex flex-col">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-error"
+                          >4.20 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-error font-mono"
+                          >TARGET: 5.40 GHz</span
+                        >
+                      </div>
+                      <div
+                        class="bg-error text-on-error text-center py-0.5 font-label-xs text-label-xs font-black uppercase"
+                      >
+                        THROTTLING
+                      </div>
+                    </div>
+                    <!-- P01 CRITICAL -->
+                    <div
+                      class="bg-error/15 p-space-md flex flex-col gap-space-xs relative overflow-hidden"
+                    >
+                      <div class="flex justify-between items-start">
+                        <span
+                          class="font-headline-sm text-headline-sm font-black text-on-surface"
+                          >P01</span
+                        >
+                        <span
+                          class="bg-error text-on-error font-label-xs text-label-xs px-1 font-mono uppercase font-black"
+                          >99°C</span
+                        >
+                      </div>
+                      <div class="flex flex-col">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-error"
+                          >4.20 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-error font-mono"
+                          >TARGET: 5.40 GHz</span
+                        >
+                      </div>
+                      <div
+                        class="bg-error text-on-error text-center py-0.5 font-label-xs text-label-xs font-black uppercase"
+                      >
+                        THROTTLING
+                      </div>
+                    </div>
+                    <!-- P02 ELEVATED -->
+                    <div
+                      class="bg-surface-container p-space-md flex flex-col gap-space-xs"
+                    >
+                      <div class="flex justify-between items-start">
+                        <span
+                          class="font-headline-sm text-headline-sm font-black text-on-surface"
+                          >P02</span
+                        >
+                        <span
+                          class="bg-tertiary text-on-tertiary font-label-xs text-label-xs px-1 font-mono uppercase font-bold"
+                          >91°C</span
+                        >
+                      </div>
+                      <div class="flex flex-col">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-tertiary"
+                          >5.10 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-outline font-mono"
+                          >TARGET: 5.40 GHz</span
+                        >
+                      </div>
+                      <div
+                        class="bg-surface-container-high text-on-surface-variant text-center py-0.5 font-label-xs text-label-xs uppercase"
+                      >
+                        HIGH LOAD
+                      </div>
+                    </div>
+                    <!-- P03 CRITICAL -->
+                    <div
+                      class="bg-error/15 p-space-md flex flex-col gap-space-xs relative overflow-hidden"
+                    >
+                      <div class="flex justify-between items-start">
+                        <span
+                          class="font-headline-sm text-headline-sm font-black text-on-surface"
+                          >P03</span
+                        >
+                        <span
+                          class="bg-error text-on-error font-label-xs text-label-xs px-1 font-mono uppercase font-black"
+                          >99°C</span
+                        >
+                      </div>
+                      <div class="flex flex-col">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-error"
+                          >4.20 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-error font-mono"
+                          >TARGET: 5.40 GHz</span
+                        >
+                      </div>
+                      <div
+                        class="bg-error text-on-error text-center py-0.5 font-label-xs text-label-xs font-black uppercase"
+                      >
+                        THROTTLING
+                      </div>
+                    </div>
+                    <!-- P04 NOMINAL -->
+                    <div
+                      class="bg-surface-container p-space-md flex flex-col gap-space-xs"
+                    >
+                      <div class="flex justify-between items-start">
+                        <span
+                          class="font-headline-sm text-headline-sm font-black text-on-surface"
+                          >P04</span
+                        >
+                        <span
+                          class="text-on-surface-variant font-label-xs text-label-xs px-1 font-mono"
+                          >82°C</span
+                        >
+                      </div>
+                      <div class="flex flex-col">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-on-surface"
+                          >5.40 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-outline font-mono"
+                          >NOMINAL</span
+                        >
+                      </div>
+                      <div
+                        class="bg-surface-container-low text-outline text-center py-0.5 font-label-xs text-label-xs uppercase"
+                      >
+                        BALANCED
+                      </div>
+                    </div>
+                    <!-- P05 NOMINAL -->
+                    <div
+                      class="bg-surface-container p-space-md flex flex-col gap-space-xs"
+                    >
+                      <div class="flex justify-between items-start">
+                        <span
+                          class="font-headline-sm text-headline-sm font-black text-on-surface"
+                          >P05</span
+                        >
+                        <span
+                          class="text-on-surface-variant font-label-xs text-label-xs px-1 font-mono"
+                          >84°C</span
+                        >
+                      </div>
+                      <div class="flex flex-col">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-on-surface"
+                          >5.40 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-outline font-mono"
+                          >NOMINAL</span
+                        >
+                      </div>
+                      <div
+                        class="bg-surface-container-low text-outline text-center py-0.5 font-label-xs text-label-xs uppercase"
+                      >
+                        BALANCED
+                      </div>
+                    </div>
+                    <!-- P06 ELEVATED -->
+                    <div
+                      class="bg-surface-container p-space-md flex flex-col gap-space-xs"
+                    >
+                      <div class="flex justify-between items-start">
+                        <span
+                          class="font-headline-sm text-headline-sm font-black text-on-surface"
+                          >P06</span
+                        >
+                        <span
+                          class="bg-tertiary text-on-tertiary font-label-xs text-label-xs px-1 font-mono font-bold"
+                          >89°C</span
+                        >
+                      </div>
+                      <div class="flex flex-col">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-tertiary"
+                          >5.20 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-outline font-mono"
+                          >TARGET: 5.40 GHz</span
+                        >
+                      </div>
+                      <div
+                        class="bg-surface-container-high text-on-surface-variant text-center py-0.5 font-label-xs text-label-xs uppercase"
+                      >
+                        HIGH LOAD
+                      </div>
+                    </div>
+                    <!-- P07 NOMINAL -->
+                    <div
+                      class="bg-surface-container p-space-md flex flex-col gap-space-xs"
+                    >
+                      <div class="flex justify-between items-start">
+                        <span
+                          class="font-headline-sm text-headline-sm font-black text-on-surface"
+                          >P07</span
+                        >
+                        <span
+                          class="text-on-surface-variant font-label-xs text-label-xs px-1 font-mono"
+                          >81°C</span
+                        >
+                      </div>
+                      <div class="flex flex-col">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-on-surface"
+                          >5.40 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-outline font-mono"
+                          >NOMINAL</span
+                        >
+                      </div>
+                      <div
+                        class="bg-surface-container-low text-outline text-center py-0.5 font-label-xs text-label-xs uppercase"
+                      >
+                        BALANCED
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- GRACEMONT EFFICIENCY CLUSTERS (E-CORES: 16 UNITS / 4 CLUSTERS) -->
+                <div class="flex flex-col gap-space-xs pt-space-xs">
+                  <div class="flex items-center justify-between">
+                    <span
+                      class="font-label-sm text-label-sm text-outline uppercase font-bold tracking-wider"
+                    >
+                      GRACEMONT EFFICIENCY CLUSTER BLOCKS (E-CORES: 4 CLUSTERS /
+                      16 DIES)
+                    </span>
+                    <span
+                      class="font-label-xs text-label-xs text-tertiary font-mono uppercase"
+                    >
+                      SATURATED VIA WORKLOAD EVACUATION
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-space-sm">
+                    <div
+                      class="bg-surface-container p-space-sm flex flex-col justify-between"
+                    >
+                      <div class="flex justify-between items-center">
+                        <span
+                          class="font-label-sm text-label-sm font-bold text-on-surface"
+                          >E-CLUS 0 [E08-E11]</span
+                        >
+                        <span
+                          class="font-mono font-label-xs text-label-xs text-tertiary"
+                          >78°C</span
+                        >
+                      </div>
+                      <div class="flex justify-between items-baseline mt-2">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-on-surface"
+                          >4.40 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-primary-container font-mono"
+                          >100% UTIL</span
+                        >
+                      </div>
+                    </div>
+                    <div
+                      class="bg-surface-container p-space-sm flex flex-col justify-between"
+                    >
+                      <div class="flex justify-between items-center">
+                        <span
+                          class="font-label-sm text-label-sm font-bold text-on-surface"
+                          >E-CLUS 1 [E12-E15]</span
+                        >
+                        <span
+                          class="font-mono font-label-xs text-label-xs text-tertiary"
+                          >79°C</span
+                        >
+                      </div>
+                      <div class="flex justify-between items-baseline mt-2">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-on-surface"
+                          >4.40 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-primary-container font-mono"
+                          >98% UTIL</span
+                        >
+                      </div>
+                    </div>
+                    <div
+                      class="bg-surface-container p-space-sm flex flex-col justify-between"
+                    >
+                      <div class="flex justify-between items-center">
+                        <span
+                          class="font-label-sm text-label-sm font-bold text-on-surface"
+                          >E-CLUS 2 [E16-E19]</span
+                        >
+                        <span
+                          class="font-mono font-label-xs text-label-xs text-on-surface-variant"
+                          >74°C</span
+                        >
+                      </div>
+                      <div class="flex justify-between items-baseline mt-2">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-on-surface"
+                          >4.40 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-on-surface font-mono"
+                          >92% UTIL</span
+                        >
+                      </div>
+                    </div>
+                    <div
+                      class="bg-surface-container p-space-sm flex flex-col justify-between"
+                    >
+                      <div class="flex justify-between items-center">
+                        <span
+                          class="font-label-sm text-label-sm font-bold text-on-surface"
+                          >E-CLUS 3 [E20-E23]</span
+                        >
+                        <span
+                          class="font-mono font-label-xs text-label-xs text-on-surface-variant"
+                          >72°C</span
+                        >
+                      </div>
+                      <div class="flex justify-between items-baseline mt-2">
+                        <span
+                          class="font-telemetry-numeral-md text-telemetry-numeral-md text-on-surface"
+                          >4.40 GHz</span
+                        >
+                        <span
+                          class="font-label-xs text-label-xs text-on-surface font-mono"
+                          >88% UTIL</span
+                        >
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- [MOD_03] NETWORK DISPATCH STACK & BUS INTERCONNECT -->
+              <div
+                class="bg-surface-container-lowest p-space-lg flex flex-col gap-space-md"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase tracking-widest"
+                      >[MOD_03] BUS &amp; NETWORK STACK</span
+                    >
+                    <h3
+                      class="font-headline-sm text-headline-sm uppercase font-bold text-on-surface"
+                    >
+                      I/O TOPOLOGY &amp; PACKET PIPELINE
+                    </h3>
+                  </div>
+                  <span
+                    class="font-label-xs text-label-xs bg-tertiary text-on-tertiary px-2 py-0.5 uppercase font-black font-mono"
+                  >
+                    DEGRADED JITTER DETECTED
+                  </span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-space-md">
+                  <!-- PACKET JITTER WARN -->
+                  <div
+                    class="bg-surface-container p-space-md flex flex-col gap-space-xs"
+                  >
+                    <div class="flex justify-between items-center">
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase"
+                        >PACKET JITTER</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs bg-tertiary text-on-tertiary px-1 font-bold"
+                        >WARN</span
+                      >
+                    </div>
+                    <div
+                      class="font-telemetry-numeral-md text-telemetry-numeral-md text-tertiary"
+                    >
+                      4.8 ms
+                    </div>
+                    <span
+                      class="font-label-xs text-label-xs text-on-surface-variant"
+                      >STDEV SKEWED (+3.9ms OVER TARGET)</span
+                    >
+                    <div class="h-1.5 w-full bg-surface-container-high mt-1">
+                      <div class="h-full bg-tertiary" style="width: 74%"></div>
+                    </div>
+                  </div>
+                  <!-- PCIe BUS LATENCY -->
+                  <div
+                    class="bg-surface-container p-space-md flex flex-col gap-space-xs"
+                  >
+                    <div class="flex justify-between items-center">
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase"
+                        >PCIe 5.0 PEG LINK</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-primary-container font-mono"
+                        >x16 @ 32 GT/s</span
+                      >
+                    </div>
+                    <div
+                      class="font-telemetry-numeral-md text-telemetry-numeral-md text-on-surface"
+                    >
+                      32 GT/s
+                    </div>
+                    <span class="font-label-xs text-label-xs text-outline"
+                      >LATENCY: 14.1ns // RTX 4090 DUAL LINK</span
+                    >
+                    <div class="h-1.5 w-full bg-surface-container-high mt-1">
+                      <div
+                        class="h-full bg-primary-container"
+                        style="width: 99%"
+                      ></div>
+                    </div>
+                  </div>
+                  <!-- DMI BUS LINK -->
+                  <div
+                    class="bg-surface-container p-space-md flex flex-col gap-space-xs"
+                  >
+                    <div class="flex justify-between items-center">
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase"
+                        >DMI 4.0 CHIPSET LINK</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs text-tertiary font-mono"
+                        >QUEUE DELAY</span
+                      >
+                    </div>
+                    <div
+                      class="font-telemetry-numeral-md text-telemetry-numeral-md text-tertiary"
+                    >
+                      82% BUS LOAD
+                    </div>
+                    <span class="font-label-xs text-label-xs text-outline"
+                      >SOUTHBRIDGE POLLING STALL: 18ms</span
+                    >
+                    <div class="h-1.5 w-full bg-surface-container-high mt-1">
+                      <div class="h-full bg-tertiary" style="width: 82%"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- BOTTOM STATUS PANEL // EMERGENCY CONTROL DISPATCH -->
+          <div
+            class="w-full bg-surface-container-low p-space-md flex flex-col lg:flex-row items-center justify-between gap-space-md"
+          >
+            <div class="flex flex-wrap items-center gap-space-md min-w-0">
+              <div class="flex items-center gap-space-sm">
+                <span class="w-3 h-3 bg-error animate-pulse"></span>
+                <span
+                  class="font-label-md text-label-md uppercase font-black text-error tracking-wider"
+                  >HARDWARE SAFETY TRIP ENGAGED</span
+                >
+              </div>
+              <div
+                class="hidden sm:flex items-center gap-space-sm text-outline font-label-xs text-label-xs font-mono"
+              >
+                <span class="">CURRENT CLOCK STATE: LOCKED [3.82 GHz]</span>
+                <span class="">/</span>
+                <span class="">AIO PUMP: 100% DUTY</span>
+                <span class="">/</span>
+                <span class="">VRM SINK: 84.2°C</span>
+              </div>
+            </div>
+            <div
+              class="flex flex-wrap items-center gap-space-sm w-full lg:w-auto"
+            >
+              <!-- MITIGATION QUICK ACTION 1 -->
+              <button
+                class="flex-1 lg:flex-none px-space-md py-space-sm bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md uppercase font-black transition-none flex items-center justify-center gap-space-sm"
+                onclick="
+                  alert(
+                    'FLUSHING AVX2 REGISTER INSTRUCTIONS &amp; REALLOCATING THREADS TO E-CLUSTER...',
+                  )
+                "
+              >
+                <span class="material-symbols-outlined text-[18px]"
+                  >memory</span
+                >
+                FLUSH P-CORE AFFINITIES
+              </button>
+              <!-- PRIMARY EMERGENCY ACTION (CRITICAL CTA) -->
+              <button
+                class="flex-1 lg:flex-none px-space-lg py-space-sm bg-error hover:bg-white text-on-error hover:text-black font-label-lg text-label-lg uppercase font-black tracking-wider transition-none flex items-center justify-center gap-space-sm"
+                id="emergency-override-btn"
+                onclick="triggerEmergencyCooling(this)"
+              >
+                <span
+                  class="material-symbols-outlined text-[20px] animate-spin"
+                  style="animation-duration: 1.5s"
+                  >mode_fan</span
+                >
+                EMERGENCY FAN 100% PROFILE // DISENGAGE CLOCK OVERRIDE
+              </button>
+            </div>
+          </div>
+        </div>
+        <script>
+          function triggerEmergencyCooling(button) {
+            button.classList.remove("bg-error", "text-on-error");
+            button.classList.add(
+              "bg-primary-container",
+              "text-on-primary-container",
+            );
+            button.innerHTML =
+              '<span class="material-symbols-outlined text-[20px] animate-spin">mode_fan</span> EMERGENCY COOLING ENGAGED // 100% RPM DISPATCHED';
+
+            setTimeout(() => {
+              alert(
+                "TELEMETRY DISPATCH: All fan headers (CPU_OPT, PUMP, CHA_FAN1-4) ramped to 3200 RPM. VCore offset downscaled -80mV. Clock ceiling re-locked to 4.40 GHz.",
+              );
+            }, 250);
+          }
+        </script>
+      </main>
+    </div>
+  </body>
+</html>

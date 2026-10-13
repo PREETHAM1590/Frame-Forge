@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import {
   requests,
+  type OperationId,
   responses,
   type Method,
   type Request,
@@ -13,7 +15,7 @@ import {
   type Activity,
   type AppEvent,
 } from "../shared/contracts.js";
-import { upsertPreset } from "../shared/catalogue.js";
+import { catalogue, upsertPreset } from "../shared/catalogue.js";
 import { Repository } from "./repository.js";
 import { OperationEngine } from "./operations.js";
 import { BoostEngine } from "./booster.js";
@@ -109,7 +111,10 @@ export class AppService {
         );
     };
     this.handlers = {
-      bootstrap: async () => this.bootstrap(),
+      bootstrap: async () => {
+        await this.recheck();
+        return this.bootstrap();
+      },
       refresh: async () => this.refresh(),
       settings: async (settings: Settings) => {
         guard();
@@ -137,9 +142,9 @@ export class AppService {
         return state;
       },
       preview: async ({ ids }) => this.engine.preview(ids),
-      confirm: async ({ token }) => {
+      confirm: async ({ token, acknowledged }) => {
         noRestoreInFlight();
-        return this.engine.confirm(token);
+        return this.engine.confirm(token, acknowledged);
       },
       cancel: async () => this.engine.cancel(),
       rollback: async ({ id }) => {
@@ -293,6 +298,14 @@ export class AppService {
       openSettings: async ({ page }) => {
         if (!(await this.desktop.openSettings?.(page)))
           throw new Error("Windows could not open that settings page.");
+        return true;
+      },
+      // Fixed action, only after a click: the helper ends this user's explorer.exe and Windows starts it again.
+      restartExplorer: async () => {
+        guard();
+        noRestoreInFlight();
+        const message = await this.platform.restartExplorer();
+        this.log("Windows Explorer restarted", message);
         return true;
       },
       boostStatus: async () => this.booster.status(),
@@ -666,7 +679,39 @@ export class AppService {
       ? { ...this.hardware, warnings: [...this.hardware.warnings, ...extra] }
       : this.hardware;
   }
+  // Applied, revert-prone optimizations (security trade-offs and anything that needs a restart) are re-read here, at start and on Refresh.
+  private drifted: { activityId: string; ids: OperationId[] }[] = [];
+  private async recheck() {
+    const proneIds = new Set(
+      catalogue
+        .filter((o) => o.tier === "security" || o.restart === "reboot")
+        .map((o) => o.id),
+    );
+    const live = this.repo
+      .activity()
+      .filter((a) => a.status === "success" && a.rollback)
+      .map((a) => ({ ...a, ids: a.ids.filter((id) => proneIds.has(id)) }))
+      .filter((a) => a.ids.length > 0);
+    if (!live.length || !this.platform.recheck) {
+      this.drifted = [];
+      return;
+    }
+    try {
+      const bad = new Set(
+        await this.platform.recheck([...new Set(live.flatMap((a) => a.ids))]),
+      );
+      this.drifted = live
+        .map((a) => ({
+          activityId: a.id,
+          ids: a.ids.filter((id) => bad.has(id)),
+        }))
+        .filter((a) => a.ids.length > 0);
+    } catch {
+      // A failed check proves nothing either way; keep the previous answer.
+    }
+  }
   async refresh(): Promise<Hardware> {
+    await this.recheck();
     this.probeWarning =
       (await this.platform.probe?.().catch(() => null)) ?? null;
     try {
@@ -691,6 +736,8 @@ export class AppService {
       activity: this.repo.activity(),
       backups: this.repo.backups(),
       capabilities: this.platform.capabilities,
+      bootedAt: new Date(Date.now() - os.uptime() * 1000).toISOString(),
+      drifted: this.drifted,
       startupSupported: this.desktop.startupSupported ?? false,
       version: this.desktop.version,
       mode: "desktop",

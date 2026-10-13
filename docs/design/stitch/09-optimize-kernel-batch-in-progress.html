@@ -1,0 +1,1208 @@
+<!doctype html>
+<html class="dark" lang="en" style="">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta content="web_dashboard" name="shell-type" />
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700;800;900&amp;family=Space+Grotesk:wght@400;500;700;900&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      @layer base {
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+        }
+        body {
+          overscroll-behavior: none;
+        }
+        main > :first-child {
+          margin-top: 0 !important;
+        }
+        main > :last-child {
+          margin-bottom: 0 !important;
+        }
+      }
+      ::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-container": "#ff5708",
+              "primary-fixed": "#ffdbcf",
+              "tertiary-fixed": "#ffddb4",
+              "secondary-container": "#fe7600",
+              secondary: "#ffb68d",
+              "on-tertiary": "#452b00",
+              "surface-container-low": "#090a0d",
+              "outline-variant": "#5c4037",
+              "inverse-surface": "#e3e2e6",
+              primary: "#ffb59c",
+              "surface-container": "#1f1f23",
+              "inverse-on-surface": "#303034",
+              "surface-tint": "#ffb59c",
+              "inverse-primary": "#aa3600",
+              "surface-container-highest": "#343538",
+              "on-secondary-fixed": "#331200",
+              "on-secondary": "#532200",
+              "on-surface-variant": "#e5beb2",
+              "on-surface": "#f5f5f7",
+              error: "#ff3b30",
+              "surface-dim": "#121316",
+              surface: "#12141a",
+              "surface-container-lowest": "#050608",
+              "primary-fixed-dim": "#ffb59c",
+              "error-container": "#93000a",
+              "tertiary-container": "#c68300",
+              "surface-variant": "#343538",
+              "surface-container-high": "#292a2d",
+              "on-secondary-container": "#5a2600",
+              "on-secondary-fixed-variant": "#763300",
+              "on-primary": "#5c1900",
+              "on-background": "#e3e2e6",
+              "secondary-fixed": "#ffdbc9",
+              tertiary: "#ffb952",
+              "on-tertiary-fixed-variant": "#633f00",
+              outline: "#5e6370",
+              "on-error-container": "#ffdad6",
+              "on-tertiary-container": "#3c2500",
+              "on-primary-container": "#511500",
+              background: "#121316",
+              "tertiary-fixed-dim": "#ffb952",
+              "surface-bright": "#38393c",
+              "on-primary-fixed": "#390c00",
+              "on-tertiary-fixed": "#291800",
+              "secondary-fixed-dim": "#ffb68d",
+              "on-error": "#690005",
+              "on-primary-fixed-variant": "#822700",
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px",
+            },
+            spacing: {
+              "space-sm": "0.5rem",
+              margin: "2rem",
+              "space-md": "1rem",
+              gutter: "0px",
+              "space-xl": "2rem",
+              "space-xs": "0.25rem",
+              "space-lg": "1.5rem",
+            },
+            fontFamily: {
+              "display-lg-mobile": ["Space Grotesk"],
+              "body-md": ["Space Grotesk"],
+              "headline-md": ["Space Grotesk"],
+              "label-lg": ["JetBrains Mono"],
+              "body-sm": ["Space Grotesk"],
+              "telemetry-numeral-lg": ["JetBrains Mono"],
+              "headline-sm": ["Space Grotesk"],
+              "telemetry-numeral-md": ["JetBrains Mono"],
+              "headline-lg": ["Space Grotesk"],
+              "label-sm": ["JetBrains Mono"],
+              "label-md": ["JetBrains Mono"],
+              "body-lg": ["Space Grotesk"],
+              "headline-lg-mobile": ["Space Grotesk"],
+              "label-xs": ["JetBrains Mono"],
+              "display-lg": ["Space Grotesk"],
+            },
+            fontSize: {
+              "display-lg-mobile": [
+                "2.25rem",
+                {
+                  lineHeight: "1.1",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "900",
+                },
+              ],
+              "body-md": [
+                "0.875rem",
+                { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" },
+              ],
+              "headline-md": [
+                "1.5rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-lg": [
+                "0.875rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.05em",
+                  fontWeight: "700",
+                },
+              ],
+              "body-sm": [
+                "0.75rem",
+                { lineHeight: "1.4", letterSpacing: "0", fontWeight: "400" },
+              ],
+              "telemetry-numeral-lg": [
+                "3.75rem",
+                {
+                  lineHeight: "1",
+                  letterSpacing: "-0.03em",
+                  fontWeight: "900",
+                },
+              ],
+              "headline-sm": [
+                "1.25rem",
+                {
+                  lineHeight: "1.3",
+                  letterSpacing: "-0.01em",
+                  fontWeight: "700",
+                },
+              ],
+              "telemetry-numeral-md": [
+                "1.5rem",
+                { lineHeight: "1.1", letterSpacing: "0", fontWeight: "800" },
+              ],
+              "headline-lg": [
+                "3rem",
+                {
+                  lineHeight: "1.1",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "900",
+                },
+              ],
+              "label-sm": [
+                "0.6875rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.1em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-md": [
+                "0.75rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.08em",
+                  fontWeight: "700",
+                },
+              ],
+              "body-lg": [
+                "1.125rem",
+                { lineHeight: "1.5", letterSpacing: "0", fontWeight: "500" },
+              ],
+              "headline-lg-mobile": [
+                "2rem",
+                {
+                  lineHeight: "1.15",
+                  letterSpacing: "-0.015em",
+                  fontWeight: "900",
+                },
+              ],
+              "label-xs": [
+                "0.5625rem",
+                {
+                  lineHeight: "1.2",
+                  letterSpacing: "0.12em",
+                  fontWeight: "700",
+                },
+              ],
+              "display-lg": [
+                "3.75rem",
+                {
+                  lineHeight: "1",
+                  letterSpacing: "-0.025em",
+                  fontWeight: "900",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body
+    class="bg-surface-container-lowest text-on-surface font-body-md text-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen"
+  >
+    <aside
+      class="fixed left-0 top-0 h-full w-72 bg-surface-container-low z-50 flex flex-col justify-between border-r border-outline-variant"
+    >
+      <div class="flex flex-col">
+        <div
+          class="h-14 px-space-md border-b border-outline-variant flex items-center justify-between bg-surface-container-lowest"
+        >
+          <div class="flex items-center gap-space-sm">
+            <div class="w-2.5 h-2.5 bg-primary-container"></div>
+            <span
+              class="font-headline-sm text-headline-sm uppercase tracking-tight text-on-surface font-black"
+              >AURA</span
+            >
+          </div>
+          <span
+            class="font-label-xs text-label-xs px-1.5 py-0.5 bg-primary-container text-on-primary-container uppercase font-bold tracking-widest"
+            >v2.4</span
+          >
+        </div>
+        <div
+          class="px-space-md py-space-xs border-b border-outline-variant bg-surface-container-low flex items-center justify-between"
+        >
+          <span
+            class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+            >DISPATCH INTERFACE</span
+          ><span
+            class="font-label-xs text-label-xs text-primary-container uppercase tracking-widest"
+            >SYS_RDY</span
+          >
+        </div>
+        <nav
+          class="flex flex-col py-space-xs"
+          data-active-classes="bg-primary-container text-on-primary-container border-l-4 border-secondary-container"
+        >
+          <a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="home"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-outline flex-shrink-0"
+                >grid_view</span
+              ><span class="">Home</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >01</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="game-mode"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-outline flex-shrink-0"
+                >sports_esports</span
+              ><span class="">Game Mode</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >02</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="games-library"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-outline flex-shrink-0"
+                >stadia_controller</span
+              ><span class="">Games Library</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >03</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 bg-primary-container text-on-primary-container border-l-4 border-secondary-container font-label-md text-label-md uppercase tracking-wider"
+            data-path="optimize"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-on-primary-container flex-shrink-0"
+                >speed</span
+              ><span class="font-bold">Optimize</span></span
+            ><span
+              class="font-mono text-[10px] tracking-widest text-on-primary font-bold"
+              >04</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="safety-and-backups"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-outline flex-shrink-0"
+                >security</span
+              ><span class="">Safety &amp; Backups</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >05</span
+            ></a
+          ><a
+            class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none border-l-4 border-transparent font-label-md text-label-md uppercase tracking-wider"
+            data-path="system-and-topology"
+            href="#"
+            ><span class="flex items-center gap-space-sm"
+              ><span
+                class="material-symbols-outlined text-[18px] text-outline flex-shrink-0"
+                >memory</span
+              ><span class="">System &amp; Topology</span></span
+            ><span class="font-mono text-[10px] tracking-widest text-outline"
+              >06</span
+            ></a
+          >
+        </nav>
+      </div>
+      <div
+        class="flex flex-col border-t border-outline-variant bg-surface-container-lowest"
+      >
+        <a
+          class="flex items-center justify-between px-space-md py-3 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-none font-label-md text-label-md uppercase tracking-wider border-b border-outline-variant"
+          data-path="settings"
+          href="#"
+          ><span class="flex items-center gap-space-sm"
+            ><span
+              class="material-symbols-outlined text-[18px] text-outline flex-shrink-0"
+              >settings</span
+            ><span class="">Settings</span></span
+          ><span class="font-mono text-[10px]">SYS</span></a
+        >
+        <div class="p-space-md flex flex-col gap-space-xs">
+          <div class="flex items-center justify-between">
+            <span
+              class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+              >TARGET NODE</span
+            ><span
+              class="flex items-center gap-1.5 font-label-xs text-label-xs text-tertiary font-bold"
+              ><span
+                class="w-1.5 h-1.5 bg-primary-container animate-pulse"
+              ></span
+              >ONLINE</span
+            >
+          </div>
+          <div
+            class="font-headline-sm text-headline-sm uppercase text-on-surface tracking-tight font-bold"
+          >
+            Rig-01 Ultra
+          </div>
+          <div
+            class="flex justify-between items-center text-outline font-label-xs text-label-xs mt-1"
+          >
+            <span class="uppercase">KERNEL TELEMETRY</span
+            ><span class="font-mono">v4.19.0-OC</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="pl-72">
+      <header
+        class="fixed top-0 left-72 right-0 h-14 bg-surface-container-low/95 backdrop-blur-md z-40 border-b border-outline-variant flex items-center justify-between px-space-md"
+      >
+        <div class="flex items-center gap-space-md">
+          <div
+            class="flex items-center gap-2 border-r border-outline-variant pr-space-md"
+          >
+            <span class="font-label-xs text-label-xs text-outline uppercase"
+              >STATUS</span
+            ><span
+              class="font-label-sm text-label-sm font-bold uppercase text-primary-container tracking-wider"
+              >SYSTEM EQUILIBRIUM: NOMINAL</span
+            >
+          </div>
+          <div
+            class="hidden lg:flex items-center gap-space-md font-label-sm text-label-sm"
+          >
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >CORE FREQ</span
+              ><span class="font-bold font-mono text-on-surface">4.85 GHz</span>
+            </div>
+            <span class="text-outline-variant">/</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >TEMP</span
+              ><span class="font-bold font-mono text-tertiary">38°C</span>
+            </div>
+            <span class="text-outline-variant">/</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-label-xs text-label-xs text-outline uppercase"
+                >BUS LOAD</span
+              ><span class="font-bold font-mono text-on-surface">14%</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-space-sm">
+          <div
+            class="flex items-center mr-space-sm pr-space-sm border-r border-outline-variant"
+          >
+            <div
+              class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"
+            >
+              <span
+                class="material-symbols-outlined text-on-primary text-[18px]"
+                >person</span
+              >
+            </div>
+          </div>
+          <div class="flex items-center border border-outline-variant">
+            <button
+              class="w-9 h-9 flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface text-on-surface-variant transition-none border-r border-outline-variant"
+              title="Minimize Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >minimize</span
+              ></button
+            ><button
+              class="w-9 h-9 flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface text-on-surface-variant transition-none border-r border-outline-variant"
+              title="Maximize Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]"
+                >crop_square</span
+              ></button
+            ><button
+              class="w-9 h-9 flex items-center justify-center hover:bg-error hover:text-on-error text-on-surface-variant transition-none"
+              title="Close Window"
+              type="button"
+            >
+              <span class="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          </div>
+        </div>
+      </header>
+      <main class="relative pt-14 w-full min-h-screen bg-surface">
+        <div class="flex flex-col w-full">
+          <!-- Real-time Warning Banner / Live Dispatch Ribbon -->
+          <div
+            class="w-full bg-surface-container-high px-space-md py-2.5 flex flex-wrap items-center justify-between gap-space-sm"
+          >
+            <div class="flex items-center gap-space-sm min-w-0">
+              <span
+                class="inline-block w-2 h-2 bg-primary-container animate-ping"
+              ></span>
+              <span
+                class="font-label-xs text-label-xs font-bold uppercase tracking-wider text-primary-container"
+              >
+                STATUS: DISPATCHING KERNEL TWEAKS [PROGRESS 64%] // TARGET:
+                RIG-01 ULTRA // RING-0 DRIVER ACTIVE
+              </span>
+            </div>
+            <div
+              class="flex items-center gap-space-md font-label-xs text-label-xs text-outline"
+            >
+              <span class="font-mono text-tertiary">PID: 0x1A4F_DISP</span>
+              <span class="text-outline-variant">/</span>
+              <span class="text-on-surface"
+                >RESTORE POINT SNAPSHOT #8841 LOCKED</span
+              >
+              <span class="text-outline-variant">/</span>
+              <span
+                class="text-primary-container font-mono uppercase tracking-widest font-black"
+                >RING-0 COMMITTED</span
+              >
+            </div>
+          </div>
+          <!-- Main Viewport Layout (Bento Grid Workspace) -->
+          <div class="grid grid-cols-1 xl:grid-cols-12 w-full">
+            <!-- Left Column: Master Controller & Queue Details (7 Cols) -->
+            <div
+              class="xl:col-span-7 flex flex-col bg-surface-container-lowest p-space-lg gap-space-lg"
+            >
+              <!-- Panel Header & Action Terminal -->
+              <div class="flex flex-col gap-space-md bg-surface p-space-lg">
+                <div
+                  class="flex flex-wrap items-start justify-between gap-space-md"
+                >
+                  <div class="flex flex-col min-w-0">
+                    <div class="flex items-center gap-space-xs mb-1">
+                      <span
+                        class="font-label-xs text-label-xs text-outline uppercase tracking-widest"
+                        >MODULE 04 // OPTIMIZE</span
+                      >
+                      <span
+                        class="font-label-xs text-label-xs px-1.5 py-0.5 bg-primary-container text-on-primary-container font-black"
+                        >KERNEL_LIVE</span
+                      >
+                    </div>
+                    <h1
+                      class="font-headline-lg text-headline-lg uppercase text-on-surface tracking-tight font-black leading-none"
+                    >
+                      APPLYING PRESET BATCH
+                    </h1>
+                    <p
+                      class="font-body-md text-body-md text-on-surface-variant mt-1"
+                    >
+                      Kernel-level scheduler reconfiguration and subsystem
+                      interrupt decoupling in progress.
+                    </p>
+                  </div>
+                  <!-- Secondary Quick Actions -->
+                  <div class="flex items-center gap-space-xs">
+                    <button
+                      class="px-space-md py-2.5 bg-surface-container-high text-outline font-label-md text-label-md uppercase tracking-wider cursor-not-allowed opacity-50 flex items-center gap-1.5"
+                      disabled=""
+                    >
+                      <span class="material-symbols-outlined text-[16px]"
+                        >history</span
+                      >
+                      REVERT TO RESTORE POINT
+                    </button>
+                    <button
+                      class="px-space-md py-2.5 bg-surface-container text-error hover:bg-error hover:text-on-error font-label-md text-label-md uppercase tracking-wider transition-none flex items-center gap-1.5 active:scale-95"
+                    >
+                      <span class="material-symbols-outlined text-[16px]"
+                        >cancel</span
+                      >
+                      CANCEL DISPATCH
+                    </button>
+                  </div>
+                </div>
+                <!-- Master Dispatch Pulse State Bar -->
+                <div
+                  class="flex flex-col gap-2 bg-surface-container-lowest p-space-md"
+                >
+                  <div
+                    class="flex items-center justify-between font-label-sm text-label-sm"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="w-2.5 h-2.5 bg-primary-container animate-pulse"
+                      ></span>
+                      <span
+                        class="text-on-surface font-black tracking-widest uppercase"
+                        >DISPATCHING 3/5 TWEAKS... [64%]</span
+                      >
+                    </div>
+                    <span class="font-mono text-primary font-bold"
+                      >EST REMAINING: 00:03.4s</span
+                    >
+                  </div>
+                  <!-- Animated Industrial Striped Bar -->
+                  <div
+                    class="w-full h-3 bg-surface-container relative overflow-hidden"
+                  >
+                    <div
+                      class="h-full bg-primary-container transition-all duration-300 relative w-[64%]"
+                    >
+                      <div
+                        class="absolute inset-0 opacity-40 bg-[linear-gradient(45deg,rgba(0,0,0,0.4)_25%,transparent_25%,transparent_50%,rgba(0,0,0,0.4)_50%,rgba(0,0,0,0.4)_75%,transparent_75%,transparent)] bg-[length:16px_16px] animate-[move-stripes_1s_linear_infinite]"
+                      ></div>
+                    </div>
+                  </div>
+                  <div
+                    class="flex justify-between items-center text-outline font-label-xs text-label-xs pt-1"
+                  >
+                    <span class="">MEM POOL ALLOCATED: 4.2 MB</span>
+                    <span class="">IRQL: DISPATCH_LEVEL (2)</span>
+                    <span class="">SYS_THREAD_HANDLE: 0x88FFA1</span>
+                  </div>
+                </div>
+              </div>
+              <!-- Execution Queue Cards -->
+              <div class="flex flex-col gap-space-xs">
+                <div class="flex items-center justify-between px-space-xs py-1">
+                  <span
+                    class="font-label-xs text-label-xs uppercase tracking-widest text-outline"
+                    >TARGET BATCH STACK [ID: APEX_LATENCY_V2]</span
+                  >
+                  <span
+                    class="font-label-xs text-label-xs text-outline font-mono"
+                    >5 REGISTERED HOOKS</span
+                  >
+                </div>
+                <!-- Tweak 1: COMPLETED -->
+                <div
+                  class="flex flex-col bg-surface p-space-md hover:bg-surface-container transition-none gap-space-sm relative"
+                >
+                  <div
+                    class="absolute left-0 top-0 bottom-0 w-1 bg-tertiary"
+                  ></div>
+                  <div
+                    class="flex items-start justify-between gap-space-md pl-2"
+                  >
+                    <div class="flex flex-col min-w-0">
+                      <div class="flex items-center gap-space-sm">
+                        <span
+                          class="font-label-xs text-label-xs text-outline font-mono"
+                          >01</span
+                        >
+                        <h3
+                          class="font-headline-sm text-headline-sm uppercase text-on-surface font-black"
+                        >
+                          HVCI / VBS Core Isolation Decouple
+                        </h3>
+                      </div>
+                      <p
+                        class="font-body-sm text-body-sm text-on-surface-variant mt-1"
+                      >
+                        Disables Hypervisor-Protected Code Integrity overhead
+                        and bypasses guest-level nested paging faults for direct
+                        bare-metal thread scheduling.
+                      </p>
+                      <div
+                        class="flex items-center gap-space-md font-label-xs text-label-xs text-outline mt-2 font-mono"
+                      >
+                        <span class=""
+                          >KEY:
+                          HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard</span
+                        >
+                        <span class=""
+                          >VALUE: EnableVirtualizationBasedSecurity = 0</span
+                        >
+                      </div>
+                    </div>
+                    <div class="flex flex-col items-end flex-shrink-0 gap-1">
+                      <span
+                        class="px-2 py-0.5 bg-surface-container-high text-tertiary font-label-xs text-label-xs uppercase font-bold flex items-center gap-1"
+                      >
+                        <span class="material-symbols-outlined text-[14px]"
+                          >check_circle</span
+                        >
+                        COMPLETED // APPLIED
+                      </span>
+                      <span
+                        class="font-mono text-outline font-label-xs text-label-xs"
+                        >WRITE @ 00:01.12</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <!-- Tweak 2: IN PROGRESS (Active Execution) -->
+                <div
+                  class="flex flex-col bg-surface-container-high p-space-md gap-space-sm relative"
+                >
+                  <div
+                    class="absolute left-0 top-0 bottom-0 w-1.5 bg-primary-container animate-pulse"
+                  ></div>
+                  <div
+                    class="flex items-start justify-between gap-space-md pl-2"
+                  >
+                    <div class="flex flex-col min-w-0">
+                      <div class="flex items-center gap-space-sm">
+                        <span
+                          class="font-label-xs text-label-xs text-primary-container font-mono font-bold"
+                          >02</span
+                        >
+                        <h3
+                          class="font-headline-sm text-headline-sm uppercase text-on-surface font-black flex items-center gap-2"
+                        >
+                          Interrupt Affinity Steering (NIC &amp; GPU)
+                          <span
+                            class="inline-block w-2 h-2 rounded-full bg-primary-container animate-ping"
+                          ></span>
+                        </h3>
+                      </div>
+                      <p
+                        class="font-body-sm text-body-sm text-on-surface-variant mt-1"
+                      >
+                        Pinning network interface IRQ lines to Core 2 and NVIDIA
+                        PCIe interrupts to isolated Core 4 to eliminate
+                        inter-processor cross-talk stalls.
+                      </p>
+                      <div
+                        class="flex items-center gap-space-md font-label-xs text-label-xs text-primary-fixed-dim mt-2 font-mono"
+                      >
+                        <span class=""
+                          >VECTOR: IRQ 0x10 -&gt; CPU_MASK 0x00000004</span
+                        >
+                        <span class="text-tertiary">RE-MAP PHASE 2 OF 3</span>
+                      </div>
+                    </div>
+                    <div class="flex flex-col items-end flex-shrink-0 gap-1">
+                      <span
+                        class="px-2 py-0.5 bg-primary-container text-on-primary-container font-label-xs text-label-xs uppercase font-black flex items-center gap-1"
+                      >
+                        <span
+                          class="material-symbols-outlined text-[14px] animate-spin"
+                          >sync</span
+                        >
+                        IN PROGRESS // REBINDING IRQ
+                      </span>
+                      <span
+                        class="font-mono text-primary-container font-label-xs text-label-xs animate-pulse"
+                        >LOCK HELD: RING-0</span
+                      >
+                    </div>
+                  </div>
+                  <!-- Sub-step Mini Gauge -->
+                  <div class="w-full bg-surface-container h-1.5 pl-2 mt-1">
+                    <div class="bg-primary-container h-full w-[72%]"></div>
+                  </div>
+                </div>
+                <!-- Tweak 3: QUEUED (Pending Verification) -->
+                <div
+                  class="flex flex-col bg-surface p-space-md hover:bg-surface-container transition-none gap-space-sm relative opacity-90"
+                >
+                  <div
+                    class="absolute left-0 top-0 bottom-0 w-1 bg-surface-container-highest"
+                  ></div>
+                  <div
+                    class="flex items-start justify-between gap-space-md pl-2"
+                  >
+                    <div class="flex flex-col min-w-0">
+                      <div class="flex items-center gap-space-sm">
+                        <span
+                          class="font-label-xs text-label-xs text-outline font-mono"
+                          >03</span
+                        >
+                        <h3
+                          class="font-headline-sm text-headline-sm uppercase text-on-surface font-black"
+                        >
+                          Disable Windows Game Bar &amp; DVR Hookers
+                        </h3>
+                      </div>
+                      <p
+                        class="font-body-sm text-body-sm text-on-surface-variant mt-1"
+                      >
+                        Neutralizes background broadcast telemetry handles,
+                        GameBarFTServer child invocations, and D3D overlay
+                        hooks.
+                      </p>
+                      <div
+                        class="flex items-center gap-space-md font-label-xs text-label-xs text-outline mt-2 font-mono"
+                      >
+                        <span class="">SVC: bcastdvr.sys</span>
+                        <span class=""
+                          >COM OBJECT: CLSID_GameBarDispatcher</span
+                        >
+                      </div>
+                    </div>
+                    <div class="flex flex-col items-end flex-shrink-0 gap-1">
+                      <span
+                        class="px-2 py-0.5 bg-surface-container text-outline font-label-xs text-label-xs uppercase font-bold flex items-center gap-1"
+                      >
+                        <span class="material-symbols-outlined text-[14px]"
+                          >hourglass_empty</span
+                        >
+                        QUEUED // PENDING VERIFICATION
+                      </span>
+                      <span
+                        class="font-mono text-outline font-label-xs text-label-xs"
+                        >NEXT IN STACK</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <!-- Tweak 4: QUEUED -->
+                <div
+                  class="flex flex-col bg-surface p-space-md hover:bg-surface-container transition-none gap-space-sm relative opacity-75"
+                >
+                  <div
+                    class="absolute left-0 top-0 bottom-0 w-1 bg-surface-container-highest"
+                  ></div>
+                  <div
+                    class="flex items-start justify-between gap-space-md pl-2"
+                  >
+                    <div class="flex flex-col min-w-0">
+                      <div class="flex items-center gap-space-sm">
+                        <span
+                          class="font-label-xs text-label-xs text-outline font-mono"
+                          >04</span
+                        >
+                        <h3
+                          class="font-headline-sm text-headline-sm uppercase text-on-surface font-black"
+                        >
+                          HPET Real-Time Clock Disablement
+                        </h3>
+                      </div>
+                      <p
+                        class="font-body-sm text-body-sm text-on-surface-variant mt-1"
+                      >
+                        Forces kernel time stamping to rely exclusively on
+                        invariant TSC (Time Stamp Counter) eliminating
+                        high-latency synthetic bus queries.
+                      </p>
+                    </div>
+                    <div class="flex flex-col items-end flex-shrink-0 gap-1">
+                      <span
+                        class="px-2 py-0.5 bg-surface-container text-outline font-label-xs text-label-xs uppercase font-bold"
+                      >
+                        QUEUED
+                      </span>
+                      <span
+                        class="font-mono text-outline font-label-xs text-label-xs"
+                        >WAITING FOR CORE FLUSH</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <!-- Tweak 5: QUEUED -->
+                <div
+                  class="flex flex-col bg-surface p-space-md hover:bg-surface-container transition-none gap-space-sm relative opacity-60"
+                >
+                  <div
+                    class="absolute left-0 top-0 bottom-0 w-1 bg-surface-container-highest"
+                  ></div>
+                  <div
+                    class="flex items-start justify-between gap-space-md pl-2"
+                  >
+                    <div class="flex flex-col min-w-0">
+                      <div class="flex items-center gap-space-sm">
+                        <span
+                          class="font-label-xs text-label-xs text-outline font-mono"
+                          >05</span
+                        >
+                        <h3
+                          class="font-headline-sm text-headline-sm uppercase text-on-surface font-black"
+                        >
+                          TCP Window Size &amp; Nagle's Alg Override
+                        </h3>
+                      </div>
+                      <p
+                        class="font-body-sm text-body-sm text-on-surface-variant mt-1"
+                      >
+                        Sets TcpAckFrequency = 1 and disables delayed ACKs for
+                        pure instantaneous packet dispatch on Ethernet driver.
+                      </p>
+                    </div>
+                    <div class="flex flex-col items-end flex-shrink-0 gap-1">
+                      <span
+                        class="px-2 py-0.5 bg-surface-container text-outline font-label-xs text-label-xs uppercase font-bold"
+                      >
+                        QUEUED
+                      </span>
+                      <span
+                        class="font-mono text-outline font-label-xs text-label-xs"
+                        >NETWORK STACK READY</span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Right Column: Inspection, Live Log & Impact Telemetry (5 Cols) -->
+            <div
+              class="xl:col-span-5 flex flex-col bg-surface-container-low p-space-lg gap-space-lg"
+            >
+              <!-- Real-Time Kernel Execution Log -->
+              <div class="flex flex-col bg-surface p-space-md">
+                <div
+                  class="flex items-center justify-between pb-space-xs mb-space-xs"
+                >
+                  <div class="flex items-center gap-space-xs">
+                    <span
+                      class="material-symbols-outlined text-primary-container text-[18px]"
+                      >terminal</span
+                    >
+                    <span
+                      class="font-label-md text-label-md uppercase tracking-wider text-on-surface font-bold"
+                      >DISPATCH CONSOLE // STDOUT</span
+                    >
+                  </div>
+                  <span
+                    class="font-label-xs text-label-xs text-tertiary font-mono"
+                    >AUTO-SCROLL: ENGAGED</span
+                  >
+                </div>
+                <div
+                  class="bg-surface-container-lowest p-space-md font-mono text-label-xs leading-relaxed text-outline h-52 overflow-hidden flex flex-col justify-end gap-1 select-none"
+                >
+                  <div class="">
+                    [00:01.78]
+                    <span class="text-tertiary"
+                      >HalGetInterruptVector acquired for NIC (Realtek PCIe
+                      GbE)</span
+                    >
+                  </div>
+                  <div class="text-on-surface">
+                    [00:01.89] Writing affinity mask 0x00FF to IRQ 16... OK
+                  </div>
+                  <div class="text-primary-container animate-pulse">
+                    [00:02.10] Unhooking GameDVR background DVR service...
+                    RUNNING
+                  </div>
+                  <div class="text-on-surface-variant flex items-center gap-1">
+                    <span class="text-primary-container font-black"
+                      >&gt;&gt;</span
+                    >
+                    [00:02.34] ZwSetInformationThread affinity lock requested on
+                    Core #2...
+                  </div>
+                  <div class="text-primary-container text-label-xs font-mono">
+                    [00:02.45] Registry key ZwSetValueKey committed successfully
+                  </div>
+                  <div class="text-primary-container text-label-xs font-mono">
+                    [00:02.78] Flushing translation lookaside buffer (TLB) on
+                    Core #4...
+                  </div>
+                  <div class="text-primary-container text-label-xs font-mono">
+                    [00:03.01] Dynamic DPC watchdog tick confirmed nominal
+                  </div>
+                  <div class="text-primary-container text-label-xs font-mono">
+                    [00:03.15] Verified zero pending I/O packets on NIC
+                    descriptor ring
+                  </div>
+                </div>
+              </div>
+              <!-- Real-Time Latency Histogram (DURING DISPATCH) -->
+              <div class="flex flex-col bg-surface p-space-md gap-space-sm">
+                <div class="flex items-center justify-between">
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+                      >ISR / DPC SAMPLING</span
+                    >
+                    <h4
+                      class="font-headline-sm text-headline-sm uppercase text-on-surface font-black"
+                    >
+                      INTERRUPT LATENCY DELTA
+                    </h4>
+                  </div>
+                  <div class="text-right">
+                    <span
+                      class="font-telemetry-numeral-md text-telemetry-numeral-md text-primary-container font-black font-mono"
+                      >7.4 µs</span
+                    >
+                    <span
+                      class="block font-label-xs text-label-xs text-outline uppercase"
+                      >CURRENT PEAK</span
+                    >
+                  </div>
+                </div>
+                <!-- Inline SVG Latency Graph -->
+                <div
+                  class="w-full bg-surface-container-lowest p-space-sm flex flex-col gap-2"
+                >
+                  <div class="h-28 w-full relative">
+                    <svg
+                      class="w-full h-full text-primary-container"
+                      preserveAspectRatio="none"
+                      viewBox="0 0 300 100"
+                    >
+                      <!-- Grid Ticks -->
+                      <line
+                        stroke="rgba(255,255,255,0.05)"
+                        stroke-width="1"
+                        x1="0"
+                        x2="300"
+                        y1="25"
+                        y2="25"
+                      ></line>
+                      <line
+                        stroke="rgba(255,255,255,0.05)"
+                        stroke-width="1"
+                        x1="0"
+                        x2="300"
+                        y1="50"
+                        y2="50"
+                      ></line>
+                      <line
+                        stroke="rgba(255,255,255,0.05)"
+                        stroke-width="1"
+                        x1="0"
+                        x2="300"
+                        y1="75"
+                        y2="75"
+                      ></line>
+                      <!-- Baseline Shadow -->
+                      <path
+                        d="M0,80 L20,78 L40,82 L60,75 L80,78 L100,60 L120,62 L140,55 L160,40 L180,30 L200,25 L220,18 L240,15 L260,14 L280,12 L300,10 L300,100 L0,100 Z"
+                        fill="rgba(255,87,8,0.1)"
+                      ></path>
+                      <!-- Live Decreasing Spike Line -->
+                      <polyline
+                        fill="none"
+                        points="0,80 20,78 40,82 60,75 80,78 100,60 120,62 140,55 160,40 180,30 200,25 220,18 240,15 260,14 280,12 300,10"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                      ></polyline>
+                      <!-- Live Cursor Pulse -->
+                      <circle cx="300" cy="10" fill="#ff5708" r="4">
+                        <animate
+                          attributeName="r"
+                          dur="1s"
+                          repeatCount="indefinite"
+                          values="3;6;3"
+                        ></animate>
+                      </circle>
+                    </svg>
+                  </div>
+                  <div
+                    class="flex justify-between items-center font-mono font-label-xs text-label-xs text-outline px-1"
+                  >
+                    <span class="">PRE-DISPATCH: 48.2 µs</span>
+                    <span class="text-tertiary">DROPPING (-84.6%)</span>
+                    <span class="">TARGET: &lt; 5.0 µs</span>
+                  </div>
+                </div>
+              </div>
+              <!-- Security Delta & Safety Specification Card -->
+              <div class="flex flex-col bg-surface p-space-md gap-space-sm">
+                <div class="flex items-center justify-between">
+                  <span
+                    class="font-label-xs text-label-xs text-outline uppercase tracking-wider"
+                    >SAFETY VERIFICATION MATRIX</span
+                  >
+                  <span
+                    class="px-1.5 py-0.5 bg-surface-container text-tertiary font-label-xs text-label-xs uppercase font-bold"
+                    >FAILSAFE_ARMED</span
+                  >
+                </div>
+                <div class="grid grid-cols-2 gap-space-xs pt-1">
+                  <div
+                    class="flex flex-col p-space-sm bg-surface-container-lowest"
+                  >
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase"
+                      >ANTI-CHEAT COMPAT</span
+                    >
+                    <span
+                      class="font-label-sm text-label-sm text-on-surface font-bold mt-1 flex items-center gap-1"
+                    >
+                      <span
+                        class="material-symbols-outlined text-tertiary text-[14px]"
+                        >verified</span
+                      >
+                      EAC / BATTLEYE OK
+                    </span>
+                    <span
+                      class="font-label-xs text-label-xs text-outline-variant font-mono mt-0.5"
+                      >VBS Decouple allowed</span
+                    >
+                  </div>
+                  <div
+                    class="flex flex-col p-space-sm bg-surface-container-lowest"
+                  >
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase"
+                      >BSOD INTEGRITY</span
+                    >
+                    <span
+                      class="font-label-sm text-label-sm text-on-surface font-bold mt-1 flex items-center gap-1"
+                    >
+                      <span
+                        class="material-symbols-outlined text-tertiary text-[14px]"
+                        >shield</span
+                      >
+                      WATCHDOG PASSED
+                    </span>
+                    <span
+                      class="font-label-xs text-label-xs text-outline-variant font-mono mt-0.5"
+                      >BugCheck 0x133 bypass</span
+                    >
+                  </div>
+                </div>
+                <div
+                  class="p-space-sm bg-surface-container text-on-surface-variant font-label-xs text-label-xs flex items-center justify-between"
+                >
+                  <span class="">SYSTEM ROLLBACK IMAGE CREATED:</span>
+                  <span class="font-mono text-on-surface"
+                    >C:\Aura\Restore\B8841.img</span
+                  >
+                </div>
+              </div>
+              <!-- Hardware Real-time Target Info Tile -->
+              <div
+                class="p-space-md bg-surface flex items-center justify-between"
+              >
+                <div class="flex items-center gap-space-md">
+                  <div
+                    class="w-10 h-10 bg-surface-container-high flex items-center justify-center text-primary-container"
+                  >
+                    <span class="material-symbols-outlined text-[20px]"
+                      >memory</span
+                    >
+                  </div>
+                  <div class="flex flex-col">
+                    <span
+                      class="font-label-xs text-label-xs text-outline uppercase"
+                      >HOST PROCESSOR</span
+                    >
+                    <span
+                      class="font-label-md text-label-md text-on-surface font-black uppercase"
+                      >AMD RYZEN 9 7950X3D</span
+                    >
+                  </div>
+                </div>
+                <div class="flex flex-col text-right">
+                  <span
+                    class="font-label-xs text-label-xs text-outline uppercase"
+                    >CACHE CCD1</span
+                  >
+                  <span
+                    class="font-mono text-tertiary font-bold font-label-sm text-label-sm"
+                    >3D V-CACHE ACTIVE</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Bottom Telemetry Dispatch Execution Bar -->
+          <footer
+            class="w-full bg-surface-container-lowest px-space-lg py-3 flex flex-wrap items-center justify-between gap-space-md"
+          >
+            <div
+              class="flex items-center gap-space-lg flex-wrap font-label-xs text-label-xs"
+            >
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 bg-primary-container animate-ping"></span>
+                <span class="text-outline uppercase">DISPATCH ENGINE:</span>
+                <span class="font-mono font-bold text-on-surface"
+                  >WRITING RING-0</span
+                >
+              </div>
+              <div class="flex items-center gap-1.5 font-mono">
+                <span class="text-outline">PENDING:</span>
+                <span class="text-tertiary font-bold">2 OPS</span>
+              </div>
+              <span class="text-outline-variant">/</span>
+              <div class="flex items-center gap-1.5 font-mono">
+                <span class="text-outline">APPLIED:</span>
+                <span class="text-primary-container font-bold">3 OPS</span>
+              </div>
+              <span class="text-outline-variant">/</span>
+              <div class="flex items-center gap-1.5 font-mono">
+                <span class="text-outline">PAGE FAULT LATENCY:</span>
+                <span class="text-on-surface font-bold">0.02ms</span>
+              </div>
+            </div>
+            <div
+              class="flex items-center gap-space-md font-label-xs text-label-xs text-outline"
+            >
+              <span class="font-mono uppercase tracking-widest text-primary"
+                >SESSION_LOCK: ACTIVE</span
+              >
+              <div
+                class="w-24 h-2 bg-surface-container relative overflow-hidden"
+              >
+                <div class="h-full bg-primary-container w-2/3"></div>
+              </div>
+            </div>
+          </footer>
+        </div>
+        <script>
+          // Dynamic live progress simulation strictly for micro-interaction
+          (function () {
+            const logs = [
+              "[00:02.45] Registry key ZwSetValueKey committed successfully",
+              "[00:02.78] Flushing translation lookaside buffer (TLB) on Core #4...",
+              "[00:03.01] Dynamic DPC watchdog tick confirmed nominal",
+              "[00:03.15] Verified zero pending I/O packets on NIC descriptor ring",
+            ];
+            let logIndex = 0;
+            const consoleBox = document.querySelector(
+              ".overflow-hidden.flex.flex-col.justify-end",
+            );
+            if (consoleBox) {
+              setInterval(() => {
+                if (logIndex < logs.length) {
+                  const div = document.createElement("div");
+                  div.className =
+                    "text-primary-container text-label-xs font-mono";
+                  div.innerHTML = logs[logIndex];
+                  consoleBox.appendChild(div);
+                  if (consoleBox.children.length > 8) {
+                    consoleBox.removeChild(consoleBox.children[0]);
+                  }
+                  logIndex++;
+                }
+              }, 2400);
+            }
+          })();
+        </script>
+      </main>
+    </div>
+  </body>
+</html>
