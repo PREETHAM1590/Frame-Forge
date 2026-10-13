@@ -47,19 +47,36 @@ export function dismissGame(list: Dismissed[], game: Dismissed): Dismissed[] {
   ].slice(-maxDismissed);
 }
 
-const nested = (a: string, b: string) =>
-  a === b || a.startsWith(b + path.sep) || b.startsWith(a + path.sep);
+// A bare drive root ("D:\\") must never match: it is an ancestor of everything.
+const isRoot = (p: string) => {
+  const { root } = path.parse(p);
+  return root !== "" && pathKey(path.normalize(p)) === pathKey(root);
+};
+const within = (child: string, parent: string) =>
+  child === parent || child.startsWith(parent + path.sep);
 
 /**
- * Drops every dismissed entry equal to, inside or above any of `paths` (a hand-picked game's
- * folder is often not the scanner's install root, so exact matching would miss it).
+ * Drops dismissed entries that cover the given paths.
+ * "ancestors" (a hand-picked game): an entry equal to, or a parent of, a path. The picked folder is
+ * often deeper than the scanner's install root, but its siblings and parents' other games stay removed.
+ * "both" (a chosen folder scan): entries below a path are cleared too.
  */
 export function undismissPaths(
   list: Dismissed[],
   paths: string[],
+  direction: "ancestors" | "both" = "ancestors",
 ): Dismissed[] {
-  const keys = paths.map(pathKey);
-  return list.filter((x) => !keys.some((key) => nested(pathKey(x.path), key)));
+  const keys = paths.filter((p) => !isRoot(p)).map(pathKey);
+  return list.filter((x) => {
+    const entry = pathKey(x.path);
+    return (
+      isRoot(x.path) ||
+      !keys.some(
+        (key) =>
+          within(key, entry) || (direction === "both" && within(entry, key)),
+      )
+    );
+  });
 }
 
 export function readDismissed(value: unknown): Dismissed[] {

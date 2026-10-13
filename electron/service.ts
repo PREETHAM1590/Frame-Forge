@@ -360,9 +360,12 @@ export class AppService {
   private dismiss(game: ReturnType<typeof toDismissed>) {
     this.repo.setMeta(dismissedKey, dismissGame(this.dismissed(), game));
   }
-  private undismiss(paths: string[]) {
+  private undismiss(
+    paths: string[],
+    direction: "ancestors" | "both" = "ancestors",
+  ) {
     const list = this.dismissed();
-    const next = undismissPaths(list, paths);
+    const next = undismissPaths(list, paths, direction);
     if (next.length !== list.length) this.repo.setMeta(dismissedKey, next);
   }
   // A closed window must not fail a scan.
@@ -398,9 +401,8 @@ export class AppService {
             ? "Automatic game scan completed"
             : "Installed game scan completed",
           full: true,
-          partial:
-            result.warnings.length > 0 ||
-            result.perLauncher.some((row) => row.status === "error"),
+          // Only a source that failed makes the scan partial; informational warnings do not.
+          partial: result.perLauncher.some((row) => row.status === "error"),
         });
         added = Math.max(0, this.repo.state().games.length - before);
         // Icons of games that are gone (or whose art changed) are no longer needed.
@@ -499,7 +501,7 @@ export class AppService {
     const dropped = library.length + added.length - combined.length;
     this.repo.updateState({ ...state, games: combined });
     if (options.bypassDismissed)
-      this.undismiss(added.map((g) => g.path).filter(Boolean));
+      this.undismiss(added.map((g) => g.path).filter(Boolean), "both");
     if (options.full) {
       this.repo.setMeta(lastScanKey, new Date().toISOString());
       this.repo.setMeta(partialScanKey, options.partial === true);

@@ -135,6 +135,27 @@ describe("exe icons", () => {
     expect(fileIcon).toHaveBeenCalledTimes(1);
   });
 
+  it("retries an extraction that returned nothing only after a day", async () => {
+    const install = path.join(root, "Game");
+    await put(path.join(install, "Game.exe"));
+    let result: Buffer | null = null;
+    const fileIcon = vi.fn(async () => result);
+    const dir = path.join(root, "retry");
+    const make = () =>
+      new GameIcons({ dir, fileIcon, image: async () => null });
+    const g = game({ path: install });
+    expect(await make().dataUrl(g)).toBeNull();
+    result = Buffer.from("a real icon here");
+    // Next start within the day: still the marker.
+    expect(await make().dataUrl(g)).toBeNull();
+    expect(fileIcon).toHaveBeenCalledTimes(1);
+    const [marker] = await readdir(dir);
+    const old = new Date(Date.now() - 25 * 3600_000);
+    await utimes(path.join(dir, marker!), old, old);
+    expect(decode(await make().dataUrl(g))).toBe("a real icon here");
+    expect(fileIcon).toHaveBeenCalledTimes(2);
+  });
+
   it("treats the shell's generic executable icon as no icon (letter fallback)", async () => {
     const install = path.join(root, "Roblox");
     await put(path.join(install, "RobloxPlayerBeta.exe"));

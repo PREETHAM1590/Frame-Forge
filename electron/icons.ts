@@ -31,6 +31,8 @@ export interface IconDeps {
 const prefix = "data:image/png;base64,";
 /** Larger icons are not served (the IPC schema allows 300 KB of base64). */
 export const maxIconBytes = 200_000;
+const retryMarker = "retry";
+const retryAfterMs = 24 * 3600_000;
 const hex40 = /^[0-9a-f]{40}\.(jpe?g|png)$/i;
 
 async function realDir(input: string): Promise<string | null> {
@@ -101,20 +103,25 @@ export class GameIcons {
       .slice(0, 32);
   }
 
-  // An empty <key>.png records "this source has no usable icon" (generic or oversized), so it is not retried.
+  // An empty <key>.png records "this source has no usable icon" (generic or oversized): never retried.
+  // A "retry" marker (extraction returned nothing, possibly transient) is retried after a day.
   private async cached(source: { file: string; art: boolean }) {
     const target = path.join(this.deps.dir, `${await this.key(source)}.png`);
     let png: Buffer | null = await readFile(target).catch(() => null);
+    if (png?.length === retryMarker.length && png.toString() === retryMarker) {
+      const age = Date.now() - (await stat(target)).mtimeMs;
+      if (age < retryAfterMs) return null;
+      png = null;
+    }
     if (!png) {
       const made = await (source.art
         ? this.deps.image(source.file)
         : this.deps.fileIcon(source.file));
       const generic =
         made && !source.art ? await this.deps.genericIcon?.() : null;
-      png =
-        made &&
-        made.length <= maxIconBytes &&
-        !(generic && made.equals(generic))
+      png = !made
+        ? Buffer.from(retryMarker)
+        : made.length <= maxIconBytes && !(generic && made.equals(generic))
           ? made
           : Buffer.alloc(0);
       await mkdir(this.deps.dir, { recursive: true });
@@ -122,7 +129,8 @@ export class GameIcons {
       await writeFile(temp, png);
       await rename(temp, target);
     }
-    return png.length && png.length <= maxIconBytes
+    // A real PNG is longer than the 5-byte marker; empty means "no icon".
+    return png.length > retryMarker.length && png.length <= maxIconBytes
       ? prefix + png.toString("base64")
       : null;
   }

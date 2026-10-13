@@ -4,6 +4,7 @@ import { MockPlatform } from "../electron/platform";
 import { AppService, type DesktopServices } from "../electron/service";
 import {
   dismissGame,
+  type Dismissed,
   lastScanKey,
   maxDismissed,
   partialScanKey,
@@ -70,17 +71,37 @@ describe("dismissed list", () => {
     expect(next.at(-1)?.path).toBe("C:\\new");
     expect(next[0]?.path).toBe("c:\\g1");
   });
-  it("undismisses entries equal to, inside or above the given paths", () => {
-    const list = [
-      entry("C:\\Games\\Alpha"),
-      entry("C:\\Games\\Alpha\\Binaries\\Win64"),
-      entry("C:\\Games\\Alphabet"),
-      entry("D:\\Other"),
-    ];
-    expect(
-      undismissPaths(list, ["c:\\games\\alpha\\binaries"]).map((x) => x.path),
-    ).toEqual(["C:\\Games\\Alphabet", "D:\\Other"]);
-    expect(undismissPaths(list, []).length).toBe(4);
+  const list = [
+    entry("C:\\Games\\Alpha"),
+    entry("C:\\Games\\Alpha\\Binaries\\Win64"),
+    entry("C:\\Games\\Alphabet"),
+    entry("D:\\Other"),
+  ];
+  const paths = (l: Dismissed[]) => l.map((x) => x.path);
+  it("hand-picked games clear only entries equal to or above the picked folder", () => {
+    expect(paths(undismissPaths(list, ["c:\\games\\alpha\\binaries"]))).toEqual(
+      ["C:\\Games\\Alpha\\Binaries\\Win64", "C:\\Games\\Alphabet", "D:\\Other"],
+    );
+    // Adding C:\Games\Foo.exe must not bring back everything under C:\Games.
+    expect(undismissPaths(list, ["C:\\Games"])).toEqual(list);
+    expect(undismissPaths(list, [])).toEqual(list);
+  });
+  it("a folder scan also clears entries below the folder", () => {
+    expect(paths(undismissPaths(list, ["C:\\Games\\Alpha"], "both"))).toEqual([
+      "C:\\Games\\Alphabet",
+      "D:\\Other",
+    ]);
+    expect(paths(undismissPaths(list, ["C:\\Games"], "both"))).toEqual([
+      "D:\\Other",
+    ]);
+  });
+  it("never matches a bare drive root, on either side", () => {
+    expect(undismissPaths(list, ["C:\\"], "both")).toEqual(list);
+    expect(undismissPaths(list, ["D:/"], "both")).toEqual(list);
+    const rooted = [entry("C:\\"), entry("C:\\Games\\Alpha")];
+    expect(paths(undismissPaths(rooted, ["C:\\Games\\Alpha\\Bin"]))).toEqual([
+      "C:\\",
+    ]);
   });
 });
 
@@ -333,9 +354,16 @@ describe("scan bookkeeping", () => {
     const { repo, service } = setup([]);
     const detectGames = vi.fn(async () => ({
       games: [],
-      warnings: ["A Steam library could not be scanned."],
-      launchers: ["Steam"],
-      perLauncher: [],
+      warnings: ["Steam could not be read."],
+      launchers: [],
+      perLauncher: [
+        {
+          launcher: "Steam",
+          found: 0,
+          skipped: 0,
+          status: "error" as const,
+        },
+      ],
     }));
     desktopOf(service).detectGames = detectGames;
     await service.autoScan(Date.now());
@@ -344,6 +372,39 @@ describe("scan bookkeeping", () => {
     expect(detectGames).toHaveBeenCalledTimes(1);
     await service.autoScan(Date.now() + 61 * 60_000);
     expect(detectGames).toHaveBeenCalledTimes(2);
+  });
+
+  it("an informational warning alone does not make a scan partial", async () => {
+    const { repo, service } = setup([]);
+    desktopOf(service).detectGames = async () => ({
+      games: [],
+      warnings: ["A Steam library could not be scanned."],
+      launchers: ["Steam"],
+      perLauncher: [
+        { launcher: "Steam", found: 0, skipped: 1, status: "scanned" as const },
+      ],
+    });
+    await service.autoScan(Date.now());
+    expect(repo.meta(partialScanKey)).toBe(false);
+  });
+
+  it("Add game of a file in a shared folder does not bring back other removed games there", async () => {
+    const { repo, service } = setup([
+      game("Foo", "C:\\Games\\Foo"),
+      game("Bar", "C:\\Games\\Bar"),
+    ]);
+    await service.dispatch("detectGames", {});
+    for (const g of repo.state().games)
+      await service.dispatch("removeGame", { id: g.id });
+    expect(service.bootstrap().removedGames).toHaveLength(2);
+    desktopOf(service).pickGame = async () =>
+      ({
+        ...game("Picked", "C:\\Games"),
+        source: "custom",
+        executablePath: "C:\\Games\\Picked.exe",
+      }) as Game;
+    await service.dispatch("addGame", {});
+    expect(service.bootstrap().removedGames).toHaveLength(2);
   });
 
   it("a clean scan clears the partial mark", async () => {
