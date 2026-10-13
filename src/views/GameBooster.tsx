@@ -185,7 +185,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
   const [now, setNow] = useState(0);
   const [confirmPlan, setConfirmPlan] = useState(false);
   // Mechanism results already logged for the current session (events carry the whole session).
-  const logged = useRef({ id: "", count: 0, status: "" });
+  const logged = useRef({ id: "", last: "", status: "" });
   const refresh = useCallback(
     () =>
       request("boostStatus", {})
@@ -207,20 +207,26 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
         const seen =
           logged.current.id === s.id
             ? logged.current
-            : { id: s.id, count: 0, status: "" };
+            : { id: s.id, last: "", status: "" };
+        // New results follow the last one logged; this still works once the list is capped at 400 entries.
+        const keys = s.mechanisms.map((m) => JSON.stringify(m));
+        const from = seen.last ? keys.lastIndexOf(seen.last) + 1 : 0;
         const time = new Date().toLocaleTimeString();
         const lines = s.mechanisms
-          .slice(seen.count)
+          .slice(from)
           .map((m) => `${time}  ${labels[m.id]}: ${m.state}. ${m.detail}`);
         if (s.status !== seen.status) lines.push(`${time}  ${s.message}`);
         logged.current = {
           id: s.id,
-          count: s.mechanisms.length,
+          last: keys.at(-1) ?? seen.last,
           status: s.status,
         };
         if (lines.length) setLog((old) => [...old, ...lines].slice(-80));
         if (s.status === "ended" || s.status === "recovery-needed")
-          setOutcome({ text: s.message, error: s.status !== "ended" });
+          setOutcome({
+            text: s.message,
+            error: s.status !== "ended" || s.failed,
+          });
       }),
     [],
   );
@@ -341,7 +347,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                   if (result)
                     setOutcome({
                       text: result.message,
-                      error: result.status !== "ended",
+                      error: result.status !== "ended" || result.failed,
                     });
                 }}
               >
@@ -417,7 +423,7 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                   result
                     ? {
                         text: result.message,
-                        error: result.status !== "ended",
+                        error: result.status !== "ended" || result.failed,
                       }
                     : { text: "No boost session was running.", error: false },
                 );
@@ -776,7 +782,11 @@ export function GameMode({ data, run, pending, navigate }: ViewProps) {
                     <Button
                       key={image}
                       disabled={pending || config.background.length >= 50}
-                      title={`Suggested ${kind}: ${action === "lower" ? "lower its priority" : "suspend it"} during a boost.`}
+                      title={
+                        config.background.length >= 50
+                          ? "The list is full (50 apps). Remove one first."
+                          : `Suggested ${kind}: ${action === "lower" ? "lower its priority" : "suspend it"} during a boost.`
+                      }
                       onClick={() =>
                         void save({
                           background: [...config.background, { image, action }],

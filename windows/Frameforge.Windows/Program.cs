@@ -27,8 +27,10 @@ try
         "background-processes" => new { ok = true, message = "Running processes read.", backgroundProcesses = WindowsProcessControl.Entries() },
         "boost-capabilities" => new { ok = true, message = "Booster capabilities read.", capabilities = BoostSessionEngine.Capabilities(new WindowsPowerStore(), new WindowsTimerControl(), Environment.ProcessorCount, new WindowsRegistryStore(), owned) },
         // Untrusted input bound, above the per-session capture cap; every item is attempted.
-        "boost-recover" when request.Captured is { Length: <= 1000 } => new { ok = true, message = "Saved booster changes checked.", reverts = Booster().Recover(request.Captured) },
-        "power-create-plan" => new { ok = true, message = "Frameforge High performance plan created. The active plan was not changed.", powerPlan = BoostSessionEngine.CreatePlan(new WindowsPowerStore()).ToString() },
+        "boost-recover" when request.Captured is { Length: <= 1000 } captured && captured.All(c => c is not null) => new { ok = true, message = "Saved booster changes checked.", reverts = Booster().Recover(captured) },
+        "boost-recover" => throw new InvalidOperationException("Too many or invalid saved booster changes (limit 1000)."),
+        // Frameforge records the destination GUID before asking, so a created plan is never left unrecorded.
+        "power-create-plan" when owned is { } destination => CreatePlan(destination),
         "power-delete-plan" when owned is { } ownedPlan => new { ok = true, message = BoostSessionEngine.DeletePlan(new WindowsPowerStore(), ownedPlan) },
         _ => throw new InvalidOperationException("Unsupported helper request.")
     };
@@ -43,6 +45,7 @@ catch (Exception error)
     };
 }
 Console.WriteLine(JsonSerializer.Serialize(response, options));
+static object CreatePlan(Guid destination) { BoostSessionEngine.CreatePlan(new WindowsPowerStore(), destination); return new { ok = true, message = "Frameforge High performance plan created and verified. The active plan was not changed.", powerPlan = destination.ToString() }; }
 static object Apply(RegistryOperations engine, string[] ids, Snapshot snapshot) { engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written." }; }
 static object Restore(RegistryOperations engine, Snapshot snapshot) { engine.Restore(snapshot); return new { ok = true, message = "Snapshot restored and verified." }; }
 record Request(string Command, string[]? Ids, Snapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null);

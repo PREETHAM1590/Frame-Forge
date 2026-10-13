@@ -14,7 +14,10 @@ public class BoostSessionTests
     {
         public Dictionary<int, ProcInfo> Running { get; } = new() { [Game.Pid] = new(Game, 1, Sid, false) };
         public Dictionary<int, ulong> Affinity { get; } = new();
-        public HashSet<int> Suspended { get; } = [];
+        // Per-thread suspend counts, like Windows: NtSuspendProcess adds one to every existing thread, NtResumeProcess removes one.
+        public Dictionary<int, List<int>> Counts { get; } = new();
+        public List<int> ThreadsOf(int pid) => Counts.TryGetValue(pid, out var t) ? t : Counts[pid] = [0, 0];
+        public IEnumerable<int> Suspended => Counts.Where(kv => kv.Value.Any(c => c > 0)).Select(kv => kv.Key);
         public List<string> Calls { get; } = [];
         public bool Refuse { get; set; }
         public int LogicalCpus => 8;
@@ -29,23 +32,39 @@ public class BoostSessionTests
         }
         public ulong GetAffinity(ProcessTarget id) => Affinity.GetValueOrDefault(id.Pid, 0xFFUL);
         public void SetAffinity(ProcessTarget id, ulong mask) => Affinity[id.Pid] = mask;
-        public bool Suspend(ProcessTarget id) { Calls.Add($"suspend {id.Pid}"); return Suspended.Add(id.Pid); }
-        // Sticky: also suspended by another program, so one resume leaves it suspended.
-        public HashSet<int> Sticky { get; } = [];
-        public void Resume(ProcessTarget id) { Calls.Add($"resume {id.Pid}"); if (!Sticky.Contains(id.Pid)) Suspended.Remove(id.Pid); }
-        public bool IsSuspended(ProcessTarget id) => Suspended.Contains(id.Pid);
+        public bool Suspend(ProcessTarget id)
+        {
+            Calls.Add($"suspend {id.Pid}"); var t = ThreadsOf(id.Pid);
+            for (var i = 0; i < t.Count; i++) t[i]++;
+            return t.All(c => c > 0);
+        }
+        public void Resume(ProcessTarget id)
+        {
+            Calls.Add($"resume {id.Pid}"); var t = ThreadsOf(id.Pid);
+            for (var i = 0; i < t.Count; i++) if (t[i] > 0) t[i]--;
+        }
+        public (int Suspended, int Total) Threads(ProcessTarget id) { var t = ThreadsOf(id.Pid); return (t.Count(c => c > 0), t.Count); }
         public int Close(ProcessTarget[] ids) { foreach (var id in ids) { Calls.Add($"close {id.Pid}"); Running.Remove(id.Pid); } return ids.Length; }
     }
     private sealed class FakePower(params Guid[] schemes) : IPowerStore
     {
         public static readonly Guid Balanced = new("381b4222-f694-41f0-9685-ff5bb260df2e");
         public List<Guid> Schemes { get; } = [Balanced, .. schemes];
+        public Dictionary<Guid, string> Names { get; } = new() { [Balanced] = "Balanced" };
         public HashSet<Guid> Refused { get; } = [];
+        public bool FailName { get; set; }
         public Guid Current { get; set; } = Balanced;
         public Guid Active() => Current;
         public bool Exists(Guid scheme) => Schemes.Contains(scheme);
         public void SetActive(Guid scheme) => Current = scheme;
-        public Guid Duplicate(Guid source, string name) { if (Refused.Contains(source)) throw new Win32Exception(87); var created = Guid.NewGuid(); Schemes.Add(created); return created; }
+        public void Duplicate(Guid source, Guid destination, string name)
+        {
+            if (Refused.Contains(source)) throw new Win32Exception(87);
+            Schemes.Add(destination);
+            if (FailName) { Schemes.Remove(destination); throw new Win32Exception(5); }
+            Names[destination] = name;
+        }
+        public string? Name(Guid scheme) => Names.GetValueOrDefault(scheme);
         public void Delete(Guid scheme) => Schemes.Remove(scheme);
     }
     private sealed class FakeTimer(string? unsupported = null) : ITimerControl
@@ -254,12 +273,42 @@ public class BoostSessionTests
         var rig = Setup();
         rig.Processes.Add(P(600, @"C:\Apps\sync.exe")); rig.Processes.Add(P(601, @"C:\Apps\sync.exe"));
         rig.Engine.Start(Command(Off() with { SuspendBackground = true }, new BackgroundRule("sync.exe", "suspend")));
-        rig.Processes.Suspended.Remove(600);
-        rig.Processes.Sticky.Add(601);
+        // 600 was resumed by someone else; 601 was additionally suspended by another program (count 2 on every thread).
+        rig.Processes.Resume(P(600, @"C:\Apps\sync.exe"));
+        for (var i = 0; i < rig.Processes.ThreadsOf(601).Count; i++) rig.Processes.ThreadsOf(601)[i]++;
+        rig.Processes.Calls.Clear();
         var reverts = rig.Engine.Revert();
-        Assert.Equal(["failed", "reverted"], reverts.Select(r => r.State));
-        Assert.Contains("still suspended", reverts[0].Detail);
-        Assert.DoesNotContain("resume 600", rig.Processes.Calls);
+        // N-2: still suspended by someone else is a kept external state (conflict), not a failure, and it is resumed once only.
+        Assert.Equal(["conflict", "reverted"], reverts.Select(r => r.State));
+        Assert.Contains("Windows or another program", reverts[0].Detail);
+        Assert.Equal(["resume 601"], rig.Processes.Calls);
+        Assert.All(rig.Processes.ThreadsOf(601), c => Assert.Equal(1, c));
+    }
+    [Fact]
+    public void PartiallySuspendedAppIsResumedOnce()
+    {
+        // N-1: a thread created after the suspend runs; the others still hold Frameforge's suspend and must be resumed.
+        var rig = Setup();
+        rig.Processes.Add(P(700, @"C:\Apps\browser.exe"));
+        rig.Engine.Start(Command(Off() with { SuspendBackground = true }, new BackgroundRule("browser.exe", "suspend")));
+        rig.Processes.ThreadsOf(700).Add(0);
+        var revert = rig.Engine.Revert().Single();
+        Assert.Equal("reverted", revert.State);
+        Assert.Contains("resumed", revert.Detail);
+        Assert.Empty(rig.Processes.Suspended);
+        Assert.Single(rig.Processes.Calls, c => c == "resume 700");
+    }
+    [Fact]
+    public void AppsAlreadyFrozenByWindowsAreNotCapturedOrTouched()
+    {
+        var rig = Setup();
+        rig.Processes.Add(P(800, @"C:\Apps\phone.exe"));
+        rig.Processes.Counts[800] = [1, 1, 1];
+        rig.Engine.Start(Command(Off() with { SuspendBackground = true }, new BackgroundRule("phone.exe", "suspend")));
+        Assert.DoesNotContain(rig.Steps, s => s.Event == "captured");
+        Assert.Contains(rig.Steps, s => s.Event == "skipped" && s.Detail!.Contains("already suspended"));
+        Assert.Empty(rig.Engine.Revert());
+        Assert.Equal([1, 1, 1], rig.Processes.Counts[800]);
     }
     [Fact]
     public void EmptyBackgroundListsAreReportedAsNotConfigured()
@@ -273,8 +322,10 @@ public class BoostSessionTests
     {
         var power = new FakePower();
         power.Refused.Add(BoostSessionEngine.HighPerformance);
-        var owned = BoostSessionEngine.CreatePlan(power);
+        var owned = Guid.NewGuid();
+        BoostSessionEngine.CreatePlan(power, owned);
         Assert.True(power.Exists(owned));
+        Assert.Equal(BoostSessionEngine.OwnedPlanName, power.Name(owned));
         Assert.Equal(FakePower.Balanced, power.Current);
         var rig = Setup(power, owned: owned);
         rig.Engine.Start(Command(Off() with { PowerPlan = true }));
@@ -286,6 +337,53 @@ public class BoostSessionTests
         Assert.False(power.Exists(owned));
         Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.DeletePlan(power, BoostSessionEngine.HighPerformance));
         var none = new FakePower(); none.Refused.Add(BoostSessionEngine.HighPerformance); none.Refused.Add(BoostSessionEngine.Ultimate);
-        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.CreatePlan(none));
+        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.CreatePlan(none, Guid.NewGuid()));
+    }
+    [Fact]
+    public void DeleteRefusesBuiltInAndUserPlansAndNamingFailureLeavesNoCopy()
+    {
+        // N-4: only a plan carrying the Frameforge name is deletable, never a built-in scheme.
+        var acer = new Guid("63110160-d005-4a96-85a8-a00233639354");
+        var powerSaver = new Guid("a1841308-3541-4fab-bc81-f71556f20b4a");
+        var power = new FakePower(acer, powerSaver);
+        power.Names[acer] = "Acer";
+        foreach (var plan in new[] { FakePower.Balanced, powerSaver, BoostSessionEngine.HighPerformance, BoostSessionEngine.Ultimate, acer })
+            Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.DeletePlan(power, plan));
+        Assert.True(power.Exists(acer) && power.Exists(FakePower.Balanced) && power.Exists(powerSaver));
+        // A copy whose name cannot be written is removed and creation fails.
+        var failing = new FakePower { FailName = true };
+        var destination = Guid.NewGuid();
+        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.CreatePlan(failing, destination));
+        Assert.False(failing.Exists(destination));
+        Assert.Throws<InvalidOperationException>(() => BoostSessionEngine.CreatePlan(power, FakePower.Balanced));
+    }
+    [Fact]
+    public void RecoveryToleratesARemovedFrameforgePlanAndCapabilitiesMatchTheEngine()
+    {
+        // nm-2: the plan was removed while a recovery was pending; the previous plan is already active, so nothing is left to do.
+        var power = new FakePower();
+        var rig = Setup(power);
+        var removed = Guid.NewGuid();
+        var item = new Captured("powerPlan", Prior: FakePower.Balanced.ToString(), Applied: removed.ToString());
+        Assert.Equal("reverted", rig.Engine.Recover([item]).Single().State);
+        // nm-3: Ultimate active while High performance exists means the session skips, and the capability says so.
+        var both = new FakePower(BoostSessionEngine.HighPerformance, BoostSessionEngine.Ultimate) { Current = BoostSessionEngine.Ultimate };
+        var plan = BoostSessionEngine.Capabilities(both, new FakeTimer(), 8, new MemoryRegistry(), null).Mechanisms.Single(m => m.Id == "powerPlan");
+        Assert.True(plan.Active);
+        var skip = Setup(both); skip.Engine.Start(Command(Off() with { PowerPlan = true }));
+        Assert.Equal("skipped", skip.Steps.Single().Event);
+        // nm-4: an unreadable value marks only its own mechanism unavailable.
+        var broken = BoostSessionEngine.Capabilities(new ThrowingPower(), new FakeTimer(), 8, new MemoryRegistry(), null);
+        Assert.False(broken.Mechanisms.Single(m => m.Id == "powerPlan").Available);
+        Assert.True(broken.Mechanisms.Single(m => m.Id == "gameMode").Available);
+    }
+    private sealed class ThrowingPower : IPowerStore
+    {
+        public Guid Active() => throw new Win32Exception(5);
+        public bool Exists(Guid scheme) => throw new Win32Exception(5);
+        public void SetActive(Guid scheme) => throw new Win32Exception(5);
+        public void Duplicate(Guid source, Guid destination, string name) => throw new Win32Exception(5);
+        public string? Name(Guid scheme) => null;
+        public void Delete(Guid scheme) => throw new Win32Exception(5);
     }
 }

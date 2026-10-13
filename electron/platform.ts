@@ -63,7 +63,8 @@ export interface Platform {
     captured: Captured[],
     ownedPlan: string | null,
   ): Promise<MechanismResult[]>;
-  createPowerPlan(): Promise<string>;
+  // Creates the Frameforge plan under a GUID Frameforge already recorded.
+  createPowerPlan(destination: string): Promise<void>;
   deletePowerPlan(ownedPlan: string): Promise<string>;
   spawnSession(): SessionChannel;
 }
@@ -212,10 +213,8 @@ export class WindowsPlatform implements Platform {
     if (!result.reverts) throw new Error("Missing recovery results");
     return result.reverts;
   }
-  async createPowerPlan() {
-    const result = await this.call({ command: "power-create-plan" });
-    if (!result.powerPlan) throw new Error("Missing created power plan");
-    return result.powerPlan;
+  async createPowerPlan(destination: string) {
+    await this.call({ command: "power-create-plan", ownedPlan: destination });
   }
   async deletePowerPlan(ownedPlan: string) {
     return (await this.call({ command: "power-delete-plan", ownedPlan }))
@@ -321,7 +320,8 @@ export class MockPlatform implements Platform {
     void captured;
     throw new Error("Game booster requires the Windows helper.");
   }
-  async createPowerPlan(): Promise<string> {
+  async createPowerPlan(destination: string): Promise<void> {
+    void destination;
     throw new Error("Game booster requires the Windows helper.");
   }
   async deletePowerPlan(ownedPlan: string): Promise<string> {

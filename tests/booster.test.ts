@@ -278,8 +278,11 @@ describe("game booster sessions", () => {
           });
       };
     };
-    await engine.start(game.id, "manual");
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // N-3: the later "ready" must not turn this into a successful start.
+    const result = await engine.start(game.id, "manual");
+    expect(result?.status).toBe("ended");
+    expect(result?.failed).toBe(true);
+    expect(result?.message).toMatch(/could not save/);
     expect(platform.sessions[0]!.sent).toContainEqual({ command: "stop" });
     expect(repo.boostSession()).toBeNull();
     expect(
@@ -292,8 +295,12 @@ describe("game booster sessions", () => {
   });
   it("creates the High performance plan only on request and passes it to sessions", async () => {
     const { repo, game, platform, engine } = setup();
-    const created = crypto.randomUUID();
-    platform.createPowerPlan = async () => created;
+    let created = "";
+    // nm-1: the GUID is recorded before the helper is asked to create the plan.
+    platform.createPowerPlan = async (destination) => {
+      expect(repo.meta("booster.powerPlan")).toBe(destination);
+      created = destination;
+    };
     let removed = "";
     platform.deletePowerPlan = async (owned) => {
       removed = owned;
@@ -308,6 +315,80 @@ describe("game booster sessions", () => {
     await engine.stop();
     expect((await engine.powerPlan("remove")).ownedPowerPlan).toBe(false);
     expect(removed).toBe(created);
+    repo.close();
+  });
+  it("keeps the plan record only when the helper could not confirm the outcome", async () => {
+    const { repo, platform, engine } = setup();
+    platform.createPowerPlan = async () => {
+      throw Object.assign(new Error("Windows did not allow it"), {
+        code: "invalid-request",
+      });
+    };
+    await expect(engine.powerPlan("create")).rejects.toThrow(/did not allow/);
+    expect(repo.meta("booster.powerPlan")).toBeNull();
+    platform.createPowerPlan = async () => {
+      throw new Error("Windows helper timed out.");
+    };
+    await expect(engine.powerPlan("create")).rejects.toThrow(/timed out/);
+    expect(repo.meta("booster.powerPlan")).not.toBeNull();
+    repo.close();
+  });
+  it("retries only failed reverts and blocks plan removal while a recovery is pending", async () => {
+    const { repo, game, platform, engine } = setup();
+    const suspend: Captured = {
+      mechanism: "suspendBackground",
+      process: { ...target, pid: 900, name: "sync" },
+    };
+    platform.onSpawn = (session) => {
+      session.onSend = ({ command }) => {
+        if (command !== "start") return;
+        session.line({
+          event: "captured",
+          mechanism: "suspendBackground",
+          prior: suspend,
+        });
+        session.line({
+          event: "captured",
+          mechanism: "priority",
+          prior: priorityCapture,
+        });
+        session.line({ event: "ready" });
+        // Reverse order: priority failed, the resume succeeded and must never be repeated.
+        session.line({
+          event: "ended",
+          reason: "game-exited",
+          reverts: [
+            { id: "priority", state: "failed", detail: "access denied" },
+            { id: "suspendBackground", state: "reverted", detail: "resumed" },
+          ],
+        });
+      };
+    };
+    repo.setMeta("booster.powerPlan", crypto.randomUUID());
+    await engine.start(game.id, "manual");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(repo.boostRecord()?.captured).toEqual([priorityCapture]);
+    await expect(engine.powerPlan("remove")).rejects.toThrow(/recovery/);
+    await engine.recover();
+    expect(platform.recovered).toEqual([[priorityCapture]]);
+    repo.close();
+  });
+  it("says so when a mode had nothing to change on this PC", async () => {
+    const { repo, game, platform, engine } = setup();
+    platform.onSpawn = (session) => {
+      session.onSend = ({ command }) => {
+        if (command === "start") {
+          session.line({
+            event: "skipped",
+            mechanism: "gameMode",
+            detail: "already on",
+          });
+          session.line({ event: "ready" });
+        }
+      };
+    };
+    const session = await engine.start(game.id, "manual");
+    expect(session?.message).toMatch(/nothing needed changing/);
     repo.close();
   });
   it("quitting with an active session awaits stop and revert", async () => {

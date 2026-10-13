@@ -22,6 +22,13 @@ const text = (error: unknown) =>
   (error instanceof Error ? error.message : "Unknown error").slice(0, 500);
 const key = (t: ProcessTarget) => `${t.pid}|${t.startTime}`;
 const planKey = "booster.powerPlan";
+// The helper reverts in reverse capture order, one result per capture. Keep only the captures whose revert failed.
+const pendingCaptures = (captured: Captured[], reverts: MechanismResult[]) =>
+  reverts.length === captured.length
+    ? captured.filter(
+        (_, i) => reverts[captured.length - 1 - i]!.state === "failed",
+      )
+    : captured;
 const delay = (ms: number) =>
   new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
 export const modeLabels: Record<BoostMode, string> = {
@@ -44,6 +51,8 @@ type Live = {
   captured: Captured[];
   game: string;
   ended: Promise<BoostSession>;
+  // Set when a helper report was rejected; the session is being reverted and is never reported as active.
+  aborted?: boolean;
 };
 export class BoostEngine {
   private busy = false;
@@ -138,15 +147,28 @@ export class BoostEngine {
         throw new Error(
           "The Windows helper is missing, so the game booster is unavailable.",
         );
-      if (this.live)
-        throw new Error("Stop the boost session before changing power plans.");
+      // A pending recovery may still need the plan, so it cannot change underneath it.
+      if (this.live || this.repo.boostSession())
+        throw new Error(
+          "Stop the boost session, or finish or dismiss its recovery, before changing power plans.",
+        );
       const owned = this.ownedPlan();
       if (action === "create") {
         if (owned) throw new Error("Frameforge already created its plan.");
-        const created = await this.platform.createPowerPlan();
-        this.repo.setMeta(planKey, created);
+        // Recorded before the helper creates it, so a created plan is never left unrecorded.
+        const destination = randomUUID();
+        this.repo.setMeta(planKey, destination);
+        try {
+          await this.platform.createPowerPlan(destination);
+        } catch (error) {
+          // The helper replied (code set): it verified nothing was left behind. Otherwise keep the record so Remove can clean up.
+          if ((error as { code?: string }).code)
+            this.repo.setMeta(planKey, null);
+          this.capabilities = undefined;
+          throw error;
+        }
         this.log(
-          `Created the "Frameforge High performance" power plan (${created}). The active plan was not changed; boost sessions switch to it and back.`,
+          `Created the "Frameforge High performance" power plan (${destination}). The active plan was not changed; boost sessions switch to it and back.`,
         );
       } else {
         if (!owned) throw new Error("Frameforge has not created a plan.");
@@ -214,6 +236,7 @@ export class BoostEngine {
         message: `${modeLabels[mode]} mode starting for ${game.name}.`,
         mechanisms: [],
         samples: [],
+        failed: false,
       },
       captured,
     );
@@ -230,6 +253,7 @@ export class BoostEngine {
           status: "ended",
           endedAt: new Date().toISOString(),
           message: `Boost could not start: ${text(error)}`,
+          failed: true,
         },
         captured,
       );
@@ -253,15 +277,14 @@ export class BoostEngine {
         resolve(result);
       };
       const timer = setTimeout(() => channel.kill(), this.timeouts.start);
-      let aborting = false;
       channel.on("event", (raw) => {
         if (this.live !== live) return;
         const parsed = SessionEventSchema.safeParse(raw);
         if (!parsed.success) {
           // Fail closed (GC-10): a prior state we cannot save must not be left applied.
           // "stop" makes the helper revert from its in-memory captures; killing it would lose them.
-          if (!aborting) {
-            aborting = true;
+          if (!live.aborted) {
+            live.aborted = true;
             this.update(live, {
               message:
                 "The session helper reported state Frameforge could not save. Stopping the session and restoring.",
@@ -282,13 +305,21 @@ export class BoostEngine {
               captured.push(event.prior);
               this.update(live, {});
               break;
-            case "ready":
+            case "ready": {
+              // A rejected report means the session is already being reverted: never report it as active.
+              if (live.aborted) break;
+              const applied = live.session.mechanisms.filter(
+                (m) => m.state === "applied",
+              ).length;
               this.update(live, {
                 status: "active",
-                message: `${modeLabels[mode]} mode active for ${game.name}.`,
+                message: applied
+                  ? `${modeLabels[mode]} mode active for ${game.name}: ${applied} change(s) applied.`
+                  : `${modeLabels[mode]} mode active for ${game.name}, but nothing needed changing on this PC.`,
               });
               settle(live.session);
               break;
+            }
             case "sample": {
               const sample = {
                 at: event.at,
@@ -370,10 +401,13 @@ export class BoostEngine {
     const count = (state: MechanismResult["state"]) =>
       reverts.filter((r) => r.state === state).length;
     const failed = count("failed");
-    const why =
-      reason === "start-failed" && detail
+    const why = live.aborted
+      ? "the session helper reported a prior state Frameforge could not save, so the boost was stopped"
+      : reason === "start-failed" && detail
         ? `the boost could not start: ${detail}`
         : endReasons[reason];
+    // Only failed reverts stay saved for a retry, so a retry never repeats a completed one (for example a second resume).
+    live.captured = pendingCaptures(live.captured, reverts);
     const now = new Date();
     const minutes = Math.round(
       (now.getTime() - Date.parse(live.session.startedAt)) / 60000,
@@ -387,6 +421,7 @@ export class BoostEngine {
     const summary = `Restored ${count("reverted")}, kept ${count("conflict")} external change(s), failed ${failed}.`;
     this.update(live, {
       status: failed ? "recovery-needed" : "ended",
+      failed: failed > 0 || !!live.aborted || reason === "start-failed",
       endedAt: failed ? null : now.toISOString(),
       mechanisms: [...live.session.mechanisms, ...reverts].slice(-400),
       message: failed
@@ -395,7 +430,9 @@ export class BoostEngine {
     });
     this.log(
       `${live.game}: session ended after ${minutes} min because ${why}. ${summary}${snapshot}`,
-      failed || reason === "start-failed" ? "failed" : "success",
+      failed || live.aborted || reason === "start-failed"
+        ? "failed"
+        : "success",
     );
   }
   async stop(): Promise<BoostSession | null> {
@@ -432,6 +469,7 @@ export class BoostEngine {
         endedAt: new Date().toISOString(),
         message:
           "Recovery dismissed. Any remaining changes were left as they are.",
+        failed: true,
       });
       this.log(result.message, "failed");
       return result;
@@ -442,19 +480,26 @@ export class BoostEngine {
         : [];
       const failed = reverts.filter((r) => r.state === "failed");
       const conflicts = reverts.filter((r) => r.state === "conflict").length;
-      const result = finish({
-        status: failed.length ? "recovery-needed" : "ended",
-        endedAt: failed.length ? null : new Date().toISOString(),
-        mechanisms: [...session.mechanisms, ...reverts].slice(-400),
-        message: failed.length
-          ? `Recovery could not restore ${failed.length} change(s): ${failed[0]!.detail}`
-          : `Recovered: ${reverts.length} saved change(s) checked, ${conflicts} external change(s) kept.`,
-      });
+      const remaining = pendingCaptures(captured, reverts);
+      const result = this.save(
+        {
+          ...session,
+          status: failed.length ? "recovery-needed" : "ended",
+          failed: failed.length > 0,
+          endedAt: failed.length ? null : new Date().toISOString(),
+          mechanisms: [...session.mechanisms, ...reverts].slice(-400),
+          message: failed.length
+            ? `Recovery could not restore ${failed.length} change(s): ${failed[0]!.detail}`
+            : `Recovered: ${reverts.length} saved change(s) checked, ${conflicts} external change(s) kept.`,
+        },
+        remaining,
+      );
       this.log(result.message, failed.length ? "failed" : "success");
       return result;
     } catch (error) {
       const result = finish({
         status: "recovery-needed",
+        failed: true,
         message: `Recovery failed: ${text(error)}. Retry, or dismiss to keep the current state.`,
       });
       this.log(result.message, "failed");

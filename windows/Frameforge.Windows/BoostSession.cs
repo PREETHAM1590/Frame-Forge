@@ -35,7 +35,14 @@ public static class HelperJson
     public static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
 }
 
-public interface IPowerStore { Guid Active(); bool Exists(Guid scheme); void SetActive(Guid scheme); Guid Duplicate(Guid source, string name); void Delete(Guid scheme); }
+public interface IPowerStore
+{
+    Guid Active(); bool Exists(Guid scheme); void SetActive(Guid scheme);
+    // Copies source into the caller-chosen destination GUID and names it; on a naming failure the copy is deleted and this throws.
+    void Duplicate(Guid source, Guid destination, string name);
+    string? Name(Guid scheme);
+    void Delete(Guid scheme);
+}
 public interface ITimerControl { string? Unsupported { get; } bool Request(); void Release(); }
 public interface IProcessControl
 {
@@ -47,9 +54,10 @@ public interface IProcessControl
     ulong GetAffinity(ProcessTarget identity);
     void SetAffinity(ProcessTarget identity, ulong mask);
     bool Suspend(ProcessTarget identity);
+    // One NtResumeProcess, the exact counterpart of one NtSuspendProcess (each thread's suspend count drops by one).
     void Resume(ProcessTarget identity);
-    // True only when every thread of the process is suspended.
-    bool IsSuspended(ProcessTarget identity);
+    // Suspended and total thread counts.
+    (int Suspended, int Total) Threads(ProcessTarget identity);
     int Close(ProcessTarget[] identities);
 }
 
@@ -58,6 +66,8 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
 {
     public static readonly Guid HighPerformance = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"), Ultimate = new("e9a42b02-d5df-448d-aa00-03f14749eb61");
     public const string OwnedPlanName = "Frameforge High performance";
+    // Windows' built-in schemes are never deleted (Balanced, Power saver, High performance, Ultimate).
+    public static readonly Guid[] BuiltInPlans = [new("381b4222-f694-41f0-9685-ff5bb260df2e"), new("a1841308-3541-4fab-bc81-f71556f20b4a"), HighPerformance, Ultimate];
     // Bounds the saved state of one session; further background matches are skipped with a visible reason.
     public const int MaxCaptures = 200;
     private static readonly string[] Ranks = ["Idle", "BelowNormal", "Normal", "AboveNormal", "High"];
@@ -81,14 +91,25 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
     private static object? Norm(object? value) => value is JsonElement json
         ? json.ValueKind switch { JsonValueKind.Number => json.GetInt32(), JsonValueKind.String => json.GetString(), _ => null }
         : value;
+    private bool PerformancePlan(Guid plan) => IsPerformancePlan(plan, ownedPlan);
+    private static bool IsPerformancePlan(Guid plan, Guid? owned) => plan == HighPerformance || plan == Ultimate || plan == owned;
+    // Each read is independent, so one unreadable value marks only its own mechanism unavailable.
+    private static Capability Safe(string id, Func<Capability> read)
+    {
+        try { return read(); }
+        catch (Exception error) { return new(id, false, $"Could not be read: {Describe(error)}"); }
+    }
     public static BoostCapabilities Capabilities(IPowerStore power, ITimerControl timer, int cpus, IRegistryStore registry, Guid? ownedPlan)
     {
-        var target = PlanTarget(power, ownedPlan);
         var timerReason = timer.Unsupported;
-        var gameModeOn = GameModeOn(new RegistryOperations(registry).Capture(GameModeIds));
         return new(cpus, [
-            new("gameMode", true, gameModeOn ? "Already on in Windows; a session leaves it as it is." : "Off in Windows; a session turns it on and restores it afterwards.", gameModeOn),
-            new("powerPlan", target is not null, target is { } plan ? $"{PlanName(plan)} plan present." : "High performance plan not present", target is { } t && power.Active() == t),
+            Safe("gameMode", () => GameModeOn(new RegistryOperations(registry).Capture(GameModeIds)) is var on && on
+                ? new("gameMode", true, "Already on in Windows; a session leaves it as it is.", true)
+                : new("gameMode", true, "Off in Windows; a session turns it on and restores it afterwards.")),
+            // Active mirrors the engine: any performance plan already active means the session skips this step.
+            Safe("powerPlan", () => PlanTarget(power, ownedPlan) is { } plan
+                ? new("powerPlan", true, IsPerformancePlan(power.Active(), ownedPlan) ? "A performance power plan is already active." : $"{PlanName(plan)} plan present.", IsPerformancePlan(power.Active(), ownedPlan))
+                : new("powerPlan", false, "High performance plan not present")),
             new("priority", true, "Normal, Above normal or High. Real-time is never used."),
             new("affinity", cpus > 0, $"{Math.Min(cpus, 64)} logical CPUs selectable."),
             new("lowerBackground", true, "Selected apps run at Below normal during the session."),
@@ -99,22 +120,26 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
         ]);
     }
     // Explicit, consent-gated: copies Windows' High performance (or Ultimate) template into a new plan. The active plan is not changed.
-    public static Guid CreatePlan(IPowerStore power)
+    // destination is generated and recorded by Frameforge before this call, so a created plan is never left unrecorded.
+    public static void CreatePlan(IPowerStore power, Guid destination)
     {
+        if (BuiltInPlans.Contains(destination) || power.Exists(destination)) throw new InvalidOperationException("Invalid destination for the new power plan.");
         foreach (var source in new[] { HighPerformance, Ultimate })
         {
-            Guid created;
-            try { created = power.Duplicate(source, OwnedPlanName); }
+            try { power.Duplicate(source, destination, OwnedPlanName); }
             catch (Win32Exception) { continue; }
-            if (power.Exists(created)) return created;
+            if (power.Exists(destination) && power.Name(destination) == OwnedPlanName) return;
+            // Never leave an unverified copy behind.
+            if (power.Exists(destination)) power.Delete(destination);
         }
         throw new InvalidOperationException("Windows did not allow creating a High performance plan on this PC (common on Modern Standby devices). Nothing was changed.");
     }
-    // Removes only the plan Frameforge created, and never while it is active.
+    // Removes only the plan Frameforge created: never a built-in scheme, never one without the Frameforge name, never while active.
     public static string DeletePlan(IPowerStore power, Guid owned)
     {
-        if (owned == HighPerformance || owned == Ultimate) throw new InvalidOperationException("Only the plan Frameforge created can be removed.");
+        if (BuiltInPlans.Contains(owned)) throw new InvalidOperationException("Only the plan Frameforge created can be removed.");
         if (!power.Exists(owned)) return "The Frameforge plan was already removed.";
+        if (power.Name(owned) != OwnedPlanName) throw new InvalidOperationException("That power plan was not created by Frameforge, so it was not removed.");
         if (power.Active() == owned) throw new InvalidOperationException("The Frameforge plan is active. Switch to another power plan or stop the boost first.");
         power.Delete(owned);
         if (power.Exists(owned)) throw new InvalidOperationException("Windows did not remove the Frameforge plan.");
@@ -184,7 +209,7 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
     {
         if (PlanTarget(power, ownedPlan) is not { } target) return new("powerPlan", "unavailable", "High performance plan not present");
         var prior = power.Active();
-        if (prior == HighPerformance || prior == Ultimate || prior == ownedPlan) return new("powerPlan", "skipped", "A performance power plan is already active.");
+        if (PerformancePlan(prior)) return new("powerPlan", "skipped", "A performance power plan is already active.");
         Capture(new("powerPlan", Prior: prior.ToString(), Applied: target.ToString()));
         power.SetActive(target);
         return power.Active() == target
@@ -250,6 +275,9 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
                     return Rank(process.Priority) <= Rank("BelowNormal") || process.Priority == "RealTime"
                         ? new(id, "skipped", $"{Label(process)}: already at {process.Priority}; not changed.")
                         : SetPriority(id, process, "BelowNormal");
+                // Already frozen (Windows suspends packaged apps; other tools can too): not ours to change or resume.
+                var (suspended, total) = processes.Threads(process);
+                if (total > 0 && suspended == total) return new(id, "skipped", $"{Label(process)}: already suspended by Windows or another program; not changed.");
                 Capture(new(id, process));
                 return processes.Suspend(process) ? new(id, "applied", $"{Label(process)}: suspended and verified.") : new(id, "failed", $"{Label(process)}: suspension could not be verified. It is resumed when the session ends.");
             });
@@ -288,9 +316,11 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
     }
     private MechanismResult RevertPower(Captured item)
     {
-        if (!Guid.TryParse(item.Prior, out var prior) || !Guid.TryParse(item.Applied, out var applied) || (applied != HighPerformance && applied != Ultimate && applied != ownedPlan)) throw new InvalidOperationException("Invalid saved power plan.");
+        if (!Guid.TryParse(item.Prior, out var prior) || !Guid.TryParse(item.Applied, out var applied)) throw new InvalidOperationException("Invalid saved power plan.");
         var current = power.Active();
+        // Checked before the allowlist so a removed Frameforge plan never blocks a recovery that has nothing left to do.
         if (current == prior) return new("powerPlan", "reverted", "The previous power plan is already active.");
+        if (!PerformancePlan(applied)) throw new InvalidOperationException("Invalid saved power plan.");
         if (current != applied) return new("powerPlan", "conflict", "The power plan was changed outside Frameforge; that change was kept.");
         if (!power.Exists(prior)) return new("powerPlan", "failed", "The previous power plan no longer exists.");
         power.SetActive(prior);
@@ -330,11 +360,14 @@ public sealed class BoostSessionEngine(IProcessControl processes, IPowerStore po
     {
         var process = Valid(item.Process);
         if (processes.Read(process) is null) return new("suspendBackground", "reverted", $"{Label(process)}: exited; nothing to resume.");
-        // Not suspended any more: already resumed (an earlier revert or another program); never resume twice.
-        if (!processes.IsSuspended(process)) return new("suspendBackground", "reverted", $"{Label(process)}: already running; not resumed again.");
+        // No thread suspended at all: our suspension is already gone. Otherwise resume exactly once, the counterpart of our one suspend,
+        // even if only some threads are suspended (threads created after the suspend start unsuspended). Node drops a capture once it
+        // reverted or conflicted, so a retry never resumes twice.
+        if (processes.Threads(process).Suspended == 0) return new("suspendBackground", "reverted", $"{Label(process)}: already running; not resumed again.");
         processes.Resume(process);
-        return processes.IsSuspended(process)
-            ? new("suspendBackground", "failed", $"{Label(process)}: still suspended after resume. Another program may also have suspended it.")
+        var (suspended, total) = processes.Threads(process);
+        return total > 0 && suspended == total
+            ? new("suspendBackground", "conflict", $"{Label(process)}: still suspended by Windows or another program after Frameforge's resume; left as it is.")
             : new("suspendBackground", "reverted", $"{Label(process)}: resumed and verified.");
     }
     private static ProcessTarget Valid(ProcessTarget? target)
@@ -482,7 +515,7 @@ public sealed class WindowsProcessControl : IProcessControl
         using var handle = Verified(identity, WindowsProcesses.SuspendResume);
         var status = NtSuspendProcess(handle);
         if (status != 0) throw new InvalidOperationException($"{identity.Name}: Windows refused to suspend it (status 0x{status:X8}).");
-        return AllThreadsSuspended(identity.Pid);
+        return Count(identity.Pid) is var (suspended, total) && total > 0 && suspended == total;
     }
     public void Resume(ProcessTarget identity)
     {
@@ -490,16 +523,16 @@ public sealed class WindowsProcessControl : IProcessControl
         var status = NtResumeProcess(handle);
         if (status != 0) throw new InvalidOperationException($"{identity.Name}: Windows refused to resume it (status 0x{status:X8}).");
     }
-    public bool IsSuspended(ProcessTarget identity)
+    public (int Suspended, int Total) Threads(ProcessTarget identity)
     {
         using var handle = Verified(identity, 0);
-        return AllThreadsSuspended(identity.Pid);
+        return Count(identity.Pid);
     }
-    private static bool AllThreadsSuspended(int pid)
+    private static (int Suspended, int Total) Count(int pid)
     {
         using var process = Process.GetProcessById(pid);
         var threads = process.Threads.Cast<ProcessThread>().ToArray();
-        return threads.Length > 0 && threads.All(t => t.ThreadState == System.Diagnostics.ThreadState.Wait && t.WaitReason == ThreadWaitReason.Suspended);
+        return (threads.Count(t => t.ThreadState == System.Diagnostics.ThreadState.Wait && t.WaitReason == ThreadWaitReason.Suspended), threads.Length);
     }
     public int Close(ProcessTarget[] identities)
     {
@@ -605,17 +638,34 @@ public sealed class WindowsPowerStore : IPowerStore
         var error = PowerSetActiveScheme(IntPtr.Zero, ref scheme);
         if (error != 0) throw new Win32Exception((int)error);
     }
-    // Same as powercfg /duplicatescheme, in-process: the new plan gets a fresh GUID and a Frameforge name.
-    public Guid Duplicate(Guid source, string name)
+    // Same as powercfg /duplicatescheme, in-process, into the caller's GUID (a non-NULL destination pointer is used as-is).
+    public void Duplicate(Guid source, Guid destination, string name)
     {
-        var pointer = IntPtr.Zero;
-        var error = PowerDuplicateScheme(IntPtr.Zero, ref source, ref pointer);
-        if (error != 0) throw new Win32Exception((int)error);
-        Guid created;
-        try { created = Marshal.PtrToStructure<Guid>(pointer); } finally { LocalFree(pointer); }
+        var pointer = Marshal.AllocHGlobal(16);
+        try
+        {
+            Marshal.StructureToPtr(destination, pointer, false);
+            var error = PowerDuplicateScheme(IntPtr.Zero, ref source, ref pointer);
+            if (error != 0) throw new Win32Exception((int)error);
+        }
+        finally { Marshal.FreeHGlobal(pointer); }
         var text = System.Text.Encoding.Unicode.GetBytes(name + "\0");
-        PowerWriteFriendlyName(IntPtr.Zero, ref created, IntPtr.Zero, IntPtr.Zero, text, (uint)text.Length);
-        return created;
+        var named = PowerWriteFriendlyName(IntPtr.Zero, ref destination, IntPtr.Zero, IntPtr.Zero, text, (uint)text.Length);
+        if (named != 0)
+        {
+            // An unnamed copy could not be told apart from Windows' own plan: remove it.
+            PowerDeleteScheme(IntPtr.Zero, ref destination);
+            throw new Win32Exception((int)named);
+        }
+    }
+    public string? Name(Guid scheme)
+    {
+        uint size = 0;
+        if (PowerReadFriendlyName(IntPtr.Zero, ref scheme, IntPtr.Zero, IntPtr.Zero, null, ref size) != 0 || size == 0 || size > 4096) return null;
+        var buffer = new byte[size];
+        return PowerReadFriendlyName(IntPtr.Zero, ref scheme, IntPtr.Zero, IntPtr.Zero, buffer, ref size) == 0
+            ? System.Text.Encoding.Unicode.GetString(buffer, 0, (int)size).TrimEnd('\0')
+            : null;
     }
     public void Delete(Guid scheme)
     {
@@ -625,6 +675,7 @@ public sealed class WindowsPowerStore : IPowerStore
     [DllImport("powrprof.dll")] private static extern uint PowerDuplicateScheme(IntPtr root, ref Guid source, ref IntPtr destination);
     [DllImport("powrprof.dll")] private static extern uint PowerDeleteScheme(IntPtr root, ref Guid scheme);
     [DllImport("powrprof.dll")] private static extern uint PowerWriteFriendlyName(IntPtr root, ref Guid scheme, IntPtr subgroup, IntPtr setting, byte[] buffer, uint size);
+    [DllImport("powrprof.dll")] private static extern uint PowerReadFriendlyName(IntPtr root, ref Guid scheme, IntPtr subgroup, IntPtr setting, byte[]? buffer, ref uint size);
     [DllImport("powrprof.dll")] private static extern uint PowerGetActiveScheme(IntPtr root, out IntPtr scheme);
     [DllImport("powrprof.dll")] private static extern uint PowerSetActiveScheme(IntPtr root, ref Guid scheme);
     [DllImport("powrprof.dll")] private static extern uint PowerEnumerate(IntPtr root, IntPtr scheme, IntPtr subgroup, uint flags, uint index, IntPtr buffer, ref uint size);
