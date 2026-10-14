@@ -15,9 +15,12 @@ try
 {
     if (!OperatingSystem.IsWindows()) throw new InvalidOperationException("Windows is required.");
     // Node writes UTF-8; the console code page would garble non-ASCII names.
-    var line = new StreamReader(Console.OpenStandardInput(), new System.Text.UTF8Encoding(false)).ReadLine();
+    var input = new StreamReader(Console.OpenStandardInput(), new System.Text.UTF8Encoding(false));
+    var line = input.ReadLine();
     if (line is null || line.Length > 1048576) throw new InvalidOperationException("Invalid request size.");
     var request = JsonSerializer.Deserialize<Request>(line, options) ?? throw new InvalidOperationException("Missing request.");
+    // Frameforge may send a second line, "cancel", while an administrator prompt is still unanswered: the request is withdrawn.
+    if (request.Command == "elevated") new Thread(() => { while (input.ReadLine() is { } next) if (next == "cancel") RestoreCommands.RequestCancel.Cancel(); }) { IsBackground = true }.Start();
     Guid? owned = request.OwnedPlan is null ? null : Guid.TryParse(request.OwnedPlan, out var plan) ? plan : throw new InvalidOperationException("Invalid power plan.");
     var ids = request.Ids ?? [];
     var facts = new WindowsFacts();

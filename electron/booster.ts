@@ -84,6 +84,8 @@ type Live = {
   ready?: boolean;
   // Administrator-prompt steps (services, standby list) the helper has not reported a result for yet.
   waiting: Set<MechanismId>;
+  // Stop was pressed: the helper's revert may restart paused services behind an administrator prompt.
+  stopping?: boolean;
   // Every "captured" line the helper sent (valid or not), and each saved capture's position among them.
   total: number;
   indices: number[];
@@ -714,14 +716,15 @@ export class BoostEngine {
       });
     });
   }
-  // The gate is held while the live session waits for an administrator answer or could ask for one again (paused services
-  // are restarted behind a prompt when the game ends). It is released as soon as neither is true.
+  // The gate is held only while a prompt can actually be open: the session waits for an administrator answer, or Stop is
+  // reverting paused services. In between (a long session) other administrator work, such as rollbacks, is not blocked.
   private syncGate() {
     const live = this.live;
     const needed =
       !!live &&
       (live.waiting.size > 0 ||
-        live.captured.some((c) => c.mechanism === "pauseServices"));
+        (!!live.stopping &&
+          live.captured.some((c) => c.mechanism === "pauseServices")));
     if (needed) {
       try {
         this.platform.elevation.hold("boost");
@@ -794,6 +797,8 @@ export class BoostEngine {
       status: "restoring",
       message: "Restoring the saved state.",
     });
+    live.stopping = true;
+    this.syncGate();
     live.channel.send({ command: "stop" });
     const result = await Promise.race([live.ended, delay(this.stopMs(live))]);
     if (result) return result;

@@ -199,7 +199,7 @@ function WindowsRestore({ data, run, pending, restorePending }: ViewProps) {
           </div>
         </div>
       )}
-      {status?.pendingCreation && (
+      {status?.pendingCreation && !restorePending && (
         <div className="notice" role="status">
           <Info size={18} />
           <div>
@@ -246,6 +246,7 @@ function WindowsRestore({ data, run, pending, restorePending }: ViewProps) {
             (applying, rolling back, Game Mode, launch settings) wait until you
             have answered it; reading and browsing still work.
           </span>
+          <Button onClick={() => void run("cancel", {})}>Cancel request</Button>
         </div>
       )}
       {blocked && (

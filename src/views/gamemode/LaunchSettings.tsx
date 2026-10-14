@@ -32,6 +32,16 @@ export function LaunchSettings({
   } | null>(null);
   const [launchTick, setLaunchTick] = useState(0);
   const launchGameId = gameId;
+  // Without a game folder nothing proves the file belongs to the game, so ask first.
+  async function chooseExe() {
+    if (!game) return;
+    if (!game.path) {
+      setConfirmPick(true);
+      return;
+    }
+    const chosen = await run("chooseExecutable", { id: gameId });
+    if (chosen) setLaunchTick((n) => n + 1);
+  }
   const launchExe = data.state.games.find(
     (g) => g.id === gameId,
   )?.executablePath;
@@ -84,18 +94,7 @@ export function LaunchSettings({
                 launch settings are off. Choose its .exe (inside the game's
                 folder) to turn them on.
               </p>
-              <Button
-                disabled={pending}
-                onClick={async () => {
-                  // Without a game folder nothing proves the file belongs to the game, so ask first.
-                  if (!game.path) {
-                    setConfirmPick(true);
-                    return;
-                  }
-                  const chosen = await run("chooseExecutable", { id: gameId });
-                  if (chosen) setLaunchTick((n) => n + 1);
-                }}
-              >
+              <Button disabled={pending} onClick={() => void chooseExe()}>
                 Choose the game's .exe…
               </Button>
             </div>
@@ -114,107 +113,126 @@ export function LaunchSettings({
         )}
         {launch && launch.gameId === gameId && (
           <ul className="mechanism-list">
-            {launch.settings.map((s) => (
-              <li key={s.setting}>
-                <span>{launchLabels[s.setting]}</span>
-                <Badge
-                  tone={
-                    s.state === "applied"
-                      ? "lime"
-                      : s.state === "ready" || s.state === "already-set"
-                        ? "neutral"
-                        : s.state === "recovery-needed"
-                          ? "red"
-                          : "amber"
-                  }
-                >
-                  {s.state === "applied"
-                    ? "set by Frameforge"
-                    : s.state === "ready"
-                      ? "not set"
-                      : s.state === "already-set"
-                        ? "already set"
-                        : s.state === "recovery-needed"
-                          ? "recovery needed"
-                          : s.state}
-                </Badge>
-                <small className="muted">{s.detail}</small>
-                {s.current !== null && (
-                  <small className="muted">Current value: {s.current}</small>
-                )}
-                {s.state === "ready" && (
-                  <Button
-                    disabled={pending}
-                    title="Review the change before it is made."
-                    onClick={async () => {
-                      try {
-                        const preview = await request("launchSettingPreview", {
-                          gameId,
-                          setting: s.setting,
-                          action: "apply",
-                        });
-                        setLaunchDialog({
-                          setting: s.setting,
-                          action: "apply",
-                          preview,
-                        });
-                      } catch (error) {
-                        setLaunchError(
-                          error instanceof Error
-                            ? error.message
-                            : "The preview failed.",
-                        );
-                      }
-                    }}
-                  >
-                    Review and apply…
-                  </Button>
-                )}
-                {s.canRevert && (
-                  <Button
-                    disabled={pending}
-                    title="Restore the value from before Frameforge changed it."
-                    onClick={async () => {
-                      try {
-                        const preview = await request("launchSettingPreview", {
-                          gameId,
-                          setting: s.setting,
-                          action: "revert",
-                        });
-                        setLaunchDialog({
-                          setting: s.setting,
-                          action: "revert",
-                          preview,
-                        });
-                      } catch (error) {
-                        setLaunchError(
-                          error instanceof Error
-                            ? error.message
-                            : "The preview failed.",
-                        );
-                      }
-                    }}
-                  >
-                    <RotateCcw size={17} /> Revert
-                  </Button>
-                )}
-                {s.canRevert && s.state !== "applied" && (
-                  <Button
-                    disabled={pending}
-                    title="Drop Frameforge's saved value without changing Windows."
-                    onClick={() =>
-                      setLaunchDialog({
-                        setting: s.setting,
-                        action: "forget",
-                        preview: null,
-                      })
+            {launch.settings.map((s) => {
+              // The PC can do it; Frameforge just does not know which program to apply it to.
+              const needsExe = s.state === "unsupported" && !launch.executable;
+              return (
+                <li key={s.setting}>
+                  <span>{launchLabels[s.setting]}</span>
+                  <Badge
+                    tone={
+                      s.state === "applied"
+                        ? "lime"
+                        : s.state === "ready" || s.state === "already-set"
+                          ? "neutral"
+                          : s.state === "recovery-needed"
+                            ? "red"
+                            : "amber"
                     }
                   >
-                    Forget saved value
-                  </Button>
-                )}
-              </li>
-            ))}
+                    {s.state === "applied"
+                      ? "set by Frameforge"
+                      : s.state === "ready"
+                        ? "not set"
+                        : s.state === "already-set"
+                          ? "already set"
+                          : s.state === "recovery-needed"
+                            ? "recovery needed"
+                            : needsExe
+                              ? "needs .exe"
+                              : s.state}
+                  </Badge>
+                  <small className="muted">
+                    {needsExe ? "Choose the game's .exe to enable" : s.detail}
+                  </small>
+                  {needsExe && data.mode !== "demo" && (
+                    <Button disabled={pending} onClick={() => void chooseExe()}>
+                      Choose the game&apos;s .exe…
+                    </Button>
+                  )}
+                  {s.current !== null && (
+                    <small className="muted">Current value: {s.current}</small>
+                  )}
+                  {s.state === "ready" && (
+                    <Button
+                      disabled={pending}
+                      title="Review the change before it is made."
+                      onClick={async () => {
+                        try {
+                          const preview = await request(
+                            "launchSettingPreview",
+                            {
+                              gameId,
+                              setting: s.setting,
+                              action: "apply",
+                            },
+                          );
+                          setLaunchDialog({
+                            setting: s.setting,
+                            action: "apply",
+                            preview,
+                          });
+                        } catch (error) {
+                          setLaunchError(
+                            error instanceof Error
+                              ? error.message
+                              : "The preview failed.",
+                          );
+                        }
+                      }}
+                    >
+                      Review and apply…
+                    </Button>
+                  )}
+                  {s.canRevert && (
+                    <Button
+                      disabled={pending}
+                      title="Restore the value from before Frameforge changed it."
+                      onClick={async () => {
+                        try {
+                          const preview = await request(
+                            "launchSettingPreview",
+                            {
+                              gameId,
+                              setting: s.setting,
+                              action: "revert",
+                            },
+                          );
+                          setLaunchDialog({
+                            setting: s.setting,
+                            action: "revert",
+                            preview,
+                          });
+                        } catch (error) {
+                          setLaunchError(
+                            error instanceof Error
+                              ? error.message
+                              : "The preview failed.",
+                          );
+                        }
+                      }}
+                    >
+                      <RotateCcw size={17} /> Revert
+                    </Button>
+                  )}
+                  {s.canRevert && s.state !== "applied" && (
+                    <Button
+                      disabled={pending}
+                      title="Drop Frameforge's saved value without changing Windows."
+                      onClick={() =>
+                        setLaunchDialog({
+                          setting: s.setting,
+                          action: "forget",
+                          preview: null,
+                        })
+                      }
+                    >
+                      Forget saved value
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

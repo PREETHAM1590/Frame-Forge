@@ -46,6 +46,8 @@ export function useApplyFlow({
   const [understood, setUnderstood] = useState(false);
   const [typedName, setTypedName] = useState("");
   const [applying, setApplying] = useState(false);
+  // The last confirm failed before finishing (its token is spent): the typed confirmation stays, and the next apply re-previews first.
+  const [stale, setStale] = useState(false);
   const [phase, setPhase] = useState<ApplyPhase>("apply");
   const [result, setResult] = useState<Activity | null>(null);
   const [restoreOffer, setRestoreOffer] = useState(false);
@@ -60,6 +62,7 @@ export function useApplyFlow({
   // `current`: the state to judge capabilities by; a caller that just changed them passes the fresh bootstrap.
   async function open(ids: OperationId[], current: Bootstrap | null = data) {
     setSelection(ids);
+    setStale(false);
     setPreview(null);
     setPreviewError(null);
     setResult(null);
@@ -112,6 +115,7 @@ export function useApplyFlow({
     if (!preview || !selection) return;
     setApplying(true);
     setNoPoint(null);
+    refresh ||= stale;
     try {
       let token = preview.token;
       if (withPoint) {
@@ -153,10 +157,12 @@ export function useApplyFlow({
         confirmed: true,
         acknowledged: preview.security,
       });
-      if (output) setResult(output);
-      else {
-        setPreview(null);
-        setConfirmed(false);
+      if (output) {
+        setStale(false);
+        setResult(output);
+      } else {
+        // Keep the preview and the typed confirmation; the message is already shown. Retrying re-checks Windows first.
+        setStale(true);
       }
     } catch (e) {
       notify(e instanceof Error ? e.message : "Preview failed.", true);
@@ -178,6 +184,7 @@ export function useApplyFlow({
     understood,
     typedName,
     applying,
+    stale,
     phase,
     result,
     restoreOffer,

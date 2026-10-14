@@ -663,7 +663,7 @@ export const catalogue: Optimization[] = [
     description:
       "Policy that stops Store apps running in the background for every user.",
     reason:
-      "Documented policy Privacy/LetAppsRunInBackground = 2. Apps no longer update live tiles or receive background notifications, and the per-app switches in Settings are locked.",
+      "Documented policy Privacy/LetAppsRunInBackground = 2. Apps no longer update live tiles or receive background notifications, and the per-app switches in Settings are locked. Xbox Game Bar widgets may also stop running in the background.",
     settings: [
       "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy: LetAppsRunInBackground = 2 (DWORD)",
     ],

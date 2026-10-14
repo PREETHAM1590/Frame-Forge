@@ -586,4 +586,28 @@ public class V101Tests
         Assert.Equal("ready", TimerGlobalSetting.Run(new("read", false, null), 26300, idle).State);
         Assert.Throws<InvalidOperationException>(() => TimerGlobalSetting.Run(new("enable", true, null), 26300, idle, elevated: false));
     }
+    // v1.1.0: a restore point prompt that nobody answers ends as "Not approved - cancelled", and a late approval changes nothing.
+    [Fact]
+    public void AnUnansweredRestorePointPromptEndsAsNotApprovedAndALateApprovalDoesNothing()
+    {
+        var launcher = new PromptLauncher(new Services());
+        var result = (RestoreResult)RestoreCommands.Run(new("restore-list", []), launcher, TimeSpan.FromMilliseconds(150), TimeSpan.FromSeconds(5), default, elevated: false);
+        Assert.Equal("elevation-cancelled", result.Code);
+        Assert.StartsWith("Not approved", result.Message);
+        Assert.Contains("nothing was changed", result.Message);
+        launcher.Answer.Set();
+    }
+    [Fact]
+    public void CancelWithdrawsTheRestorePointRequestBeforeItIsApproved()
+    {
+        var launcher = new PromptLauncher(new Services());
+        using var cancel = new CancellationTokenSource();
+        var run = Task.Run(() => (RestoreResult)RestoreCommands.Run(new("restore-list", []), launcher, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(5), cancel.Token, elevated: false));
+        Assert.True(launcher.Opened.Wait(5000));
+        cancel.Cancel();
+        var result = run.GetAwaiter().GetResult();
+        Assert.Equal("elevation-cancelled", result.Code);
+        Assert.StartsWith("Not approved", result.Message);
+        launcher.Answer.Set();
+    }
 }

@@ -12,18 +12,29 @@ import type { ReactNode } from "react";
 
 type Tone = "lime" | "amber" | "red" | "cyan";
 export interface Outcome {
-  key: "applied" | "partial" | "reverted" | "failed" | "cancelled" | "recovery";
+  key:
+    | "applied"
+    | "unchanged"
+    | "partial"
+    | "reverted"
+    | "failed"
+    | "cancelled"
+    | "recovery";
   label: string;
   tone: Tone;
 }
 /** Maps the journal row (and whether preset items were skipped) to one clear state. */
 export function outcomeOf(result: Activity, skippedCount: number): Outcome {
+  if (result.status === "success" && result.message.startsWith("Already set"))
+    return { key: "unchanged", label: "Already set — no change", tone: "cyan" };
   if (result.status === "success")
     return skippedCount > 0
       ? { key: "partial", label: "Partially applied", tone: "amber" }
       : { key: "applied", label: "Applied", tone: "lime" };
   if (result.status === "recovery-needed")
     return { key: "recovery", label: "Recovery needed", tone: "red" };
+  if (result.status === "cancelled" && result.message.startsWith("Not applied"))
+    return { key: "cancelled", label: "Not applied", tone: "amber" };
   if (result.status === "cancelled")
     return { key: "cancelled", label: "Cancelled", tone: "amber" };
   if (result.message.startsWith("Windows reverted"))
@@ -36,6 +47,7 @@ export function outcomeOf(result: Activity, skippedCount: number): Outcome {
 }
 const icons = {
   applied: CheckCircle2,
+  unchanged: CheckCircle2,
   partial: AlertTriangle,
   reverted: RotateCcw,
   failed: XCircle,

@@ -185,7 +185,8 @@
 .af-result.recovery {
   border-left-color: var(--c-error);
 }
-.af-result.reverted {
+.af-result.reverted,
+.af-result.unchanged {
   border-left-color: var(--c-info);
 }
 .af-result-head {
@@ -214,6 +215,7 @@
 .af-result.recovery .af-result-head svg {
   color: var(--c-error);
 }
-.af-result.reverted .af-result-head svg {
+.af-result.reverted .af-result-head svg,
+.af-result.unchanged .af-result-head svg {
   color: var(--c-info);
 }

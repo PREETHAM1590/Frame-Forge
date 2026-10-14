@@ -146,7 +146,10 @@ export class AppService {
         noRestoreInFlight();
         return this.engine.confirm(token, acknowledged);
       },
-      cancel: async () => this.engine.cancel(),
+      cancel: async () => {
+        const operation = this.engine.cancel();
+        return this.restorePoints.cancel() || operation;
+      },
       rollback: async ({ id }) => {
         noRestoreInFlight();
         return this.engine.rollback(id);

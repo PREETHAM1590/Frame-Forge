@@ -39,8 +39,12 @@ export function Dashboard({
   const live = data.activity.filter(
     (a) => a.status === "success" && a.rollback,
   );
-  const lowered = live.filter((a) =>
-    a.ids.some((id) => securityIds.includes(id)),
+  // A security item whose apply or rollback ended in recovery-needed may still be lowered, so it counts too.
+  const lowered = data.activity.filter(
+    (a) =>
+      a.rollback &&
+      (a.status === "success" || a.status === "recovery-needed") &&
+      a.ids.some((id) => securityIds.includes(id)),
   );
   const bootedAt = Date.parse(data.bootedAt);
   const awaitingRestart = live.flatMap((a) =>
@@ -52,22 +56,34 @@ export function Dashboard({
       : [],
   );
   const [restoring, setRestoring] = useState(false);
+  const [stoppedNote, setStoppedNote] = useState("");
+  const nameOf = (id: string) => catalogue.find((o) => o.id === id)?.name;
+  const securityNames = (rows: typeof lowered) =>
+    rows
+      .flatMap((a) => a.ids)
+      .filter((id) => securityIds.includes(id))
+      .map(nameOf)
+      .filter((n): n is string => !!n);
   async function restoreSecurity() {
     setRestoring(true);
+    setStoppedNote("");
     try {
-      // Newest first, one administrator prompt per item; stop at the first failure so nothing is skipped silently.
-      for (const row of lowered)
-        if (!(await run("rollback", { id: row.id, confirmed: true }))) break;
+      // Newest first, one administrator prompt per item. Stops at the first item that is not restored (declined, blocked or
+      // failed) and says which ones are still lowered, so nothing is skipped silently.
+      for (const [index, row] of lowered.entries()) {
+        const result = await run("rollback", { id: row.id, confirmed: true });
+        if (result?.status !== "rolled-back") {
+          setStoppedNote(
+            `Stopped. Still lowered: ${securityNames(lowered.slice(index)).join(", ")}.`,
+          );
+          break;
+        }
+      }
     } finally {
       setRestoring(false);
     }
   }
-  const nameOf = (id: string) => catalogue.find((o) => o.id === id)?.name;
-  const loweredNames = lowered
-    .flatMap((a) => a.ids)
-    .filter((id) => securityIds.includes(id))
-    .map(nameOf)
-    .filter((n): n is string => !!n);
+  const loweredNames = securityNames(lowered);
   const driftedNames = [...new Set(data.drifted.flatMap((d) => d.ids))]
     .map(nameOf)
     .filter((n): n is string => !!n);
@@ -95,6 +111,7 @@ export function Dashboard({
       />
       <Alerts
         loweredNames={loweredNames}
+        stoppedNote={stoppedNote}
         driftedNames={driftedNames}
         restartNames={restartNames}
         busy={pending || restoring}

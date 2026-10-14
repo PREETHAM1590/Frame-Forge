@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.1.0
+
+### 43 new optimizations
+
+- **43 new Windows optimizations** in the Optimizations page, grouped as standard, advanced and security trade-offs. Standard items change current-user settings (shortcut naming, Sticky Keys shortcut, transparency, Explorer start folder and similar). Advanced items change machine settings (HKLM and boot-store values) through one administrator approval. Every item shows the exact setting, its before and after value, whether a restart is needed, and how it is rolled back.
+- **Security trade-offs with guardrails.** A small set of items lowers Windows security (for example turning off UAC or Defender policy). They are never part of a preset, are applied one at a time, offer a restore point first, need an acknowledgement box and the item's name typed, and are listed on the Dashboard with **Restore all security settings** until they are rolled back.
+- Items that Windows ignores, that only inform, or that this PC cannot do are listed under "Not offered or information only" with the reason, instead of looking like a missing feature.
+
+### Fixes for "unavailable" features
+
+- Game Mode and Optimizations say why a step is unavailable and, where possible, how to enable it: **Create High performance plan**, **Choose the game's .exe** for per-game launch settings (a scanned game whose program is unknown now reads "Choose the game's .exe to enable" instead of "Unsupported").
+- Applying a setting that Windows already has says **Already set - no change**, writes nothing and leaves no rollback entry.
+
+### Redesigned interface and apply flow
+
+- New interface: dashboard with a security and drift banner, game library with real launcher icons, Game Mode, Presets, Restore & backups and Activity, light and dark themes, bundled fonts, reduced-motion support.
+- A step-by-step **apply flow**: review, optional restore point, confirmation, progress and a clear result (applied, partially applied, already set, not applied, reverted by Windows, failed, recovery needed). If an attempt fails, your typed confirmation is kept and the next attempt re-checks Windows first.
+
+### Elevation gate and freshness guards
+
+- Every action that opens a Windows administrator prompt (restore points, optimizations, recovery, the timer setting, the services step) shares one gate, so two prompts never open together. All four elevated helper entry points (`--elevated`, `--elevated-services`, `--elevated-timer`, `--elevated-optimize`) act only on a fresh request: a prompt answered late, or after Cancel or Stop, changes nothing.
+- The Game Mode session holds the gate only while a prompt is actually open (waiting for an answer, or while Stop restarts paused services), not for the whole session.
+- A restore point whose prompt nobody answers ends after 2 minutes as **Not approved - cancelled**. A **Cancel request** button withdraws it earlier. While the prompt is unanswered the page says "Waiting for administrator approval", not "Windows may still be creating a restore point".
+
+### Bug fixes
+
+- Declining or missing the administrator prompt for an optimization no longer opens a second prompt to "restore" a change that never happened, and no longer produces a false "recovery needed" row. The result reads "Not applied - administrator approval declined".
+- A rollback whose prompt is declined or blocked leaves the item restorable and says so, instead of turning into "recovery needed".
+- The Dashboard security banner and **Restore all security settings** count security items that are applied or in recovery needed, and the restore loop stops at the first item that is not restored and names the ones still lowered.
+
 ## 1.0.1
 
 ### Features that used to say "unavailable" can now be turned on

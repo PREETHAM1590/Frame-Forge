@@ -114,6 +114,14 @@ export function ApplyFlowDialog({
                   restoreRequests={restoreRequests}
                   skippedNotice={skippedNotice}
                 >
+                  {flow.stale && (
+                    <p className="notice" role="status">
+                      <AlertTriangle size={17} />
+                      The last attempt did not finish, so nothing is assumed.
+                      Your confirmation is kept; Confirm &amp; apply checks
+                      Windows again first.
+                    </p>
+                  )}
                   {flow.noPoint && (
                     <div className="notice" role="alert">
                       <AlertTriangle size={18} />

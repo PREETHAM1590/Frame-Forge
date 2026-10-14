@@ -224,50 +224,28 @@ public static class RestoreCommands
     public static bool IsElevated() => new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
 
     // GC-7: never concatenate arguments; ArgumentList is honoured by ShellExecuteEx (verified by spike).
-    public static object Run(ElevatedRequest request)
+    public static object Run(ElevatedRequest request, IElevatedLauncher? launcher = null, TimeSpan? approvalBudget = null, TimeSpan? childWait = null, CancellationToken? cancel = null, bool? elevated = null)
     {
         var action = Parse(request);
-        if (IsElevated()) return action(new RestorePoints(new WindowsRestoreStore()));
-        SweepStaleResults();
-        var draft = Path.Combine(Path.GetTempPath(), $"frameforge-{Guid.NewGuid():N}.json");
-        string resultPath;
-        using (var file = new FileStream(draft, FileMode.CreateNew, FileAccess.Write, FileShare.Read)) resultPath = FinalPath(file.SafeFileHandle);
-        // The elevated child works only while this request is fresh: an unanswered prompt cannot act after the app gave up (Node waits 330 s).
-        ElevationRequest.Create(resultPath, RequestValidity);
-        var keep = false;
-        try
+        if (elevated ?? IsElevated()) return action(new RestorePoints(new WindowsRestoreStore()));
+        // The shared guard: an unanswered prompt is withdrawn after the approval budget (or on Cancel), so a late approval changes nothing.
+        var outcome = ElevatedCall.Run(launcher ?? new WindowsElevatedLauncher(), "--elevated", request.Action, request.Args ?? [], approvalBudget ?? ApprovalBudget, childWait ?? ParentWait, cancel ?? RequestCancel.Token);
+        switch (outcome.Status)
         {
-            var info = new ProcessStartInfo { FileName = Environment.ProcessPath!, UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
-            foreach (var argument in new[] { "--elevated", request.Action, resultPath }.Concat(request.Args ?? [])) info.ArgumentList.Add(argument);
-            Process? child;
-            // Blocks while the consent prompt is open; the wait below starts only after approval.
-            try { child = Process.Start(info); }
-            catch (Win32Exception error) when (error.NativeErrorCode == 1223)
-            {
-                return new RestoreResult(true, "Administrator approval was declined. Nothing was changed.", "elevation-cancelled");
-            }
-            using (child)
-            {
-                if (child is null) throw new InvalidOperationException("The administrator request could not start.");
-                if (!child.WaitForExit(ParentWait))
-                {
-                    // Keep the file: the child still writes its verified result, which the app reads on the next refresh.
-                    keep = true;
-                    return new RestoreResult(true, "Windows is still working on the administrator request. The result is checked on the next refresh.", "elevated-pending", ResultPath: resultPath);
-                }
-                var exit = ExitCode(child);
-                if (exit == ElevationRequest.NotFreshExitCode) return new RestoreResult(true, "The administrator request expired before it was approved. Nothing was changed.", "elevation-cancelled");
-                if (exit == 2) return new RestoreResult(false, "The administrator helper rejected its result file. Nothing was changed.", "elevated-rejected");
-            }
-            return ParseResult(File.ReadAllText(resultPath));
+            case ElevationStatus.Declined: return new RestoreResult(true, "Administrator approval was declined. Nothing was changed.", "elevation-cancelled");
+            case ElevationStatus.NotApproved or ElevationStatus.Cancelled: return new RestoreResult(true, "Not approved — cancelled. Administrator approval was not given, so nothing was changed. A prompt that is still open does nothing now.", "elevation-cancelled");
+            case ElevationStatus.Expired: return new RestoreResult(true, "The administrator request expired before it was approved. Nothing was changed.", "elevation-cancelled");
+            case ElevationStatus.Rejected: return new RestoreResult(false, "The administrator helper rejected its result file. Nothing was changed.", "elevated-rejected");
+            case ElevationStatus.NoChild: throw new InvalidOperationException("The administrator request could not start.");
+            // Approved and running: the child still writes its verified result, which the app reads on the next refresh.
+            case ElevationStatus.ChildTimeout: return new RestoreResult(true, "Windows is still working on the administrator request. The result is checked on the next refresh.", "elevated-pending", ResultPath: outcome.ResultPath);
         }
-        finally
-        {
-            ElevationRequest.Withdraw(resultPath);
-            if (!keep) TryDelete(resultPath);
-        }
+        return ParseResult(outcome.Text ?? throw new InvalidOperationException("The administrator request returned no result."));
     }
-    public static readonly TimeSpan ParentWait = TimeSpan.FromSeconds(150), RequestValidity = TimeSpan.FromSeconds(300);
+    // Set by the helper's stdin watcher when Frameforge sends "cancel" while the prompt is still open.
+    public static readonly CancellationTokenSource RequestCancel = new();
+    public static readonly TimeSpan ApprovalBudget = TimeSpan.FromSeconds(120);
+    public static readonly TimeSpan ParentWait = TimeSpan.FromSeconds(150);
     internal static int? ExitCode(Process child)
     {
         try { return child.ExitCode; } catch (Exception error) when (error is InvalidOperationException or Win32Exception) { return null; }

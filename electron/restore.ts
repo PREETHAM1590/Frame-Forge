@@ -65,6 +65,10 @@ export class RestorePointService {
       this.platform.elevation.release("restore");
     }
   }
+  /** Withdraws the request whose Windows prompt is still open, so a late approval changes nothing. */
+  cancel() {
+    return this.busy && (this.platform.cancelElevated?.() ?? false);
+  }
   // A dated past confirmation: shown as "confirmed <time>", dropped by any read that says off or unknown.
   private confirmedAt(status: PlatformRestoreStatus): string | null {
     const saved = this.repo.meta(driveKey) as {

@@ -213,7 +213,7 @@ describe("one administrator prompt at a time", () => {
     ).rejects.toThrow("x");
     expect(gate.current).toBeNull();
   });
-  it("holds the gate from a manual services start until the answer, and again while services stay paused", async () => {
+  it("holds the gate only while a prompt is open: until the answer, then again while Stop reverts paused services", async () => {
     const { repo, game, platform } = seed();
     const engine = new BoostEngine(repo, platform, () => {}, {
       start: 1000,
@@ -225,14 +225,25 @@ describe("one administrator prompt at a time", () => {
     expect(session?.message).toMatch(/Waiting for administrator approval/);
     expect(platform.elevation.current).toBe("boost");
     const helper = helpers[0]!;
-    // The prompt is answered: services are paused, so the end-of-session restart may still ask. The gate stays.
+    // The prompt is answered: the elevated step has finished, so a long session no longer blocks rollbacks or restore points.
     helper.line({
       event: "applied",
       mechanism: "pauseServices",
       detail: "Paused 1 service(s).",
     });
-    expect(platform.elevation.current).toBe("boost");
+    expect(platform.elevation.current).toBeNull();
+    expect(() => platform.elevation.hold("optimize")).not.toThrow();
+    platform.elevation.release("optimize");
+    // Stop reverts the services behind a prompt of its own, so the gate is taken again for that step.
+    const original = helper.onSend;
+    let heldDuringRevert: string | null = null;
+    helper.onSend = (command) => {
+      if (command.command === "stop")
+        heldDuringRevert = platform.elevation.current;
+      original(command);
+    };
     await engine.stop();
+    expect(heldDuringRevert).toBe("boost");
     expect(platform.elevation.current).toBeNull();
     repo.close();
   });

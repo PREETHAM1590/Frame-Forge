@@ -37,11 +37,40 @@ export type ElevationUse =
 const waitingFor: Record<ElevationUse, string> = {
   restore: "A System Restore request is waiting for administrator approval.",
   boost:
-    "Game Mode is waiting for administrator approval, or may ask for it when the game ends (it paused services).",
+    "Game Mode is waiting for administrator approval, or is stopping and may ask for it.",
   recover: "Game Mode recovery is waiting for administrator approval.",
   timer: "The timer setting is waiting for administrator approval.",
   optimize:
     "An optimization that needs administrator approval is waiting for it.",
+};
+/** A step that stopped before changing anything (declined, not approved in time, or another prompt held the gate): nothing needs restoring. */
+export class NotApplied extends Error {
+  constructor(
+    message: string,
+    readonly reason = message,
+  ) {
+    super(message);
+  }
+}
+/** The helper's own words for "the administrator step never ran" (not a failure that may have written something). */
+const notChanged = (error: unknown): NotApplied | null => {
+  if (error instanceof NotApplied) return error;
+  if (!(error instanceof Error)) return null;
+  const m = error.message;
+  if (/could not start/.test(m) && /^The administrator request/.test(m))
+    return new NotApplied(m, "the administrator request could not start");
+  if (!/Nothing was changed/.test(m) || /could not be undone/.test(m))
+    return null;
+  return new NotApplied(
+    m,
+    /declined/i.test(m)
+      ? "administrator approval declined"
+      : /not given in time/i.test(m)
+        ? "administrator approval was not given in time"
+        : /expired/i.test(m)
+          ? "the administrator request expired before it was approved"
+          : "the administrator step did not run",
+  );
 };
 /** One Windows administrator prompt at a time: restore points, recovery, the timer setting and the booster's services step never overlap. */
 export class ElevationGate {
@@ -52,8 +81,9 @@ export class ElevationGate {
   /** Takes the gate or throws; taking it again as the same user is allowed. */
   hold(use: ElevationUse) {
     if (this.holder && this.holder !== use)
-      throw new Error(
+      throw new NotApplied(
         `${waitingFor[this.holder]} Finish or answer it first, so two prompts never open together.`,
+        `${waitingFor[this.holder].replace(/[.]$/, "")}; answer or finish it first`,
       );
     this.holder = use;
   }
@@ -173,6 +203,8 @@ export interface Platform {
   listPowerPlans(): Promise<PowerPlanEntry[]>;
   deleteDuplicatePlan(plan: string): Promise<string>;
   spawnSession(): SessionChannel;
+  /** Withdraws an administrator request whose prompt is still open; false when none is waiting. */
+  cancelElevated?(): boolean;
   /** Re-checks per-machine prerequisites and updates `capabilities`; returns a warning when the check itself failed. */
   probe?(): Promise<string | null>;
   /** The Frameforge-created plan GUID (from SQLite); optimizations treat it like a Windows performance plan. */
@@ -240,6 +272,7 @@ export class WindowsPlatform implements Platform {
     request: unknown,
     signal?: AbortSignal,
     timeoutMs = 20000,
+    cancelable = false,
   ): Promise<ReturnType<typeof HelperResult.parse>> {
     return new Promise((resolve, reject) => {
       const child = spawn(this.executable, [], {
@@ -253,6 +286,7 @@ export class WindowsPlatform implements Platform {
       const finish = (error?: Error) => {
         if (done) return;
         done = true;
+        if (cancelable) this.cancelRequest = null;
         clearTimeout(timeout);
         signal?.removeEventListener("abort", abort);
         if (error) reject(error);
@@ -315,8 +349,21 @@ export class WindowsPlatform implements Platform {
         abort();
         return;
       }
-      child.stdin.end(JSON.stringify(request) + "\n");
+      if (cancelable) {
+        // Stdin stays open: "cancel" withdraws an administrator request that is still waiting for its prompt.
+        child.stdin.write(JSON.stringify(request) + "\n");
+        this.cancelRequest = () => {
+          if (child.stdin.writable) child.stdin.write("cancel\n");
+        };
+      } else child.stdin.end(JSON.stringify(request) + "\n");
     });
+  }
+  private cancelRequest: (() => void) | null = null;
+  /** Withdraws the restore point request whose Windows prompt is still open; a late approval then changes nothing. */
+  cancelElevated() {
+    if (!this.cancelRequest) return false;
+    this.cancelRequest();
+    return true;
   }
   // power-plan needs a performance plan (High performance, Ultimate or the owned copy); a read-only capture tells.
   async probe(): Promise<string | null> {
@@ -390,9 +437,14 @@ export class WindowsPlatform implements Platform {
         signal,
         machine ? WindowsPlatform.elevatedTimeout : 20000,
       );
-    const result = machine
-      ? await this.elevation.with("optimize", ask)
-      : await ask();
+    let result;
+    try {
+      result = machine
+        ? await this.elevation.with("optimize", ask)
+        : await ask();
+    } catch (error) {
+      throw (machine && notChanged(error)) || error;
+    }
     if (typeof result.verified === "boolean")
       this.appliedCheck = {
         key: WindowsPlatform.key(ids),
@@ -427,9 +479,14 @@ export class WindowsPlatform implements Platform {
         undefined,
         machine ? WindowsPlatform.elevatedTimeout : 20000,
       );
-    const result = machine
-      ? await this.elevation.with("optimize", ask)
-      : await ask();
+    let result;
+    try {
+      result = machine
+        ? await this.elevation.with("optimize", ask)
+        : await ask();
+    } catch (error) {
+      throw (machine && notChanged(error)) || error;
+    }
     const plain = "Snapshot restored and verified.";
     return result.message.startsWith(plain)
       ? result.message.slice(plain.length).trim() || undefined
@@ -562,6 +619,7 @@ export class WindowsPlatform implements Platform {
       { command: "elevated", elevated: { action, args } },
       undefined,
       elevatedTimeout,
+      true,
     );
   }
   async restoreStatus() {
@@ -704,6 +762,7 @@ export class MockPlatform implements Platform {
   /** Tests may supply the optional read-only checks. */
   defenderStatus?: () => Promise<string | null>;
   recheck?: (ids: OperationId[]) => Promise<OperationId[]>;
+  cancelElevated?: () => boolean;
   constructor(testOperations = false) {
     if (testOperations) this.capabilities = ["mouse-precision", "capture-off"];
   }

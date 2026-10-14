@@ -13,6 +13,8 @@ Get the Windows installer (and the SHA-256 checksums) from the [Releases page](h
 
 - **Unsigned.** The installer and `Frameforge.Windows.exe` are not code-signed, so SmartScreen may warn on first run (see above).
 - **Administrator prompts.** Windows asks for approval for each of these, and declining changes nothing: creating or listing restore points, turning on System Protection, pausing services or clearing the standby memory list during a boost, and turning on the Windows 11 timer setting. Only one prompt is open at a time. If you leave a prompt unanswered it times out and nothing is changed; a prompt that is still open after that does nothing.
+- **Security trade-offs lower your PC's security.** They are opt-in, one at a time, and each can be rolled back. A rollback that needs administrator approval waits for you; declining leaves the item restorable. If Game Mode ends by itself (the game exits) while services were paused, the end-of-session restart prompt is not covered by the shared gate.
+- **Restore point prompts time out.** An unanswered prompt ends after 2 minutes as "Not approved - cancelled" (Cancel request withdraws it sooner).
 - **No benchmark.** Frameforge shows system CPU and RAM snapshots, not FPS. A PresentMon-based benchmark is not included.
 - **Not verified by a person on a second PC.** See [Feature Status](docs/FEATURE_STATUS.md) for what was run on real hardware and what only ran against fakes.
 
@@ -76,7 +78,7 @@ Every status below is defined in [Feature Status](docs/FEATURE_STATUS.md). The s
 - **Game detection** reads 12 sources: Steam, Epic Games, GOG, Xbox app (`.GamingRoot`), Microsoft Store packages that ship `MicrosoftGame.config`, EA app, Ubisoft Connect, Battle.net, Riot Games, Rockstar Games, itch.io, and Windows Uninstall registry entries. A folder you choose can also be scanned. Launcher parsers are read-only. Which sources were checked on the development PC and which only with fixtures is listed in the Feature Status table.
 - **Game Booster** applies reversible changes to a running library game in one of five modes. Changes are captured before they are made, verified after, and reverted when the game exits, when you press Stop, when the app quits, or after a crash. Details are in the table below.
 - **Windows preferences** (current-user only, no elevation): consistent pointer movement and background game capture (Game DVR). Preview, confirmation, verification and rollback are included.
-- **Optimizations** that are previewed before any change: the consistent pointer and Game DVR preferences above, and a persistent switch to a High performance power plan when one exists. Other catalogue entries (GPU scheduling, DNS, drivers, services, third-party startup) are unsupported and link to the relevant Windows page where one exists.
+- **Optimizations** (v1.1.0: 43 more than 1.0) that are previewed before any change: current-user preferences, machine settings that need one administrator approval, boot-store items, a persistent High performance power plan, and a few **security trade-offs** (never in presets, one at a time, restore point offered, acknowledgement and typed name required, listed on the Dashboard until rolled back). Applying a value Windows already has reports "Already set - no change". Entries Windows ignores or that only inform are listed with the reason and never changed.
 
 ### Game Booster
 

@@ -8,12 +8,14 @@ import { Button } from "../../components/ui";
 /** Security trade-offs, drifted settings and pending restarts, each with its own live role. */
 export function Alerts({
   loweredNames,
+  stoppedNote = "",
   driftedNames,
   restartNames,
   busy,
   onRestoreSecurity,
 }: {
   loweredNames: string[];
+  stoppedNote?: string;
   driftedNames: string[];
   restartNames: string[];
   busy: boolean;
@@ -29,6 +31,7 @@ export function Alerts({
           <div>
             <strong>Security settings are lowered on this PC.</strong>
             <p>{loweredNames.join(", ")}.</p>
+            {stoppedNote && <p>{stoppedNote}</p>}
             <Button
               variant="danger"
               disabled={busy}

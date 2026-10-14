@@ -65,7 +65,7 @@ public sealed class WindowsElevatedLauncher : IElevatedLauncher
 
 public enum ElevationStatus { Done, Declined, NotApproved, Cancelled, Rejected, Expired, ChildTimeout, NoChild }
 // Text is the elevated child's result file when Status is Done.
-public sealed record ElevationOutcome(ElevationStatus Status, string? Text = null);
+public sealed record ElevationOutcome(ElevationStatus Status, string? Text = null, string? ResultPath = null);
 
 public static class ElevatedCall
 {
@@ -100,7 +100,7 @@ public static class ElevatedCall
                 {
                     // The child may still write its result; the file stays and is swept later.
                     keep = true;
-                    return new(ElevationStatus.ChildTimeout);
+                    return new(ElevationStatus.ChildTimeout, null, resultPath);
                 }
                 var code = child.ExitCode;
                 if (code == ElevationRequest.NotFreshExitCode) return new(abandoned != ElevationStatus.Done ? abandoned : ElevationStatus.Expired);

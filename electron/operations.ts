@@ -8,7 +8,7 @@ import {
   type Preview,
   type Snapshot,
 } from "../shared/contracts.js";
-import type { Platform } from "./platform.js";
+import { NotApplied, type Platform } from "./platform.js";
 import { Repository } from "./repository.js";
 const restartOrder: Restart[] = [
   "none",
@@ -55,6 +55,14 @@ const targetPlan = (snapshot: Snapshot) =>
   (snapshot.target ?? "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c").toLowerCase();
 const alreadyOnTarget = (snapshot: Snapshot) =>
   snapshot.scheme?.toLowerCase() === targetPlan(snapshot);
+// Every captured value already equals what applying would write (and the plan, if any, is active): applying changes nothing.
+const sameAsTarget = (v: Snapshot["values"][number]) =>
+  v.target !== undefined &&
+  (v.target === null ? !v.existed : v.existed && v.value === v.target);
+const alreadySet = (snapshot: Snapshot) =>
+  (snapshot.values.length > 0 || !!snapshot.scheme) &&
+  snapshot.values.every(sameAsTarget) &&
+  (!snapshot.scheme || alreadyOnTarget(snapshot));
 const targetLabel = (snapshot: Snapshot) =>
   planName(targetPlan(snapshot), snapshot.targetName);
 export class OperationEngine {
@@ -192,6 +200,16 @@ export class OperationEngine {
         throw new Error(
           "Windows settings changed after preview. Review a new preview.",
         );
+      // Nothing to write: no backup, and no rollback entry that could ever change anything.
+      if (alreadySet(current)) {
+        const row = this.repo.beginOperation(preview.ids, current, "");
+        return this.repo.finish(
+          row.id,
+          "success",
+          "Already set — no change. Windows already has these values, so nothing was written.",
+          false,
+        );
+      }
       const backup = this.repo.backup("Before Windows preferences");
       record = this.repo.beginOperation(preview.ids, current, backup.id);
       if (this.controller.signal.aborted) throw new Error("Cancelled");
@@ -214,6 +232,15 @@ export class OperationEngine {
       );
     } catch (e) {
       if (!record) throw e;
+      // The administrator step never ran (declined, not approved in time, or another prompt was open): nothing was written, so
+      // restoring would only open a second prompt for a change that never happened.
+      if (e instanceof NotApplied)
+        return this.repo.finish(
+          record.id,
+          "cancelled",
+          `Not applied — ${e.reason}. Nothing was changed.`,
+          false,
+        );
       try {
         await this.platform.restore(preview.snapshot, false);
         return this.repo.finish(
@@ -263,7 +290,13 @@ export class OperationEngine {
         `The captured Windows state was restored and verified.${note ? ` ${note}` : ""}`,
         false,
       );
-    } catch {
+    } catch (e) {
+      // Declined, not approved or blocked by another prompt: nothing was restored and nothing is in doubt. The row stays restorable.
+      if (e instanceof NotApplied) {
+        const text = `Rollback not done — ${e.reason}. The settings are unchanged; retry when you can answer the prompt.`;
+        this.repo.log("Rollback not done", text, "failed");
+        throw Object.assign(new Error(text), { logged: true });
+      }
       return this.repo.finish(
         id,
         "recovery-needed",
