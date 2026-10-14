@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- **Game Enhancers on Game Mode.** A toggle list of enhancers (Power Plan, CPU priority, CPU affinity / smart cores, GPU Priority, core parking, power throttling, Game Bar capture, timer resolution, background apps, pause services, standby purge) that works on every mode, with per-enhancer overrides and a reset to the mode's defaults.
+- **New: GPU Priority.** Raises the game's GPU scheduling priority; on by default in Competitive mode.
+- **Fixed a scan progress race** where progress events could be missed between the page rendering and subscribing.
+- **Tooltips are keyboard-accessible** (focus shows them, Escape dismisses).
+
 ## 1.1.2
 
 - **Restore points: clearer when Windows skips creating one.** When Windows skips creating a point because a recent one exists, Frameforge now says so (with the existing point's description and time) instead of suggesting System Protection is off. "Create anyway" temporarily lifts the limit, verifies the new point and restores the setting; a fallback creation path is used if needed.
