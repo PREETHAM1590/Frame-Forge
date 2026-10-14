@@ -101,6 +101,7 @@ jobs:
           ver="${GITHUB_REF_NAME#v}"
           awk -v v="$ver" '$0=="## " v {f=1; next} /^## /{f=0} f' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "No CHANGELOG section for $ver"; exit 1; fi
+          printf '\nCode signing: Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).\n\nPrivacy policy: [docs/PRIVACY.md](https://github.com/PREETHAM1590/Frame-Forge/blob/main/docs/PRIVACY.md)\n' >> notes.md
       - uses: softprops/action-gh-release@v2
         with:
           body_path: notes.md

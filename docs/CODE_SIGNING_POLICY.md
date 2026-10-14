@@ -19,7 +19,7 @@ Each signing request is approved manually by the approver after confirming it co
 
 ## Privacy
 
-This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. The only exceptions are the two opt-in features below, which the user turns on or off explicitly.
+This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. The only exceptions are the two opt-in features below, which the user turns on or off explicitly. A plain-language version of this statement is in the [Frameforge privacy policy](PRIVACY.md).
 
 Frameforge contacts the network in exactly two optional ways. Both are chosen on first run (one dialog, both default to off for statistics and a plain Yes/No for updates) and can be changed any time in Settings > Privacy and updates.
 

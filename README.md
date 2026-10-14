@@ -8,6 +8,10 @@ An original, local Windows gaming configuration application built with React, Ty
 
 Get `Frameforge-Setup-<version>.exe` and `SHA256SUMS.txt` from the [Releases page](https://github.com/PREETHAM1590/Frame-Forge/releases). Requires Windows 10 or 11, x64. Releases are built by GitHub Actions from the tagged source.
 
+Code signing: Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+Privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md)
+
 - **Per-user install, no administrator needed.** The installer puts Frameforge in `%LOCALAPPDATA%\Programs\Frameforge`, adds Start menu and desktop shortcuts, and registers an uninstaller under Settings, Apps.
 - **SmartScreen.** Until the installer is code-signed, Windows SmartScreen may warn on first run. Choose "More info", then "Run anyway".
 - **Verify the download** (compare with the line in `SHA256SUMS.txt`):
@@ -152,7 +156,7 @@ Frameforge contacts the network in exactly two optional ways. Both are chosen on
 
    The Aptabase SDK adds the operating system name and version, the system locale, the Electron/Chromium version and a random session id that rotates after an hour of inactivity. Frameforge never sends game names, file paths, user names, PC names, hardware serial numbers or any free text. Aptabase does not store IP addresses. Turning the setting off stops sending immediately. Builds made without an Aptabase key (for example local builds) cannot send statistics at all; the setting then reads "Not available in this build".
 
-See the [privacy statement](docs/CODE_SIGNING_POLICY.md#privacy) and [Security](docs/SECURITY.md).
+Plain-language privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md). See also the [privacy statement](docs/CODE_SIGNING_POLICY.md#privacy) and [Security](docs/SECURITY.md).
 
 ## Verification and Limitations
 
