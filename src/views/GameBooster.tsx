@@ -37,6 +37,8 @@ import {
 import { StartBoost } from "./gamemode/StartBoost";
 import { HowItWorks } from "./gamemode/HowItWorks";
 
+let lastPicked = "";
+
 export function GameMode({
   data,
   run,
@@ -51,10 +53,18 @@ export function GameMode({
     error: boolean;
   } | null>(null);
   // The picked game follows the library: a scan or removal can add, remove or reorder games after this page mounted.
-  const [picked, setGameId] = useState("");
+  // Kept across page visits and session ends; the first game is only the fallback when the picked one is gone.
+  const [picked, pick] = useState(lastPicked);
+  const setGameId = (id: string) => {
+    lastPicked = id;
+    pick(id);
+  };
+  const sessionGameId = data.boost.session?.gameId ?? "";
   const gameId = data.state.games.some((g) => g.id === picked)
     ? picked
-    : (data.state.games[0]?.id ?? "");
+    : data.state.games.some((g) => g.id === sessionGameId)
+      ? sessionGameId
+      : (data.state.games[0]?.id ?? "");
   const [now, setNow] = useState(0);
   const [confirmPlan, setConfirmPlan] = useState(false);
   const [confirmServices, setConfirmServices] = useState(false);

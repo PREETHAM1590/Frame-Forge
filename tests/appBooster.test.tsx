@@ -28,6 +28,7 @@ const game = {
   boostMode: "global" as const,
   notes: "",
 };
+const game2 = { ...game, id: crypto.randomUUID(), name: "Second Game" };
 const session = (status: BoostSession["status"]): BoostSession => ({
   id: crypto.randomUUID(),
   gameId: game.id,
@@ -54,7 +55,7 @@ function install(capabilities: OperationId[]) {
   const bootstrap = {
     state: {
       ...defaultState,
-      games: [game],
+      games: [game, game2],
       booster: { ...defaultState.booster, mode: "balanced" as const },
     },
     hardware: {
@@ -193,6 +194,27 @@ describe("booster state across the app", () => {
     expect(
       await screen.findByRole("region", { name: "Boost session" }),
     ).toBeVisible();
+  });
+  it("keeps the picked game in Game Mode across a session and a page visit", async () => {
+    const { send } = install(["mouse-precision"]);
+    render(<App />);
+    await screen.findByText("Your setup, in focus.");
+    fireEvent.click(screen.getByRole("button", { name: "Game Mode" }));
+    const pick = await screen.findByRole("combobox", { name: "Game" });
+    fireEvent.change(pick, { target: { value: game2.id } });
+    expect(pick).toHaveValue(game2.id);
+    const active = { ...session("active"), gameId: game2.id };
+    send(active);
+    send({ ...active, status: "ended" });
+    await act(async () => {});
+    expect(screen.getByRole("combobox", { name: "Game" })).toHaveValue(
+      game2.id,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Game library" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Game Mode" }));
+    expect(await screen.findByRole("combobox", { name: "Game" })).toHaveValue(
+      game2.id,
+    );
   });
   it("re-enables Remove in the library when the session ends", async () => {
     const { send } = install(["mouse-precision"]);
