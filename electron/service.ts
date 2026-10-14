@@ -10,6 +10,7 @@ import {
   type Response,
   type Game,
   type Settings,
+  type HotkeyId,
   type UpdateStatus,
   type Hardware,
   type Bootstrap,
@@ -64,6 +65,8 @@ export interface DesktopServices {
     download(): Promise<UpdateStatus>;
     install(when: "now" | "onQuit"): UpdateStatus;
   };
+  /** Hotkeys Windows refused to register; absent where global hotkeys do not exist. */
+  hotkeyStatus?: () => { failed: string[] };
   analyticsAvailable?: boolean;
   /** Anonymous, allowlisted usage event; the callee drops it unless the user opted in. */
   track?: (event: string, props?: Record<string, string>) => void;
@@ -571,6 +574,13 @@ export class AppService {
       fpsStart: async ({ gameId }) => this.fps.start(gameId),
       fpsStop: async () => this.fps.stop(),
       fpsHistory: async ({ gameId }) => this.fps.history(gameId),
+      hotkeyStatus: async () => {
+        const s = this.desktop.hotkeyStatus?.();
+        return {
+          supported: !!s,
+          failed: (s?.failed ?? []) as HotkeyId[],
+        };
+      },
     };
   }
   private dismissed() {
@@ -885,6 +895,7 @@ export class AppService {
             "monitorStop",
             "fpsStatus",
             "fpsHistory",
+            "hotkeyStatus",
           ].includes(key)
         )
           this.log(

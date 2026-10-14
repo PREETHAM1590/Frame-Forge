@@ -6,6 +6,7 @@ import {
   responses,
   type Method,
   type Request,
+  defaultHotkeys,
 } from "../shared/contracts";
 import { presets } from "../shared/catalogue";
 import { request } from "../src/api";
@@ -42,6 +43,8 @@ const inputs: { [M in Method]: () => Request<M> } = {
     autoScanHours: 24,
     keepRunning: true,
     autoBoostAdmin: false,
+    closeAction: "ask" as const,
+    hotkeys: defaultHotkeys,
   }),
   preview: () => ({ ids: ["mouse-precision"] }),
   confirm: () => ({ token: id(), confirmed: true }),
@@ -104,6 +107,7 @@ const inputs: { [M in Method]: () => Request<M> } = {
   fpsStart: () => ({ gameId: id(), confirmed: true }),
   fpsStop: () => ({ confirmed: true }),
   fpsHistory: () => ({ gameId: id() }),
+  hotkeyStatus: () => ({}),
 };
 describe("IPC surface", () => {
   it("has identical request, response and handler sets", () => {
@@ -267,6 +271,8 @@ describe("IPC surface", () => {
       autoScanHours: 24,
       keepRunning: true,
       autoBoostAdmin: false,
+      closeAction: "ask" as const,
+      hotkeys: defaultHotkeys,
     };
     repo.updateState({ ...repo.state(), settings });
     const service = new AppService(

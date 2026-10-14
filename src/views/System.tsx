@@ -23,6 +23,7 @@ import {
 import type { ViewProps } from "../types";
 import { UpdateCard } from "../components/UpdatePanel";
 import { useUpdate } from "../useUpdate";
+import { HotkeysSection } from "./HotkeysSection";
 export function System({ data, run, pending }: ViewProps) {
   const h = data.hardware;
   const [refreshing, setRefreshing] = useState(false);
@@ -186,6 +187,31 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           disabled={pending}
           onChange={(keepRunning) => update({ keepRunning })}
         />
+        <div className="setting-row">
+          <div>
+            <label htmlFor="close-action">When I close the window</label>
+            <p className="muted">
+              Minimize to tray keeps auto-boost watching; Quit exits Frameforge
+              (a live boost is restored first). The tray menu always has Quit
+              Frameforge.
+            </p>
+          </div>
+          <select
+            id="close-action"
+            value={settings.closeAction}
+            disabled={pending}
+            onChange={(e) =>
+              update({
+                closeAction: e.target.value as typeof settings.closeAction,
+                ...(e.target.value === "tray" && { keepRunning: true }),
+              })
+            }
+          >
+            <option value="ask">Ask me</option>
+            <option value="tray">Minimize to tray</option>
+            <option value="quit">Quit</option>
+          </select>
+        </div>
         <Toggle
           label="Allow admin prompts during auto-boost"
           description="Off: auto-boost skips the steps that need administrator approval (services, standby list) so Windows never asks while you play. On: it may open the Windows prompt."
@@ -250,6 +276,11 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           </div>
         )}
       </section>
+      <HotkeysSection
+        hotkeys={settings.hotkeys}
+        pending={pending}
+        save={(hotkeys) => update({ hotkeys })}
+      />
       <section className="settings-section">
         <h2>
           <ShieldCheck size={20} />

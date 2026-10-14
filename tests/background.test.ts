@@ -10,7 +10,8 @@ import {
 import { BoostEngine } from "../electron/booster";
 import {
   BoostNotices,
-  closeToTray,
+  closeDecision,
+  trayNotice,
   migrateLoginItem,
   startsHidden,
   testHooksEnabled,
@@ -280,10 +281,13 @@ describe("background mode helpers", () => {
     ).toBe(true);
     expect(testHooksEnabled({ FRAMEFORGE_TEST_HOOKS: "1" }, true)).toBe(false);
   });
-  it("closes to the tray only while keeping Frameforge running and not quitting", () => {
-    expect(closeToTray(true, false)).toBe(true);
-    expect(closeToTray(false, false)).toBe(false);
-    expect(closeToTray(true, true)).toBe(false);
+  it("asks on the first close, then follows the saved choice", () => {
+    expect(closeDecision(true, "ask", false)).toBe("ask");
+    expect(closeDecision(true, "tray", false)).toBe("tray");
+    expect(closeDecision(true, "quit", false)).toBe("quit");
+    expect(closeDecision(false, "tray", false)).toBe("quit");
+    expect(closeDecision(true, "ask", true)).toBe("leave");
+    expect(trayNotice).toContain("Quit Frameforge");
   });
   it("starts hidden for --hidden when it can live in the tray", () => {
     expect(startsHidden(["app.exe", "--hidden"], true)).toBe(true);

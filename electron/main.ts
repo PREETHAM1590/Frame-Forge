@@ -6,6 +6,7 @@ import {
   Menu,
   nativeImage,
   Notification,
+  globalShortcut,
   shell,
   Tray,
   type NativeImage,
@@ -35,8 +36,14 @@ import { GameIcons, maxIconBytes } from "./icons.js";
 import { UpdateManager } from "./updater.js";
 import { Analytics, validAppKey } from "./analytics.js";
 import {
+  HotkeyManager,
+  foregroundWindow,
+  hotkeyActions,
+  overlayHook,
+} from "./hotkeys.js";
+import {
   BoostNotices,
-  closeToTray,
+  closeDecision,
   hiddenArg,
   migrateLoginItem,
   testHooksEnabled,
@@ -85,6 +92,7 @@ let showWindow = () => {};
 let leaving = false;
 let onBoost: (session: BoostSession) => void = () => {};
 let refreshTray = () => {};
+let hotkeys: HotkeyManager | undefined;
 // Memory: the renderer heap is capped modestly, and Chromium features Frameforge never uses stay off.
 app.commandLine.appendSwitch("js-flags", "--max-old-space-size=256");
 // The GPU process is what wakes an idle tray app; this dashboard renders fine in software (idle CPU ~0.7% -> ~0.05%).
@@ -229,6 +237,10 @@ if (!app.requestSingleInstanceLock()) {
           if (result.canceled || !result.filePaths[0]) return null;
           return scanGameFolder(result.filePaths[0]);
         },
+        hotkeyStatus:
+          process.platform === "win32"
+            ? () => ({ failed: hotkeys?.failed ?? [] })
+            : undefined,
         notify: (event) => {
           if (window && !window.isDestroyed())
             window.webContents.send("frameforge:event", event);
@@ -342,6 +354,9 @@ if (!app.requestSingleInstanceLock()) {
             )
               throw new Error("Untrusted renderer");
             const data = await service.dispatch(method, input);
+            // Saved or restored settings may change the hotkeys.
+            if (method === "settings" || method === "restore")
+              hotkeys?.apply(repo.state().settings.hotkeys);
             refreshTray();
             return { ok: true, data };
           } catch (error) {
@@ -391,9 +406,22 @@ if (!app.requestSingleInstanceLock()) {
               type: "info",
               message: "Wait for the operation or cancel it before closing.",
             });
-          } else if (closeToTray(keepRunning(), leaving)) {
-            // The window is destroyed (not hidden) so only the main process stays in memory.
-            noticeOnce();
+          } else {
+            const decision = closeDecision(
+              keepRunning(),
+              repo.state().settings.closeAction,
+              leaving,
+            );
+            if (decision === "tray") {
+              // The window is destroyed (not hidden) so only the main process stays in memory.
+              noticeOnce();
+            } else if (decision === "quit") {
+              event.preventDefault();
+              void requestQuit();
+            } else if (decision === "ask") {
+              event.preventDefault();
+              void askOnClose();
+            }
           }
         });
         // Minimized or hidden windows read nothing; the helper starts again when the window returns.
@@ -415,6 +443,62 @@ if (!app.requestSingleInstanceLock()) {
         else void window.loadFile(rendererFile);
       }
       const keepRunning = () => repo.state().settings.keepRunning;
+      // Quit fully exits; a live boost is restored first (before-quit does that), after a confirmation.
+      const requestQuit = async () => {
+        if (service.booster.active) {
+          const answer = await dialog.showMessageBox({
+            type: "question",
+            title: "Frameforge",
+            message: "A boost is active. Quit Frameforge?",
+            detail: "Your Windows settings are restored first.",
+            buttons: ["Restore and quit", "Cancel"],
+            defaultId: 1,
+            cancelId: 1,
+            noLink: true,
+          });
+          if (answer.response !== 0) return;
+        }
+        app.quit();
+      };
+      // First close: ask once; "Remember my choice" saves it in Settings > General.
+      let asking = false;
+      const askOnClose = async () => {
+        if (asking || !window) return;
+        asking = true;
+        try {
+          const answer = await dialog.showMessageBox(window, {
+            type: "question",
+            title: "Frameforge",
+            message:
+              "Keep Frameforge running in the tray so auto-boost can start when you launch a game?",
+            detail: "You can change this in Settings > General.",
+            buttons: ["Minimize to tray", "Quit Frameforge"],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true,
+            checkboxLabel: "Remember my choice",
+            checkboxChecked: true,
+          });
+          const toTray = answer.response === 0;
+          if (answer.checkboxChecked) {
+            const current = repo.state();
+            repo.updateState({
+              ...current,
+              settings: {
+                ...current.settings,
+                closeAction: toTray ? "tray" : "quit",
+              },
+            });
+            pushState();
+          }
+          if (toTray) {
+            noticeOnce();
+            window?.destroy();
+          } else void requestQuit();
+        } finally {
+          asking = false;
+        }
+      };
       const noticeOnce = () => {
         if (repo.meta("background.noticed") || !Notification.isSupported())
           return;
@@ -474,7 +558,7 @@ if (!app.requestSingleInstanceLock()) {
                   void updates!.check();
                 }
               : undefined,
-            quit: () => app.quit(),
+            quit: () => void requestQuit(),
           },
         );
         tray.setToolTip(model.tooltip);
@@ -517,6 +601,90 @@ if (!app.requestSingleInstanceLock()) {
       };
       service.booster.configure();
       refreshTray();
+      if (process.platform === "win32") {
+        const flash = (
+          text: string,
+          click?: { label: string; run: () => void },
+        ) => {
+          tray.setToolTip(`Frameforge: ${text}`);
+          setTimeout(refreshTray, 4000).unref();
+          if (!Notification.isSupported()) return;
+          const n = new Notification({
+            title: "Frameforge",
+            body: text,
+            silent: true,
+            actions: click ? [{ type: "button", text: click.label }] : [],
+          });
+          if (click) {
+            n.on("action", click.run);
+            n.on("click", click.run);
+          }
+          n.show();
+        };
+        hotkeys = new HotkeyManager(
+          globalShortcut,
+          hotkeyActions({
+            state: () => repo.state(),
+            foreground: foregroundWindow,
+            running: (games) => platform.runningGames(games),
+            live: () => service.booster.active,
+            start: (id, target, skipAdmin) =>
+              service.booster.start(id, "manual", target, skipAdmin),
+            stop: () => service.booster.stop().finally(pushState),
+            setMode: (mode) => {
+              const current = repo.state();
+              repo.updateState({
+                ...current,
+                booster: { ...current.booster, mode },
+              });
+              service.booster.configure();
+              refreshTray();
+              pushState();
+            },
+            addGame: async (exe) => {
+              const selected = await safeExecutable(exe);
+              const current = repo.state();
+              if (
+                current.games.some(
+                  (g) =>
+                    g.executablePath?.toLowerCase() === selected.toLowerCase(),
+                )
+              )
+                return;
+              repo.updateState({
+                ...current,
+                games: [
+                  ...current.games,
+                  {
+                    id: randomUUID(),
+                    name: path.basename(selected, ".exe").slice(0, 80),
+                    path: path.dirname(selected),
+                    executablePath: selected,
+                    source: "custom",
+                    profile: "balanced",
+                    boostMode: "global",
+                    notes: "",
+                  },
+                ],
+              });
+              service.booster.configure();
+              pushState();
+              flash(`${path.basename(selected, ".exe")} added to your library`);
+            },
+            toggleOverlay: () => {
+              if (!overlayHook.toggle) return false;
+              overlayHook.toggle();
+              return true;
+            },
+            notify: flash,
+            own: {
+              exe: process.execPath,
+              systemRoot: process.env.SystemRoot ?? "C:\\Windows",
+            },
+          }),
+        );
+        hotkeys.apply(repo.state().settings.hotkeys);
+      }
       if (app.isPackaged)
         migrateLoginItem({
           enabled: (hidden) =>
@@ -565,7 +733,10 @@ if (!app.requestSingleInstanceLock()) {
       void activeService?.shutdown();
     }
   });
-  app.on("will-quit", () => repo?.close());
+  app.on("will-quit", () => {
+    hotkeys?.dispose();
+    repo?.close();
+  });
 }
 // Only with FRAMEFORGE_TEST_MODE: lets the desktop smoke test (Playwright app.evaluate) look at the tray and add a dummy library game.
 function exposeTestHooks(tray: Tray, service: AppService, store: Repository) {
@@ -576,6 +747,16 @@ function exposeTestHooks(tray: Tray, service: AppService, store: Repository) {
       active: () => service.booster.active,
       session: () => service.booster.liveSession,
       watching: () => service.booster.watching,
+      hotkeys: () => ({
+        registered: hotkeys?.registered ?? [],
+        failed: hotkeys?.failed ?? [],
+        // Windows itself agrees the accelerators are registered.
+        os: (hotkeys?.registered ?? []).every((id) =>
+          globalShortcut.isRegistered(
+            store.state().settings.hotkeys.bindings[id],
+          ),
+        ),
+      }),
       monitoring: () => service.monitor.active,
       closeWindow: () => BrowserWindow.getAllWindows()[0]?.close(),
       openWindow: () => showWindow(),

@@ -132,6 +132,37 @@ try {
       fn,
       arg,
     });
+  // Global hotkeys: registered with Windows at start (or reported as conflicts when another app owns one), and unregistered when disabled.
+  const keys = await hooks("hotkeys");
+  assert.equal(keys.registered.length + keys.failed.length, 4);
+  assert.equal(keys.os, true, "registered hotkeys are known to Windows");
+  const toggleHotkeys = (enabled) =>
+    page.evaluate(async (enabled) => {
+      const { state } = await window.frameforge.bootstrap({});
+      const { hotkeys } = state.settings;
+      await window.frameforge.settings({
+        ...state.settings,
+        hotkeys: { ...hotkeys, enabled },
+      });
+    }, enabled);
+  await toggleHotkeys(false);
+  assert.deepEqual((await hooks("hotkeys")).registered, []);
+  await toggleHotkeys(true);
+  assert.equal(
+    (await hooks("hotkeys")).registered.length + keys.failed.length,
+    4,
+  );
+  console.log(
+    "Electron smoke passed: global hotkeys register, unregister when disabled and report conflicts.",
+  );
+  // A remembered choice, so closing does not open the first-close question.
+  await page.evaluate(async () => {
+    const { state } = await window.frameforge.bootstrap({});
+    await window.frameforge.settings({
+      ...state.settings,
+      closeAction: "tray",
+    });
+  });
   await hooks("closeWindow");
   await until(async () => (await hooks("windows")) === 0, "window destroyed");
   assert.equal(await hooks("tray"), true, "tray survives the closed window");
