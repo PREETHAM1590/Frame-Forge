@@ -66,6 +66,7 @@ export const modeLabels: Record<BoostMode, string> = {
   performance: "Performance",
   competitive: "Competitive",
   custom: "Custom",
+  smart: "Smart",
 };
 const endReasons = {
   "game-exited": "the game exited",

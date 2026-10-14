@@ -45,6 +45,8 @@ try
         "elevated" when request.Elevated is not null => RestoreCommands.Run(request.Elevated),
         "elevated-result" when request.ResultPath is not null => RestoreCommands.ReadResult(request.ResultPath),
         "running-games" when request.Games is not null => new { ok = true, message = "Running library games read.", runningGames = WindowsProcesses.RunningGames(request.Games) },
+        "foreground" => new { ok = true, message = "Foreground program read.", foreground = ForegroundApp.Read() },
+        "health" => new { ok = true, message = "PC health facts read.", health = HealthFacts.Collect(request.Games ?? []) },
         "background-processes" => new { ok = true, message = "Running processes read.", backgroundProcesses = WindowsProcessControl.Entries() },
         "boost-capabilities" => new { ok = true, message = "Booster capabilities read.", capabilities = BoostSessionEngine.Capabilities(new WindowsPowerStore(), new WindowsTimerControl(), Environment.ProcessorCount, new WindowsRegistryStore(), owned, Extras.Windows(), request.TimerRestartPending) },
         // Untrusted input bound, above the per-session capture cap; every item is attempted.

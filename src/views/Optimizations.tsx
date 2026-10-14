@@ -40,6 +40,12 @@ const settingsLabels = {
   network: "Network status",
   services: "Services",
   defender: "Windows Security (Tamper Protection)",
+  power: "Power & battery",
+  display: "Display",
+  windowsUpdate: "Windows Update",
+  storage: "Storage",
+  gameMode: "Game Mode",
+  coreIsolation: "Core isolation (Windows Security)",
 } as const;
 export function Optimizations({ data, preview, run, pending }: ViewProps) {
   const [search, setSearch] = useState("");

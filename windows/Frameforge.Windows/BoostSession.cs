@@ -43,7 +43,10 @@ public record Capability(string Id, bool Available, string Detail, bool Active =
 // Windows 11 only lets a timer request reach other programs when GlobalTimerResolutionRequests is 1. Eligible: this Windows build has the setting.
 public record TimerGlobal(bool Eligible, bool Enabled);
 public record BoostCapabilities(int LogicalCpus, Capability[] Mechanisms, CpuTopology? Topology = null, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TimerGlobal? TimerGlobal = null);
-public record ProcessEntry(string Image, int Pid, bool Protected);
+public record ProcessEntry(string Image, int Pid, bool Protected,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? WorkingSetBytes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? CpuPercent = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Path = null);
 // Reported as code "plan-not-created": the helper verified no plan copy exists, so the recorded GUID can be dropped.
 public sealed class PlanNotCreatedException(string message) : InvalidOperationException(message);
 public static class HelperJson
@@ -708,9 +711,20 @@ public sealed class WindowsProcessControl : IProcessControl
     {
         var session = Process.GetCurrentProcess().SessionId;
         var sid = WindowsIdentity.GetCurrent().User?.Value;
+        // Two reads a moment apart give each program its share of the CPU; memory is the second read.
+        var first = MonitorSampler.Snapshot().ToDictionary(p => p.Pid, p => p.CpuTicks);
+        var started = Stopwatch.GetTimestamp();
+        Thread.Sleep(500);
+        var second = MonitorSampler.Snapshot().ToDictionary(p => p.Pid);
+        var seconds = Math.Max(0.1, (Stopwatch.GetTimestamp() - started) / (double)Stopwatch.Frequency);
+        (long? Ws, double? Cpu) Use(int pid) => second.TryGetValue(pid, out var now)
+            ? (now.WorkingSet, first.TryGetValue(pid, out var before) && now.CpuTicks >= before ? Math.Round(Math.Clamp((now.CpuTicks - before) / 1e7 / seconds / Environment.ProcessorCount * 100, 0, 100), 1) : null)
+            : (null, null);
         return new WindowsProcessControl().List()
-            .Select(p => new ProcessEntry(Path.GetFileName(p.Target.ExecutablePath), p.Target.Pid,
-                p.Critical || p.Sid is null || p.Sid != sid || p.SessionId != session || ProcessSafety.Denied(p.Target.Name) || p.Target.Name.StartsWith("Frameforge", StringComparison.OrdinalIgnoreCase)))
+            .Select(p => (Process: p, Use: Use(p.Target.Pid)))
+            .Select(x => new ProcessEntry(Path.GetFileName(x.Process.Target.ExecutablePath), x.Process.Target.Pid,
+                x.Process.Critical || x.Process.Sid is null || x.Process.Sid != sid || x.Process.SessionId != session || ProcessSafety.Denied(x.Process.Target.Name) || x.Process.Target.Name.StartsWith("Frameforge", StringComparison.OrdinalIgnoreCase),
+                x.Use.Ws, x.Use.Cpu, x.Process.Target.ExecutablePath.Length <= 520 ? x.Process.Target.ExecutablePath : null))
             .Where(e => e.Image.Length <= 64)
             .OrderBy(e => e.Image, StringComparer.OrdinalIgnoreCase).Take(500).ToArray();
     }

@@ -12,8 +12,10 @@ import {
   type RestorePoints,
   type BoostCapabilities,
   type Captured,
+  type ForegroundApp,
   type Game,
   type Hardware,
+  type HealthFacts,
   type LaunchResult,
   type LaunchSetting,
   type MechanismResult,
@@ -190,6 +192,10 @@ export interface Platform {
     onExit?: () => void,
   ): GameWatch;
   backgroundProcesses(): Promise<RunningProcess[]>;
+  /** Read-only PC facts for the Health Check (absent in fakes without the helper). */
+  healthFacts?(games: Game[]): Promise<HealthFacts>;
+  /** The foreground fullscreen/borderless program, for finding games that are not in the library yet. */
+  foregroundApp?(): Promise<ForegroundApp | null>;
   // ownedPlan: GUID of the plan Frameforge created with consent (from SQLite, never from the renderer).
   // timerRestartPending: Frameforge turned on the machine-wide timer setting and Windows has not restarted since.
   boostCapabilities(
@@ -535,6 +541,26 @@ export class WindowsPlatform implements Platform {
       10000,
     );
     return result.runningGames ?? [];
+  }
+  async healthFacts(games: Game[]) {
+    const result = await this.call(
+      {
+        command: "health",
+        games: games.map((g) => ({
+          id: g.id,
+          path: g.path,
+          executablePath: g.executablePath,
+        })),
+      },
+      undefined,
+      30000,
+    );
+    if (!result.health) throw new Error("The helper returned no health facts.");
+    return result.health;
+  }
+  async foregroundApp() {
+    const result = await this.call({ command: "foreground" }, undefined, 8000);
+    return result.foreground ?? null;
   }
   async backgroundProcesses() {
     const result = await this.call(

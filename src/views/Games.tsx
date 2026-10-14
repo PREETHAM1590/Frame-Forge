@@ -38,6 +38,7 @@ const modeNames: Record<Game["boostMode"], string> = {
   performance: "Performance",
   competitive: "Competitive",
   custom: "Custom",
+  smart: "Smart",
 };
 export function Games({
   data,

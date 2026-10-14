@@ -233,6 +233,7 @@ export const intensity: Record<BoostMode, number> = {
   performance: 2,
   competitive: 3,
   custom: -1,
+  smart: -1,
 };
 export const scale: BoostMode[] = [
   "off",
