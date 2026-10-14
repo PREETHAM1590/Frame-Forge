@@ -15,12 +15,15 @@ export function Modal({
   children,
   onClose,
   locked = false,
+  variant = "dialog",
 }: {
   title: string;
   description: string;
   children: ReactNode;
   onClose: () => void;
   locked?: boolean;
+  /** "drawer" slides in from the right and keeps the page visible behind it. */
+  variant?: "dialog" | "drawer";
 }) {
   return (
     <Dialog.Root
@@ -31,7 +34,9 @@ export function Modal({
     >
       <Dialog.Portal>
         <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal">
+        <Dialog.Content
+          className={`modal ${variant === "drawer" ? "drawer" : ""}`}
+        >
           <div className="modal-header">
             <Dialog.Title>{title}</Dialog.Title>
             <Dialog.Close asChild disabled={locked}>

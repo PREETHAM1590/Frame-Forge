@@ -5,6 +5,7 @@
 @import "./styles/ui.css";
 @import "./styles/dashboard.css";
 @import "./styles/gamemode.css";
+@import "./styles/library.css";
 @theme {
   --font-sans: "Space Grotesk", sans-serif;
 }

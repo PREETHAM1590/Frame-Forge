@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   Plus,
-  Search,
   FolderSearch,
   FolderOpen,
   RefreshCw,
@@ -9,7 +8,19 @@ import {
   Trash2,
   Info,
 } from "lucide-react";
-import { PageTitle, Button, Badge, Empty, Modal } from "../components/ui";
+import {
+  PageTitle,
+  Button,
+  Badge,
+  Empty,
+  Modal,
+  Panel,
+  Chips,
+  SearchField,
+  LinkButton,
+  Disclosure,
+  Meter,
+} from "../components/ui";
 import {
   sourceLabels,
   type Detection,
@@ -27,13 +38,14 @@ const modeNames: Record<Game["boostMode"], string> = {
   competitive: "Competitive",
   custom: "Custom",
 };
-export function Games({ data, run, pending }: ViewProps) {
+export function Games({ data, run, pending, navigate }: ViewProps) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Game | null>(null);
   const [boostMode, setBoostMode] = useState<Game["boostMode"]>("global");
   const [notes, setNotes] = useState("");
   const [remove, setRemove] = useState<Game | null>(null);
   const [scan, setScan] = useState<Detection | null>(null);
+  const [filter, setFilter] = useState<"all" | "custom">("all");
   const [manual, setScanning] = useState(false);
   // Includes a scan started elsewhere (startup, Dashboard) so the library shows it too.
   const { running, progress } = useScan(data);
@@ -50,9 +62,14 @@ export function Games({ data, run, pending }: ViewProps) {
       setScanning(false);
     }
   }
-  const games = data.state.games.filter((g) =>
-    g.name.toLowerCase().includes(search.toLowerCase()),
+  const games = data.state.games.filter(
+    (g) =>
+      g.name.toLowerCase().includes(search.toLowerCase()) &&
+      (filter === "all" || g.boostMode !== "global"),
   );
+  const customCount = data.state.games.filter(
+    (g) => g.boostMode !== "global",
+  ).length;
   return (
     <>
       <PageTitle
@@ -76,33 +93,41 @@ export function Games({ data, run, pending }: ViewProps) {
           available in the desktop app.
         </div>
       )}
-      <div className="toolbar">
-        <div className="search">
-          <Search size={18} />
-          <input
-            placeholder="Search your games"
-            aria-label="Search games"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+      <div className="lib-toolbar">
+        <SearchField
+          label="Search games"
+          placeholder="Search your games"
+          value={search}
+          onChange={setSearch}
+        />
+        <Chips
+          label="Filter games"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { id: "all", label: "All games", count: data.state.games.length },
+            { id: "custom", label: "Custom mode", count: customCount },
+          ]}
+        />
+        <div className="lib-toolbar-actions">
+          <Button
+            disabled={pending || scanning || data.mode === "demo"}
+            onClick={() => void rescan(false)}
+          >
+            <RefreshCw size={17} />
+            Rescan
+          </Button>
+          <Button
+            disabled={pending || scanning || data.mode === "demo"}
+            onClick={() => void rescan(true)}
+          >
+            <FolderOpen size={17} />
+            Scan a folder…
+          </Button>
         </div>
-        <Button
-          disabled={pending || scanning || data.mode === "demo"}
-          onClick={() => void rescan(false)}
-        >
-          <RefreshCw size={17} />
-          Rescan
-        </Button>
-        <Button
-          disabled={pending || scanning || data.mode === "demo"}
-          onClick={() => void rescan(true)}
-        >
-          <FolderOpen size={17} />
-          Scan a folder…
-        </Button>
       </div>
       {scanning && (
-        <div role="status" className="notice">
+        <Panel tone="accent" role="status" className="lib-scan">
           <FolderSearch size={18} />
           <div>
             <p>
@@ -110,13 +135,16 @@ export function Games({ data, run, pending }: ViewProps) {
                 ? `Scanned ${progress.launcher} (${progress.done}/${progress.total}). ${progress.found} games found so far.`
                 : "Scanning your PC for installed games…"}
             </p>
-            <progress
-              aria-label="Scan progress"
-              max={progress?.total ?? 1}
-              value={progress?.done ?? 0}
+            <Meter
+              label="Scan progress"
+              value={
+                progress
+                  ? (progress.done / Math.max(1, progress.total)) * 100
+                  : 0
+              }
             />
           </div>
-        </div>
+        </Panel>
       )}
       {scan && !scanning && (
         <div role="status" className="notice">
@@ -170,16 +198,26 @@ export function Games({ data, run, pending }: ViewProps) {
         </div>
       )}
       {games.length ? (
-        <div className="game-grid">
+        <div className="game-grid stagger">
           {games.map((g) => (
-            <article className="game-card" key={g.id}>
+            <article className="game-tile" key={g.id}>
               <div className="game-art">
-                <GameIcon game={g} size={72} />
+                <GameIcon game={g} size={64} />
               </div>
               <div className="game-content">
-                <Badge tone="cyan">{sourceLabels[g.source]}</Badge>
+                <div className="game-badges">
+                  <Badge tone="cyan">{sourceLabels[g.source]}</Badge>
+                  {g.boostMode !== "global" && (
+                    <Badge tone="lime">{modeNames[g.boostMode]}</Badge>
+                  )}
+                </div>
                 <h2>{g.name}</h2>
-                <p className="muted">Booster: {modeNames[g.boostMode]}</p>
+                <p className="muted game-path">
+                  Booster: {modeNames[g.boostMode]}
+                </p>
+                <p className="muted game-path" title={g.path}>
+                  {g.path}
+                </p>
                 <div className="card-bottom">
                   <button
                     className="icon-button"
@@ -220,39 +258,45 @@ export function Games({ data, run, pending }: ViewProps) {
         />
       )}
       {data.removedGames.length > 0 && (
-        <details className="removed-games">
-          <summary>Removed games ({data.removedGames.length})</summary>
-          <p className="muted">
-            Scans skip these. Restore one to put it back in your library.
-          </p>
-          <ul>
-            {data.removedGames.map((g) => (
-              <li key={g.path}>
-                <div>
-                  <strong>{g.name}</strong>
-                  <p className="muted setting-path">
-                    {sourceLabels[g.source]} · {g.path}
-                  </p>
-                </div>
-                <Button
-                  disabled={pending}
-                  aria-label={`Restore ${g.name}`}
-                  onClick={() =>
-                    void run("restoreGame", { path: g.path }, "Game restored.")
-                  }
-                >
-                  Restore
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </details>
+        <div className="removed-games">
+          <Disclosure title={`Removed games (${data.removedGames.length})`}>
+            <p className="muted">
+              Scans skip these. Restore one to put it back in your library.
+            </p>
+            <ul>
+              {data.removedGames.map((g) => (
+                <li key={g.path}>
+                  <div>
+                    <strong>{g.name}</strong>
+                    <p className="muted setting-path">
+                      {sourceLabels[g.source]} · {g.path}
+                    </p>
+                  </div>
+                  <Button
+                    disabled={pending}
+                    aria-label={`Restore ${g.name}`}
+                    onClick={() =>
+                      void run(
+                        "restoreGame",
+                        { path: g.path },
+                        "Game restored.",
+                      )
+                    }
+                  >
+                    Restore
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
+        </div>
       )}
       {selected && (
         <Modal
           title={selected.name}
           description="The booster mode applies on the Game Mode page while this game runs. Notes are app-only."
           onClose={() => setSelected(null)}
+          variant="drawer"
         >
           <div className="game-heading">
             <GameIcon game={selected} size={56} />
@@ -300,7 +344,21 @@ export function Games({ data, run, pending }: ViewProps) {
                 onChange={(e) => setNotes(e.target.value)}
               />
             </label>
+            <LinkButton onClick={() => navigate("Game Mode")}>
+              Launch settings for this game
+            </LinkButton>
             <div className="dialog-actions">
+              <Button
+                type="button"
+                variant="danger"
+                disabled={data.boost.session?.gameId === selected.id}
+                onClick={() => {
+                  setRemove(selected);
+                  setSelected(null);
+                }}
+              >
+                Remove
+              </Button>
               <Button type="button" onClick={() => setSelected(null)}>
                 Cancel
               </Button>

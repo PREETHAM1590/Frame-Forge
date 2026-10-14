@@ -1,0 +1,111 @@
+.lib-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-4);
+  margin: var(--sp-4) 0;
+}
+.lib-toolbar .search {
+  flex: 1 1 240px;
+  max-width: 360px;
+  height: 40px;
+}
+.lib-toolbar-actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.lib-scan {
+  display: flex;
+  gap: var(--sp-3);
+  margin: var(--sp-4) 0;
+  align-items: flex-start;
+}
+.lib-scan > div {
+  flex: 1;
+  min-width: 0;
+}
+.lib-scan p {
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1px;
+  background: var(--c-border);
+  border: var(--bw) solid var(--c-border);
+}
+.game-tile {
+  background: var(--c-cell);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  transition: background var(--dur-base) var(--ease-out);
+}
+.game-tile:hover {
+  background: var(--c-container);
+}
+.game-tile .game-art {
+  aspect-ratio: 2.4;
+  background: var(--c-canvas);
+  border-bottom: var(--bw) solid var(--c-border);
+}
+.game-tile .game-content {
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  flex: 1;
+}
+.game-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.game-tile h2 {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-md);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.game-tile .game-content p {
+  margin: 0;
+  font-size: var(--fs-xs);
+}
+.game-path {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.game-tile .card-bottom {
+  margin-top: auto;
+  padding-top: var(--sp-3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.removed-games {
+  margin-top: var(--sp-5);
+  border-top: 0;
+  padding-top: 0;
+}
+.removed-games ul {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+}
+.removed-games li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+  border-bottom: var(--bw) solid var(--c-border);
+}
+.drawer .dialog-actions {
+  margin-top: var(--sp-4);
+}

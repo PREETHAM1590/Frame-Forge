@@ -999,3 +999,66 @@ progress::-webkit-progress-value {
   background: var(--c-primary);
   transition: width var(--dur-meter) var(--ease-out);
 }
+/* ---- Drawer (Modal variant) ---- */
+.modal.drawer {
+  left: auto;
+  right: 0;
+  top: 0;
+  translate: none;
+  width: min(480px, 100vw);
+  height: 100dvh;
+  max-height: none;
+  border-top: 0;
+  border-right: 0;
+  border-left: var(--bw-strong) solid var(--c-primary);
+  animation: drawer-in var(--dur-base) var(--ease-out);
+}
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal.drawer {
+    animation: none;
+  }
+}
+/* ---- Chips ---- */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: 4px 12px;
+  background: var(--c-cell);
+  color: var(--c-muted);
+  border: var(--bw) solid var(--c-border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.chip:hover {
+  color: var(--c-text);
+  border-color: var(--c-border-strong);
+}
+.chip.active {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: var(--c-on-primary);
+  font-weight: 700;
+}
+.chip-count {
+  opacity: 0.8;
+}

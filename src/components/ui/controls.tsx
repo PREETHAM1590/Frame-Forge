@@ -1,5 +1,5 @@
 import * as Switch from "@radix-ui/react-switch";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Search } from "lucide-react";
 import { useId } from "react";
 import type { ReactNode, ButtonHTMLAttributes, CSSProperties } from "react";
 export type Tone = "neutral" | "lime" | "cyan" | "amber" | "red";
@@ -163,6 +163,62 @@ export function SegmentedControl<T extends string>({
           />
           {o.label}
         </label>
+      ))}
+    </div>
+  );
+}
+
+/** Labelled search input with the shared look. */
+export function SearchField({
+  label,
+  placeholder,
+  value,
+  onChange,
+}: {
+  label: string;
+  placeholder?: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="search">
+      <Search size={16} aria-hidden />
+      <input
+        placeholder={placeholder ?? label}
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+/** Filter chips: toggle buttons (aria-pressed), one active at a time. */
+export function Chips<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { id: T; label: string; count?: number }[];
+  onChange: (id: T) => void;
+}) {
+  return (
+    <div className="chips" role="group" aria-label={label}>
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          className={`chip ${value === o.id ? "active" : ""}`}
+          aria-pressed={value === o.id}
+          onClick={() => onChange(o.id)}
+        >
+          {o.label}
+          {o.count !== undefined && (
+            <span className="chip-count">{o.count}</span>
+          )}
+        </button>
       ))}
     </div>
   );
