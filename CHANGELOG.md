@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1
+
+- Smaller, faster download: the installer no longer carries unused UI libraries, extra Chromium languages, debug symbols or helper translations.
+- Ignore the local .claude-flow tool folder in the repository.
+- Added a privacy policy and a code signing notice on the download page.
+
 ## 1.3.0
 
 - Optional update checks at startup, every six hours, or from Settings and the tray. Downloads happen when requested. Installation waits until a boost has ended and the app quits; closing to the tray keeps it running.

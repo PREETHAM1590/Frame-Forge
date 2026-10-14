@@ -8,7 +8,7 @@ An original, local Windows gaming configuration application built with React, Ty
 
 Get `Frameforge-Setup-<version>.exe` and `SHA256SUMS.txt` from the [Releases page](https://github.com/PREETHAM1590/Frame-Forge/releases). Requires Windows 10 or 11, x64. Releases are built by GitHub Actions from the tagged source.
 
-Code signing: Frameforge uses free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org) (application in progress; releases up to v1.3.0 are unsigned).
+Code signing: Frameforge uses free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org) (application in progress; releases up to v1.3.1 are unsigned).
 
 Privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md)
 
@@ -17,7 +17,7 @@ Privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md)
 - **Verify the download** (compare with the line in `SHA256SUMS.txt`):
 
   ```powershell
-  Get-FileHash .\Frameforge-Setup-1.3.0.exe -Algorithm SHA256
+  Get-FileHash .\Frameforge-Setup-1.3.1.exe -Algorithm SHA256
   ```
 
 - Pausing background services during a boost, and creating or listing Windows restore points, need administrator approval. Windows shows a UAC prompt for each of those actions. Declining the prompt changes nothing.
