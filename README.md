@@ -8,7 +8,7 @@ An original, local Windows gaming configuration application built with React, Ty
 
 Get `Frameforge-Setup-<version>.exe` and `SHA256SUMS.txt` from the [Releases page](https://github.com/PREETHAM1590/Frame-Forge/releases). Requires Windows 10 or 11, x64. Releases are built by GitHub Actions from the tagged source.
 
-Code signing: Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+Code signing: Frameforge uses free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org) (application in progress; releases up to v1.3.0 are unsigned).
 
 Privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md)
 

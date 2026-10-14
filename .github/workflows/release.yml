@@ -96,12 +96,15 @@ jobs:
           path: dist-release
       - name: Checksums and notes
         shell: bash
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
         run: |
           cd dist-release && sha256sum *.exe > SHA256SUMS.txt && cat SHA256SUMS.txt && cd ..
           ver="${GITHUB_REF_NAME#v}"
           awk -v v="$ver" '$0=="## " v {f=1; next} /^## /{f=0} f' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "No CHANGELOG section for $ver"; exit 1; fi
-          printf '\nCode signing: Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).\n\nPrivacy policy: [docs/PRIVACY.md](https://github.com/PREETHAM1590/Frame-Forge/blob/main/docs/PRIVACY.md)\n' >> notes.md
+          if [ -n "$SIGNPATH_API_TOKEN" ]; then unsigned_note=""; else unsigned_note=" (this release is unsigned)"; fi
+          printf '\nCode signing: Frameforge uses free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org)%s.\n\nPrivacy policy: [docs/PRIVACY.md](https://github.com/PREETHAM1590/Frame-Forge/blob/main/docs/PRIVACY.md)\n' "$unsigned_note" >> notes.md
       - uses: softprops/action-gh-release@v2
         with:
           body_path: notes.md
