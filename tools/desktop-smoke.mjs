@@ -2,7 +2,7 @@ import { _electron as electron } from "@playwright/test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 const executable = process.env.FRAMEFORGE_EXECUTABLE;
 // Never touch the real %APPDATA% profile: the app honours FRAMEFORGE_USER_DATA.
@@ -164,7 +164,10 @@ const hidden = await electron.launch({
   },
   timeout: 30000,
 });
-const ping = path.join(process.env.SystemRoot, "System32", "PING.EXE");
+// A private copy: the helper matches games by full exe path, so another Frameforge on this PC (a parallel or leaked smoke run
+// whose library holds System32\PING.EXE) must not see, boost or restore this run's dummy game.
+const ping = path.join(backgroundData, "frameforge-dummy-game.exe");
+await copyFile(path.join(process.env.SystemRoot, "System32", "PING.EXE"), ping);
 const dummies = [];
 const priority = (pid) =>
   execFileSync(
@@ -203,6 +206,10 @@ try {
     "auto-boost started with no window",
     30000,
   );
+  await until(
+    async () => (await call("session"))?.status === "active",
+    "boost applied (session active)",
+  );
   assert.equal(priority(first.pid), "High", "boost raised the game priority");
   assert.equal(await call("windows"), 0, "still no window while boosting");
   // Stop restores the live process.
@@ -216,6 +223,10 @@ try {
     async () => (await call("active")) === true,
     "auto-boost started for a second launch",
     30000,
+  );
+  await until(
+    async () => (await call("session"))?.status === "active",
+    "second boost applied (session active)",
   );
   assert.equal(priority(second.pid), "High");
   second.kill();

@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { describe, it, expect, vi } from "vitest";
 import { Repository } from "../electron/repository";
 import {
@@ -356,5 +357,18 @@ describe("background mode helpers", () => {
         "Doom",
       ),
     ).toBeNull();
+  });
+});
+
+describe("desktop smoke isolation", () => {
+  // The helper matches games by full exe path. A shared System32\PING.EXE made parallel or leaked Frameforge instances boost
+  // and restore each other's dummy game, so the --hidden scenario failed intermittently with "auto-boost started with no window".
+  it("uses a private copy of PING.EXE as the dummy game and waits for the session to be applied", () => {
+    const smoke = readFileSync("tools/desktop-smoke.mjs", "utf8");
+    expect(smoke).toMatch(/const ping = path\.join\(backgroundData,/);
+    expect(smoke).not.toMatch(
+      /const ping = path\.join\(process\.env\.SystemRoot/,
+    );
+    expect(smoke).toMatch(/\.status === "active"/);
   });
 });
