@@ -11,6 +11,7 @@ import {
   RestorePointService,
   overrideLabel,
   pendingLabel,
+  throttledMessage,
 } from "../electron/restore";
 import {
   requests,
@@ -90,6 +91,21 @@ const setup = () => {
 };
 const labels = (repo: Repository) =>
   repo.activity().map((a) => [a.label, a.status]);
+describe("throttledMessage", () => {
+  it("names the existing point and says the PC is still protected", () => {
+    const text = throttledMessage(
+      { description: "Windows Update", createdAt: "2026-10-13T07:17:00.000Z" },
+      "fallback",
+    );
+    expect(text).toMatch(
+      /^Windows skipped creating a new restore point because one was created recently \(Windows Update, .+\)\. Your PC is still protected by that point\.$/,
+    );
+    expect(text).not.toContain("System Protection");
+  });
+  it("falls back to the helper message when no point is known", () => {
+    expect(throttledMessage(null, "fallback")).toBe("fallback");
+  });
+});
 describe("Windows restore points", () => {
   it("rejects a throttle bypass without a prior throttled result", async () => {
     const repo = new Repository(":memory:");
@@ -134,7 +150,11 @@ describe("Windows restore points", () => {
     platform.outcomes = ["throttled", "created"];
     const first = await restore.create("Frameforge", false);
     expect(first.outcome).toBe("throttled");
-    expect(first.message).toContain("every 24 hours by default");
+    expect(first.message).toContain("one was created recently (Frameforge, ");
+    expect(first.message).toContain(
+      "Your PC is still protected by that point.",
+    );
+    expect(first.message).not.toContain("System Protection may be off");
     let duringCreate: unknown;
     platform.duringCreate = () => {
       duringCreate = repo.pendingJournal(overrideLabel);
@@ -150,7 +170,7 @@ describe("Windows restore points", () => {
     });
     expect(labels(repo)).toEqual(
       expect.arrayContaining([
-        ["Restore point skipped: Windows 24-hour limit", "cancelled"],
+        ["Restore point skipped: a recent point exists", "cancelled"],
         [overrideLabel, "success"],
         ["Windows restore point created", "success"],
       ]),

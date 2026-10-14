@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.Eventing.Reader;
 using System.Globalization;
 using System.Management;
 using System.Runtime.InteropServices;
@@ -47,6 +48,10 @@ public interface IRestoreStore
     /// <summary>The SystemRestore registry LastIndex: Windows bumps it when a point is committed, independent of the WMI list.</summary>
     long? LastIndex();
     uint Create(string description);
+    /// <summary>Fallback creation through srclient.dll SRSetRestorePointW (BEGIN then END_SYSTEM_CHANGE); 0 on success.</summary>
+    uint CreateViaClient(string description);
+    /// <summary>True when the Application log holds a System Restore "skipping creation" event (8216) logged at or after the given UTC time.</summary>
+    bool WindowsSkippedSince(DateTime sinceUtc);
     uint Enable(string driveRoot);
     bool Elevated { get; }
     string SystemDrive { get; }
@@ -93,10 +98,21 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
         // Windows' own answer (below) and the new-sequence check decide, and coverage is reported after creating.
         if (bypass && store.ReadFrequency() != original) throw new InvalidOperationException("The restore point frequency changed. Retry the normal creation first.");
         var before = Baseline();
-        if (!bypass) return CreateCore(description, before, null);
+        if (!bypass) return CreateCore(description, before, null, store.Create);
         RestoreResult result;
         store.WriteFrequency(Bypass);
-        try { result = CreateCore(description, before, 0); }
+        try
+        {
+            result = CreateCore(description, before, 0, store.Create);
+            // Windows can still skip with the limit at 0; SRSetRestorePointW is a different entry point. A point counts only by its new sequence number.
+            if (result.Outcome is "throttled" || result.Code is "restore-not-created")
+            {
+                RestoreResult? viaClient = null;
+                try { viaClient = CreateCore(description, before, 0, store.CreateViaClient); }
+                catch (Exception error) when (error is Win32Exception or COMException or DllNotFoundException or EntryPointNotFoundException) { /* Keep the first answer. */ }
+                if (viaClient?.Outcome is "created") result = viaClient;
+            }
+        }
         finally { store.WriteFrequency(original); }
         return result with { FrequencyRestored = store.ReadFrequency() == original };
     }
@@ -106,9 +122,10 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
     private static string Normalize(string text) => Regex.Replace(text, @"\s+", " ").Trim();
     private static bool SameDescription(string a, string b) => string.Equals(Normalize(a), Normalize(b), StringComparison.OrdinalIgnoreCase);
     private static string CodeText(uint code) => code > 0xFFFF ? $"0x{code:X8}" : code.ToString(CultureInfo.InvariantCulture);
-    private RestoreResult CreateCore(string description, long before, int? window)
+    private RestoreResult CreateCore(string description, long before, int? window, Func<string, uint> create)
     {
-        var task = Task.Run(() => store.Create(description));
+        var requested = DateTime.UtcNow.AddSeconds(-2);
+        var task = Task.Run(() => create(description));
         if (Task.WhenAny(task, Task.Delay(createTimeout ?? CreateLimit)).GetAwaiter().GetResult() != task)
             return new(true, $"Windows did not finish creating the restore point within {CreateLimit.TotalSeconds:0} seconds. It may still be created; check Load restore points.", "restore-timeout", "failed");
         var code = task.GetAwaiter().GetResult();
@@ -120,7 +137,7 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
         var newest = points.FirstOrDefault();
         var minutes = window ?? store.ReadFrequency().Minutes ?? 1440;
         if (created is null && code == 0 && newest is not null && minutes > 0 && newest.CreatedAt > DateTime.UtcNow.AddMinutes(-minutes))
-            return new(true, "Windows skipped the restore point because one was created recently.", Outcome: "throttled", LastPoint: newest);
+            return Throttled(newest);
         var deadline = DateTime.UtcNow + (verifyLimit ?? VerifyLimit);
         long? index = null;
         while (created is null)
@@ -142,8 +159,22 @@ public sealed class RestorePoints(IRestoreStore store, TimeSpan? createTimeout =
                 true => new(true, "Windows restore point created and verified.", Outcome: "created", Point: created, CreatedSequence: created.Sequence, DriveCoverage: "confirmed")
             };
         if (code != 0) return new(true, $"Windows could not create the restore point (error {CodeText(code)}).", "restore-failed", "failed");
-        return new(true, "Windows accepted the request but no new restore point appeared; System Protection may be off for the system drive", "restore-not-created", "failed");
+        // Accepted but nothing new: Windows logs 8216 when it skips because a point is already available, and this holds even when the frequency reads 0.
+        newest = points.FirstOrDefault();
+        if (store.WindowsSkippedSince(requested) || (minutes > 0 && newest is not null && newest.CreatedAt > DateTime.UtcNow.AddMinutes(-minutes)))
+            return Throttled(newest);
+        var why = store.SystemDriveProtected() switch
+        {
+            true => "System Protection is on, so Windows chose not to create one; check the System Restore events in the Application log",
+            false => $"System Protection is off for {store.SystemDrive}",
+            null => "System Protection may be off for the system drive, or its state could not be read"
+        };
+        return new(true, $"Windows accepted the request but no new restore point appeared; {why}.", "restore-not-created", "failed");
     }
+    private static RestoreResult Throttled(RestorePoint? last) => new(true,
+        last is null ? "Windows skipped creating a new restore point because one was created recently. Your PC is still protected by that point."
+            : $"Windows skipped creating a new restore point because one was created recently ({last.Description}, {last.CreatedAt.ToLocalTime():g}). Your PC is still protected by that point.",
+        Outcome: "throttled", LastPoint: last);
     // Only a new point carrying our description counts; another app may create one at the same time.
     private static RestorePoint? Match(RestorePoint[] points, string description, long before) =>
         points.FirstOrDefault(p => p.Sequence > before && SameDescription(p.Description, description));
@@ -381,6 +412,40 @@ public sealed class WindowsRestoreStore : IRestoreStore
     // 12 = MODIFY_SETTINGS, 100 = BEGIN_SYSTEM_CHANGE.
     public uint Create(string description) => Invoke("CreateRestorePoint", [description, 12, 100]);
     public uint Enable(string driveRoot) => Invoke("Enable", [driveRoot]);
+    [StructLayout(LayoutKind.Sequential, Pack = 1, CharSet = CharSet.Unicode)]
+    private struct RestorePointInfo
+    {
+        public uint EventType;
+        public uint PointType;
+        public long Sequence;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string Description;
+    }
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct StateStatus { public uint Status; public long Sequence; }
+    [DllImport("srclient.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SRSetRestorePointW(ref RestorePointInfo info, out StateStatus status);
+    // 100 = BEGIN_SYSTEM_CHANGE, 101 = END_SYSTEM_CHANGE, 12 = MODIFY_SETTINGS.
+    public uint CreateViaClient(string description)
+    {
+        var begin = new RestorePointInfo { EventType = 100, PointType = 12, Description = description };
+        if (!SRSetRestorePointW(ref begin, out var status)) return (uint)Marshal.GetLastWin32Error() is var error and not 0 ? error : 1;
+        if (status.Status != 0) return status.Status;
+        var end = new RestorePointInfo { EventType = 101, PointType = 12, Sequence = status.Sequence };
+        return SRSetRestorePointW(ref end, out _) ? 0 : (uint)Marshal.GetLastWin32Error();
+    }
+    public bool WindowsSkippedSince(DateTime sinceUtc)
+    {
+        try
+        {
+            var from = sinceUtc.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+            var query = new EventLogQuery("Application", PathType.LogName, $"*[System[Provider[@Name='System Restore'] and (EventID=8216) and TimeCreated[@SystemTime>='{from}']]]");
+            using var reader = new EventLogReader(query);
+            using var found = reader.ReadEvent();
+            return found is not null;
+        }
+        catch (Exception error) when (error is EventLogException or UnauthorizedAccessException) { return false; }
+    }
     public long? LastIndex()
     {
         using var key = Registry.LocalMachine.OpenSubKey(Key, false);

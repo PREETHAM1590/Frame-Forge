@@ -46,6 +46,16 @@ public class RestorePointsTests
             }
             return CreateCode;
         }
+        public bool SkipEvent { get; set; }
+        public bool ClientAddsPoint { get; set; }
+        public int ClientCalls { get; set; }
+        public bool WindowsSkippedSince(DateTime sinceUtc) => SkipEvent;
+        public uint CreateViaClient(string description)
+        {
+            ClientCalls++;
+            if (ClientAddsPoint) Points.Add(new(Points.Count + 1, description, DateTime.UtcNow));
+            return 0;
+        }
         public uint Enable(string driveRoot) => 0;
         public bool Elevated => true;
         public string SystemDrive => "C:";
@@ -213,6 +223,85 @@ public class RestorePointsTests
         Assert.Equal("restore-not-created", result.Code);
     }
 
+    // QA 2026-10-14: frequency read 0, Windows returned 0 and logged 8216 "skipping ... available"; the app blamed System Protection.
+    [Theory]
+    [InlineData(true, 0)]
+    [InlineData(false, null)]
+    public void SkipEventIsThrottledWithPointDetails(bool existed, int? minutes)
+    {
+        var store = new FakeRestoreStore { AddsPoint = false, SkipEvent = true, Frequency = new(existed, minutes) };
+        store.Points.Add(new(7, "Windows Update", DateTime.UtcNow.AddDays(-3)));
+        var result = Quick(store).Create("Again", false, store.Frequency);
+        Assert.Equal("throttled", result.Outcome);
+        Assert.Null(result.Code);
+        Assert.Equal(7, result.LastPoint!.Sequence);
+        Assert.Contains("one was created recently (Windows Update, ", result.Message);
+        Assert.EndsWith("Your PC is still protected by that point.", result.Message);
+        Assert.DoesNotContain("System Protection", result.Message.Replace("Your PC is still protected", ""));
+    }
+
+    [Fact]
+    public void AbsentFrequencyUsesDefaultDayWindow()
+    {
+        var store = new FakeRestoreStore { AddsPoint = false, Frequency = new(false, null) };
+        store.Points.Add(new(7, "Earlier", DateTime.UtcNow.AddHours(-4)));
+        Assert.Equal("throttled", new RestorePoints(store).Create("Again", false, store.Frequency).Outcome);
+    }
+
+    [Fact]
+    public void ExplicitZeroFrequencyWithoutSkipEventIsNotThrottled()
+    {
+        var store = new FakeRestoreStore { AddsPoint = false, Frequency = new(true, 0) };
+        store.Points.Add(new(7, "Earlier", DateTime.UtcNow.AddHours(-4)));
+        Assert.Equal("restore-not-created", Quick(store).Create("Again", false, store.Frequency).Code);
+    }
+
+    [Theory]
+    [InlineData(false, "is off for C:")]
+    [InlineData(true, "System Protection is on")]
+    [InlineData(null, "may be off")]
+    public void NotCreatedOnlyBlamesProtectionWhenOffOrUnknown(bool? protectedState, string expected)
+    {
+        var store = new FakeRestoreStore { AddsPoint = false };
+        store.Protection.Enqueue(protectedState);
+        var result = Quick(store).Create("Again", false, store.Frequency);
+        Assert.Equal("restore-not-created", result.Code);
+        Assert.Contains(expected, result.Message);
+        if (protectedState == true) Assert.DoesNotContain("may be off", result.Message);
+    }
+
+    [Fact]
+    public void BypassFallsBackToClientApiWhenWmiStillSkips()
+    {
+        var original = new FrequencyState(false, null);
+        var store = new FakeRestoreStore { AddsPoint = false, SkipEvent = true, ClientAddsPoint = true };
+        var result = new RestorePoints(store, null, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(1)).Create("Override", true, original);
+        Assert.Equal("created", result.Outcome);
+        Assert.Equal(1, store.ClientCalls);
+        Assert.Equal(original, store.Frequency);
+        Assert.True(result.FrequencyRestored);
+    }
+
+    [Fact]
+    public void BypassStillThrottledWhenBothPathsSkipAndRestoresFrequency()
+    {
+        var original = new FrequencyState(false, null);
+        var store = new FakeRestoreStore { AddsPoint = false, SkipEvent = true };
+        store.Points.Add(new(7, "Windows Update", DateTime.UtcNow.AddHours(-4)));
+        var result = Quick(store).Create("Override", true, original);
+        Assert.Equal("throttled", result.Outcome);
+        Assert.Equal(1, store.ClientCalls);
+        Assert.Equal(original, store.Frequency);
+    }
+
+    [Fact]
+    public void ClientFallbackIsNotUsedWithoutBypass()
+    {
+        var store = new FakeRestoreStore { AddsPoint = false, SkipEvent = true };
+        Quick(store).Create("Again", false, store.Frequency);
+        Assert.Equal(0, store.ClientCalls);
+    }
+
     [Theory]
     [InlineData(false, null)]
     [InlineData(true, 1440)]
@@ -281,6 +370,8 @@ public class RestorePointsTests
         public RestorePoint[] List() => [];
         public long? LastIndex() => null;
         public uint Create(string description) { Thread.Sleep(2000); return 0; }
+        public uint CreateViaClient(string description) => 0;
+        public bool WindowsSkippedSince(DateTime sinceUtc) => false;
         public uint Enable(string driveRoot) => 0;
         public bool Elevated => true;
         public string SystemDrive => "C:";

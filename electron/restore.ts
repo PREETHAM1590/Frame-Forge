@@ -22,18 +22,20 @@ const bypassValue: Frequency = { existed: true, minutes: 0 };
 const bypassWindowMs = 10 * 60 * 1000;
 const same = (a: Frequency, b: Frequency) =>
   a.existed === b.existed && (a.minutes ?? null) === (b.minutes ?? null);
-const windowText = (minutes: number) =>
-  minutes === 1440
-    ? "24-hour"
-    : minutes % 60 === 0
-      ? `${minutes / 60}-hour`
-      : `${minutes}-minute`;
+/** Windows skipped creation because a recent point exists: say which one, and that the PC is still covered. */
+export function throttledMessage(
+  last: { description: string; createdAt: string } | null,
+  fallback: string,
+): string {
+  if (!last) return fallback;
+  return `Windows skipped creating a new restore point because one was created recently (${last.description}, ${new Date(last.createdAt).toLocaleString()}). Your PC is still protected by that point.`;
+}
 const outcomeLog: Record<
   CreateRestorePointResult["outcome"],
   [string, Activity["status"]]
 > = {
   created: ["Windows restore point created", "success"],
-  throttled: ["Restore point skipped: Windows limit", "cancelled"],
+  throttled: ["Restore point skipped: a recent point exists", "cancelled"],
   "protection-disabled": ["System Protection is off", "failed"],
   "policy-disabled": ["System Restore is disabled by policy", "failed"],
   "elevation-cancelled": ["Restore point cancelled", "cancelled"],
@@ -266,8 +268,7 @@ export class RestorePointService {
     if (result.driveCoverage === "confirmed")
       this.confirmDrive(status.systemDrive);
     else if (result.driveCoverage) this.forgetDrive();
-    const [baseLabel, activity] = outcomeLog[result.outcome];
-    let label = baseLabel;
+    const [label, activity] = outcomeLog[result.outcome];
     if (result.outcome === "created") {
       this.lastThrottledAt = null;
       const point = result.point;
@@ -284,12 +285,7 @@ export class RestorePointService {
     }
     if (result.outcome === "throttled") {
       this.lastThrottledAt = Date.now();
-      const minutes = status.frequency.minutes ?? 1440;
-      label = `Restore point skipped: Windows ${windowText(minutes)} limit`;
-      const last = result.lastPoint
-        ? new Date(result.lastPoint.createdAt).toLocaleString()
-        : "an unknown time";
-      message = `Windows allows one app-created restore point every ${minutes === 1440 ? "24 hours by default" : `${minutes} minutes on this PC`}; the last one was at ${last}.`;
+      message = throttledMessage(result.lastPoint, result.message);
     }
     if (result.frequencyRestored === false)
       message +=
