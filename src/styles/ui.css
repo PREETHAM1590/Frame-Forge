@@ -985,3 +985,17 @@ main:focus {
     flex-wrap: wrap;
   }
 }
+progress {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  border: 0;
+  background: var(--c-container);
+}
+progress::-webkit-progress-bar {
+  background: var(--c-container);
+}
+progress::-webkit-progress-value {
+  background: var(--c-primary);
+  transition: width var(--dur-meter) var(--ease-out);
+}
