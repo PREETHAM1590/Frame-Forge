@@ -1,0 +1,98 @@
+/* Sections on Restore, System and Settings share the panel look. */
+.settings-section,
+.system-section {
+  background: var(--c-cell);
+  border: var(--bw) solid var(--c-border);
+  border-top: var(--bw-strong) solid var(--c-border-strong);
+  padding: var(--sp-5);
+  margin: 0 0 var(--sp-4);
+  min-width: 0;
+}
+.settings-section h2,
+.system-section h2 {
+  font-size: var(--fs-md);
+  text-transform: uppercase;
+  margin: 0 0 var(--sp-4);
+}
+.settings-section h2 > svg,
+.system-section h2 > svg {
+  color: var(--c-primary);
+}
+.restore-strip {
+  margin: var(--sp-4) 0;
+}
+.table-wrap {
+  margin-top: var(--sp-4);
+  border: var(--bw) solid var(--c-border);
+  background: var(--c-cell);
+  padding: 0 var(--sp-4);
+}
+.settings-section .table-wrap {
+  margin-inline: 0;
+}
+th {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--c-muted);
+  font-weight: 500;
+}
+td {
+  padding: var(--sp-4);
+  font-size: var(--fs-sm);
+}
+td:first-child,
+th:first-child {
+  padding-left: 0;
+}
+tbody tr:hover {
+  background: var(--c-container);
+}
+/* Ledger */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--c-border);
+  border: var(--bw) solid var(--c-border);
+}
+.activity-list article {
+  background: var(--c-cell);
+  padding: var(--sp-4) var(--sp-5);
+  border: 0;
+  border-left: var(--bw-strong) solid var(--c-border-strong);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.activity-list article.ledger-lime {
+  border-left-color: var(--c-primary);
+}
+.activity-list article.ledger-red {
+  border-left-color: var(--c-error);
+}
+.activity-list article.ledger-amber {
+  border-left-color: var(--c-caution);
+}
+.activity-list h3 {
+  font-size: var(--fs-md);
+  text-transform: uppercase;
+}
+.activity-list time {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  display: block;
+  margin-top: var(--sp-2);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+}
+.activity-list p {
+  margin: var(--sp-2) 0 0;
+}
+.setting-row {
+  border-bottom: var(--bw) solid var(--c-border);
+  max-width: none;
+}
+.setting-row:last-child {
+  border-bottom: 0;
+}

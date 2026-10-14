@@ -15,6 +15,9 @@ import {
   Button,
   Busy,
   Badge,
+  CellGrid,
+  StatCell,
+  Chips,
   Empty,
   Modal,
   formatTime,
@@ -445,6 +448,30 @@ export function Backups(props: ViewProps) {
         title="Restore & backups"
         subtitle="Windows whole-PC recovery and Frameforge configuration backups, kept separate."
       />
+      <CellGrid columns="repeat(3, minmax(0, 1fr))" className="restore-strip">
+        <StatCell
+          label="App backups"
+          count={data.backups.length}
+          hint="Frameforge settings only"
+        />
+        <StatCell
+          label="Latest backup"
+          value={data.backups.length ? formatTime(data.backups[0]!.at) : "None"}
+          hint="Windows restore points are listed below"
+        />
+        <StatCell
+          label="Needs recovery"
+          count={
+            data.activity.filter((a) => a.status === "recovery-needed").length
+          }
+          status={
+            data.activity.some((a) => a.status === "recovery-needed")
+              ? { text: "Action needed", tone: "red" }
+              : { text: "Clear", tone: "lime" }
+          }
+          hint="Interrupted operations"
+        />
+      </CellGrid>
       <WindowsRestore {...props} />
       <section className="settings-section">
         <h2>
@@ -644,12 +671,11 @@ export function ActivityLog({
       />
       <div className="toolbar">
         <span className="muted">{list.length} operations</span>
-        <select
-          aria-label="Activity status"
+        <Chips
+          label="Activity status"
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        >
-          {[
+          onChange={setFilter}
+          options={[
             "All",
             "success",
             "failed",
@@ -657,15 +683,20 @@ export function ActivityLog({
             "rolled-back",
             "recovery-needed",
             "running",
-          ].map((f) => (
-            <option key={f}>{f}</option>
-          ))}
-        </select>
+          ].map((f) => ({
+            id: f,
+            label: f,
+            count:
+              f === "All"
+                ? data.activity.length
+                : data.activity.filter((a) => a.status === f).length,
+          }))}
+        />
       </div>
       {list.length ? (
         <div className="activity-list">
           {list.map((a) => (
-            <article key={a.id}>
+            <article key={a.id} className={`ledger-${statusTone(a.status)}`}>
               <span
                 className={`action-icon ${a.status === "recovery-needed" ? "red" : "cyan"}`}
               >
@@ -677,7 +708,9 @@ export function ActivityLog({
                   <Badge tone={statusTone(a.status)}>{a.status}</Badge>
                 </div>
                 <p className="muted">{a.message}</p>
-                <span className="muted">{formatTime(a.at)}</span>
+                <time className="muted" dateTime={a.at}>
+                  {formatTime(a.at)}
+                </time>
               </div>
               {restoreRecoveryRow(a) && (
                 <Button onClick={() => navigate("Restore & backups")}>
