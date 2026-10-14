@@ -15,6 +15,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { onEvent, request } from "./api";
+import { useScan } from "./useScan";
 import type { Bootstrap, Method, Request, Response } from "../shared/contracts";
 import type { Page, ViewProps } from "./types";
 import {
@@ -78,6 +79,7 @@ export default function App() {
   const [requestsPending, setRequestsPending] = useState(0);
   const [restoreRequests, setRestoreRequests] = useState(0);
   const [timerRequests, setTimerRequests] = useState(0);
+  const scan = useScan(data);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(
     null,
   );
@@ -246,6 +248,7 @@ export default function App() {
     run,
     navigate,
     preview: (ids) => void flow.open(ids),
+    scan,
   };
   const views: Record<Page, React.ReactNode> = {
     Dashboard: <Dashboard {...props} />,

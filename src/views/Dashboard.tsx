@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Monitor } from "lucide-react";
 import { LinkButton, formatTime } from "../components/ui";
 import { request } from "../api";
-import { useScan } from "../useScan";
 import type { RestoreStatus } from "../../shared/contracts";
 import { catalogue, securityIds } from "../../shared/catalogue";
 import type { ViewProps } from "../types";
@@ -22,9 +21,9 @@ export function Dashboard({
   preview,
   run,
   pending,
+  scan: { running, progress },
 }: ViewProps) {
   const h = data.hardware;
-  const { running, progress } = useScan(data);
   const [restore, setRestore] = useState<RestoreStatus | null>(null);
   useEffect(() => {
     let active = true;

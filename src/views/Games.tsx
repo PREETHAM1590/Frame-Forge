@@ -27,7 +27,6 @@ import {
   type Game,
 } from "../../shared/contracts";
 import { GameIcon } from "../components/GameIcon";
-import { useScan } from "../useScan";
 import type { ViewProps } from "../types";
 export { GameMode } from "./GameBooster";
 const modeNames: Record<Game["boostMode"], string> = {
@@ -38,7 +37,13 @@ const modeNames: Record<Game["boostMode"], string> = {
   competitive: "Competitive",
   custom: "Custom",
 };
-export function Games({ data, run, pending, navigate }: ViewProps) {
+export function Games({
+  data,
+  run,
+  pending,
+  navigate,
+  scan: { running, progress },
+}: ViewProps) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Game | null>(null);
   const [boostMode, setBoostMode] = useState<Game["boostMode"]>("global");
@@ -48,7 +53,6 @@ export function Games({ data, run, pending, navigate }: ViewProps) {
   const [filter, setFilter] = useState<"all" | "custom">("all");
   const [manual, setScanning] = useState(false);
   // Includes a scan started elsewhere (startup, Dashboard) so the library shows it too.
-  const { running, progress } = useScan(data);
   const scanning = manual || running;
   async function rescan(folder: boolean) {
     setScanning(true);
