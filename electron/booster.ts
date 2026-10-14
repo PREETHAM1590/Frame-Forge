@@ -20,7 +20,9 @@ import {
 import type { Repository } from "./repository.js";
 import {
   capabilitiesUnavailable,
+  type GameWatch,
   type Platform,
+  type RunningGame,
   type SessionChannel,
 } from "./platform.js";
 const text = (error: unknown) =>
@@ -95,6 +97,11 @@ export class BoostEngine {
   private live: Live | null = null;
   private watcher: ReturnType<typeof setInterval> | undefined;
   private polling = false;
+  // Event-style detector (long-lived helper) when the platform has one; otherwise the interval above polls.
+  private watch: GameWatch | undefined;
+  private watched = "";
+  private lastFound: RunningGame[] = [];
+  private disposed = false;
   private lastPollError = "";
   private capabilities: { at: number; value: BoostCapabilities } | undefined;
   // Process instances already auto-boosted (or stopped), so the watcher never restarts them.
@@ -117,8 +124,11 @@ export class BoostEngine {
   get active() {
     return this.live !== null;
   }
+  get liveSession(): BoostSession | null {
+    return this.live?.session ?? null;
+  }
   get watching() {
-    return this.watcher !== undefined;
+    return this.watcher !== undefined || this.watch !== undefined;
   }
   private get elevatedMs() {
     return this.timeouts.elevated ?? 330000;
@@ -434,6 +444,7 @@ export class BoostEngine {
       const state = this.repo.state();
       const game = state.games.find((g) => g.id === gameId);
       if (!game) throw new Error("Game not found");
+      if (reason === "auto" && game.autoBoost === false) return null;
       if (this.live || this.repo.boostSession())
         throw new Error(
           "Stop or recover the current boost session before starting another.",
@@ -477,6 +488,9 @@ export class BoostEngine {
     skipAdmin = false,
   ): Promise<BoostSession> {
     const captured: Captured[] = [];
+    // Auto-boost runs in the background: it opens an administrator prompt only when the user opted in.
+    const allowAdmin =
+      reason === "auto" && this.repo.state().settings.autoBoostAdmin;
     // "Skip steps that need administrator approval": never sent to the helper, so no prompt can open.
     const skipped = skipAdmin
       ? (["pauseServices", "standbyPurge"] as const).filter((id) => wanted[id])
@@ -486,7 +500,9 @@ export class BoostEngine {
       : wanted;
     // Services and the standby list open an administrator prompt: nothing else may open one while it is pending.
     const prompts = (
-      reason === "manual" ? (["pauseServices", "standbyPurge"] as const) : []
+      reason === "manual" || allowAdmin
+        ? (["pauseServices", "standbyPurge"] as const)
+        : []
     ).filter((id) => requested[id]);
     if (prompts.length) this.platform.elevation.hold("boost");
     // The capture-off optimization writes the same Windows value; applying it twice would let the revert undo it.
@@ -506,13 +522,15 @@ export class BoostEngine {
           startedAt: new Date().toISOString(),
           endedAt: null,
           status: "preparing",
-          message: `${modeLabels[mode]} mode starting for ${game.name}.${mechanisms.pauseServices && reason === "manual" ? " Windows will ask for administrator approval to pause services." : ""}`,
+          message: `${modeLabels[mode]} mode starting for ${game.name}.${mechanisms.pauseServices && (reason === "manual" || allowAdmin) ? " Windows will ask for administrator approval to pause services." : ""}`,
           mechanisms: [
             ...skipped.map((id) => ({
               id,
               state: "skipped" as const,
               detail:
-                "You chose to skip steps that need administrator approval.",
+                reason === "auto"
+                  ? "Skipped — admin not requested in background."
+                  : "You chose to skip steps that need administrator approval.",
               code: "admin-not-requested",
             })),
             ...(managed
@@ -742,7 +760,7 @@ export class BoostEngine {
         ownedPlan: this.ownedPlan(),
         // Xbox and Microsoft Store games need the Xbox services; auto-boost must never open an administrator prompt.
         storeGame: game.source === "xbox" || game.source === "msstore",
-        unattended: reason === "auto",
+        unattended: reason === "auto" && !allowAdmin,
         // Presets leave smart core targeting off on Windows 11 hybrid CPUs; Custom, or an explicit enhancer override, forces it.
         preset: mode !== "custom" && config.overrides.smartCores !== true,
         // Turned on by Frameforge but Windows has not restarted since: a timer request cannot reach the game yet.
@@ -776,6 +794,9 @@ export class BoostEngine {
     this.live = null;
     this.platform.elevation.release("boost");
     this.capabilities = undefined;
+    // A second game may have started during this session; the watcher only reports changes, so look again.
+    if (this.watch && !this.disposed)
+      setTimeout(() => void this.consider(this.lastFound), 1500).unref();
     const count = (state: MechanismResult["state"]) =>
       reverts.filter((r) => r.state === state).length;
     // Fewer results than captures means the helper's revert stopped early: never report that as restored.
@@ -918,43 +939,94 @@ export class BoostEngine {
       if (prompts) this.platform.elevation.release("recover");
     }
   }
+  // Library games auto-boost may start: the global switch is checked by configure(), the per-game one here.
+  private eligible() {
+    return this.repo.state().games.filter((g) => g.autoBoost !== false);
+  }
+  // Starts or stops the watcher to match the settings; cheap, so the service calls it after anything that may change them.
   configure() {
+    if (this.disposed) return;
+    const games = this.eligible();
     const on =
-      this.platform.boostAvailable && this.repo.state().booster.autoBoost;
-    if (on && !this.watcher) {
-      // ponytail: 5 s polling; WMI process-start events (Win32_ProcessStartTrace) if start latency matters.
+      this.platform.boostAvailable &&
+      this.repo.state().booster.autoBoost &&
+      games.length > 0;
+    if (on && this.platform.watchGames) {
+      this.watch ??= this.platform.watchGames(
+        (found) => {
+          this.lastFound = found;
+          void this.consider(found);
+        },
+        () => {
+          // The helper died: reconnect shortly (it was only watching).
+          this.watch = undefined;
+          this.watched = "";
+          if (!this.disposed) setTimeout(() => this.configure(), 10000).unref();
+        },
+      );
+      const signature = JSON.stringify(
+        games.map((g) => [g.id, g.path, g.executablePath]),
+      );
+      if (signature !== this.watched) {
+        this.watched = signature;
+        this.watch.update(games);
+      }
+    } else if (!this.platform.watchGames && on && !this.watcher) {
+      // ponytail: 5 s polling (one helper run per tick) only where there is no watcher helper (tests, non-Windows).
       this.watcher = setInterval(() => void this.poll(), 5000);
       this.watcher.unref?.();
-    } else if (!on && this.watcher) {
-      clearInterval(this.watcher);
+    } else if (!on) {
+      if (this.watcher) clearInterval(this.watcher);
       this.watcher = undefined;
+      this.watch?.close();
+      this.watch = undefined;
+      this.watched = "";
     }
   }
   async poll() {
     if (this.polling || this.busy || this.live || this.repo.boostSession())
       return;
-    const games = this.repo.state().games;
+    const games = this.eligible();
     if (!games.length) return;
     this.polling = true;
     try {
-      const found = (await this.platform.runningGames(games)).find(
-        (f) => !this.seen.has(key(f.target)),
-      );
-      if (!found) return;
-      if (this.seen.size > 1000) this.seen.clear();
-      this.seen.add(key(found.target));
-      await this.start(found.gameId, "auto", found.target);
-      this.lastPollError = "";
+      await this.consider(await this.platform.runningGames(games), true);
     } catch (error) {
-      if (text(error) !== this.lastPollError)
-        this.log(`Auto-boost: ${text(error)}`, "failed");
-      this.lastPollError = text(error);
+      this.failed(error);
     } finally {
       this.polling = false;
     }
   }
+  private failed(error: unknown) {
+    if (text(error) !== this.lastPollError)
+      this.log(`Auto-boost: ${text(error)}`, "failed");
+    this.lastPollError = text(error);
+  }
+  // Starts the first not-yet-seen running library game in its configured mode. Runs from watcher events and from poll().
+  private async consider(found: RunningGame[], polled = false) {
+    if (this.busy || this.live || this.repo.boostSession()) return;
+    if (!polled && this.polling) return;
+    const next = found.find(
+      (f) =>
+        !this.seen.has(key(f.target)) &&
+        this.repo.state().games.find((g) => g.id === f.gameId)?.autoBoost !==
+          false,
+    );
+    if (!next) return;
+    if (this.seen.size > 1000) this.seen.clear();
+    this.seen.add(key(next.target));
+    try {
+      await this.start(next.gameId, "auto", next.target);
+      this.lastPollError = "";
+    } catch (error) {
+      this.failed(error);
+    }
+  }
   dispose() {
+    this.disposed = true;
     if (this.watcher) clearInterval(this.watcher);
     this.watcher = undefined;
+    this.watch?.close();
+    this.watch = undefined;
   }
 }

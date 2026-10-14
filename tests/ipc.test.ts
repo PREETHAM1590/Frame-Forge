@@ -40,6 +40,8 @@ const inputs: { [M in Method]: () => Request<M> } = {
     diagnostics: false,
     autoScan: true,
     autoScanHours: 24,
+    keepRunning: true,
+    autoBoostAdmin: false,
   }),
   preview: () => ({ ids: ["mouse-precision"] }),
   confirm: () => ({ token: id(), confirmed: true }),
@@ -243,6 +245,8 @@ describe("IPC surface", () => {
       diagnostics: false,
       autoScan: true,
       autoScanHours: 24,
+      keepRunning: true,
+      autoBoostAdmin: false,
     };
     repo.updateState({ ...repo.state(), settings });
     const service = new AppService(

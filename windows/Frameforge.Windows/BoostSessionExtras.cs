@@ -20,7 +20,7 @@ public sealed record Extras(
 
 public sealed partial class BoostSessionEngine
 {
-    public const string AutoSkipServices = "Auto-boost never opens an administrator prompt. Start the boost yourself to pause services.";
+    public const string AutoSkipServices = "Skipped — admin not requested in background. Start the boost yourself to pause services.";
     private const int PowerThrottlingBuild = 16299;
     private const uint ExecutionSpeed = 1;
     // Windows 11 (build 22000) has Intel Thread Director, which already places the foreground game on performance cores.
@@ -58,7 +58,7 @@ public sealed partial class BoostSessionEngine
     private bool purgeWanted;
     private Task? elevatedTask;
     private CancellationTokenSource? elevatedCancel;
-    public const string AutoSkipPurge = "Auto-boost never opens an administrator prompt. Start the boost yourself to clear the standby list.";
+    public const string AutoSkipPurge = "Skipped — admin not requested in background. Start the boost yourself to clear the standby list.";
     private void PlanPurge(SessionCommand command)
     {
         if (extras?.Elevator is null) { Run("standbyPurge", () => Unsupported("standbyPurge", "Administrator approval is not available in this build.")); return; }

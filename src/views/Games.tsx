@@ -20,6 +20,7 @@ import {
   LinkButton,
   Disclosure,
   Meter,
+  Toggle,
 } from "../components/ui";
 import {
   sourceLabels,
@@ -48,6 +49,7 @@ export function Games({
   const [selected, setSelected] = useState<Game | null>(null);
   const [boostMode, setBoostMode] = useState<Game["boostMode"]>("global");
   const [notes, setNotes] = useState("");
+  const [autoBoost, setAutoBoost] = useState(true);
   const [remove, setRemove] = useState<Game | null>(null);
   const [scan, setScan] = useState<Detection | null>(null);
   const [filter, setFilter] = useState<"all" | "custom">("all");
@@ -240,6 +242,7 @@ export function Games({
                     onClick={() => {
                       setSelected(g);
                       setBoostMode(g.boostMode);
+                      setAutoBoost(g.autoBoost !== false);
                       setNotes(g.notes);
                     }}
                   >
@@ -318,7 +321,7 @@ export function Games({
               if (
                 await run(
                   "profile",
-                  { id: selected.id, boostMode, notes },
+                  { id: selected.id, boostMode, autoBoost, notes },
                   "Game settings saved.",
                 )
               )
@@ -340,6 +343,16 @@ export function Games({
                 ))}
               </select>
             </label>
+            <Toggle
+              label="Auto-boost this game"
+              description={
+                data.state.booster.autoBoost
+                  ? "Start the booster by itself when this game launches, even with the window closed to the tray."
+                  : "Takes effect once Auto-boost is turned on in Game Mode."
+              }
+              checked={autoBoost}
+              onChange={setAutoBoost}
+            />
             <label className="field">
               Configuration notes
               <textarea

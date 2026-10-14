@@ -447,7 +447,7 @@ export function Enhancers({
         label="Auto-boost when a library game starts"
         description={
           unavailable ||
-          `Checks every 5 seconds for a running library game and starts its mode.${status?.watching ? " Watching now." : ""}`
+          `Starts a library game's mode when it launches, and ends it when the game exits, even with the window closed to the tray. Turn it off per game in the library.${status?.watching ? " Watching now." : ""}`
         }
         checked={config.autoBoost}
         disabled={pending || !!unavailable}

@@ -5,6 +5,7 @@ import os from "node:os";
 import {
   HelperResult,
   OperationId,
+  RunningGamesSchema,
   type CreateRestorePointResult,
   type Frequency,
   type HelperRestoreStatus,
@@ -30,6 +31,10 @@ export interface SessionChannel {
   kill(): void;
   on(event: "event", listener: (event: unknown) => void): unknown;
   on(event: "exit", listener: () => void): unknown;
+}
+export interface GameWatch {
+  update(games: Game[]): void;
+  close(): void;
 }
 export type RunningGame = { gameId: string; target: ProcessTarget };
 export type ElevationUse =
@@ -178,6 +183,11 @@ export interface Platform {
   /** Result of an elevated creation that outlived the helper's wait; null while still running. */
   restoreResult(resultPath: string): Promise<PlatformCreateResult | null>;
   runningGames(games: Game[]): Promise<RunningGame[]>;
+  // Optional event-style detector (one long-lived helper): onRunning gets the full running set whenever it changes. Without it the booster polls.
+  watchGames?(
+    onRunning: (found: RunningGame[]) => void,
+    onExit?: () => void,
+  ): GameWatch;
   backgroundProcesses(): Promise<RunningProcess[]>;
   // ownedPlan: GUID of the plan Frameforge created with consent (from SQLite, never from the renderer).
   // timerRestartPending: Frameforge turned on the machine-wide timer setting and Windows has not restarted since.
@@ -699,6 +709,51 @@ export class WindowsPlatform implements Platform {
     return this.elevatedStatus(
       await this.elevated("restore-frequency-set", frequencyArgs(original)),
     );
+  }
+  watchGames(
+    onRunning: (found: RunningGame[]) => void,
+    onExit?: () => void,
+  ): GameWatch {
+    // Not detached: this helper only reads, and must die with Frameforge.
+    const child = spawn(this.executable, ["--watch"], {
+      windowsHide: true,
+      shell: false,
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    createInterface({ input: child.stdout }).on("line", (line) => {
+      if (line.length > 262144) return;
+      try {
+        const parsed = RunningGamesSchema.safeParse(
+          (JSON.parse(line) as { runningGames?: unknown }).runningGames,
+        );
+        if (parsed.success) onRunning(parsed.data);
+      } catch {
+        /* Ignore a malformed line; the next tick answers again. */
+      }
+    });
+    child.on("error", () => onExit?.());
+    child.on("close", () => onExit?.());
+    child.stdin.on("error", () => {});
+    try {
+      os.setPriority(child.pid!, os.constants.priority.PRIORITY_BELOW_NORMAL);
+    } catch {
+      /* Priority is a courtesy. */
+    }
+    return {
+      update: (games) => {
+        if (child.stdin.writable)
+          child.stdin.write(
+            JSON.stringify(
+              games.map((g) => ({
+                id: g.id,
+                path: g.path,
+                executablePath: g.executablePath,
+              })),
+            ) + "\n",
+          );
+      },
+      close: () => child.kill(),
+    };
   }
   spawnSession(): SessionChannel {
     // detached: libuv otherwise puts the child in a kill-on-close job, and the helper
