@@ -247,6 +247,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         if (mechanisms.StandbyPurge) PlanPurge(command);
         if (mechanisms.GameMode) Run("gameMode", GameMode);
         if (mechanisms.PowerPlan) Run("powerPlan", PowerPlan);
+        if (mechanisms.PowerPlan && UsbSuspendOff() is { } usb) emit(new(usb.State, usb.Id, usb.Detail, Code: usb.Code));
         if (mechanisms.TimerResolution) Run("timerResolution", Timer);
         if (mechanisms.Priority != "Normal") Run("priority", () => Rank(game.Priority) >= Rank(mechanisms.Priority)
             ? new("priority", "skipped", $"{game.Name} already runs at {game.Priority}; not lowered.")
@@ -322,6 +323,42 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         return power.Active() == target
             ? new("powerPlan", "applied", $"{PlanName(target)} power plan active and verified.")
             : new("powerPlan", "failed", "Windows did not keep the power plan.");
+    }
+    // Plan-only: while Frameforge's own plan is the active one, its plugged-in USB selective suspend is turned off, so USB devices
+    // (mouse, keyboard, headset) are never put to sleep mid-game. Windows' built-in plans and other plans are never edited.
+    // Returns null when this does not apply (another plan is active), so nothing is reported.
+    private MechanismResult? UsbSuspendOff()
+    {
+        try
+        {
+            if (ownedPlan is not { } owned || extras?.PowerSettings is not { } settings) return null;
+            var scheme = power.Active();
+            if (scheme != owned) return null;
+            if (settings.ReadAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend) is not { } current)
+                return new("powerPlan", "skipped", "Frameforge plan: this PC's plan does not expose USB selective suspend.");
+            if (current == 0) return new("powerPlan", "skipped", "Frameforge plan: USB selective suspend is already off.");
+            Capture(new("powerPlan", Prior: current.ToString(CultureInfo.InvariantCulture), Applied: "0", Scheme: scheme.ToString(), Setting: "usbsuspend"));
+            settings.WriteAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend, 0);
+            if (power.Active() == scheme) power.SetActive(scheme);
+            return settings.ReadAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend) == 0
+                ? new("powerPlan", "applied", "Frameforge plan: USB selective suspend switched off for the session (plan only) and verified.")
+                : new("powerPlan", "failed", "Frameforge plan: Windows did not keep the USB selective suspend value.");
+        }
+        catch (Exception error) { return new("powerPlan", "failed", $"Frameforge plan: {Describe(error)}"); }
+    }
+    private MechanismResult RevertUsbSuspend(Captured item)
+    {
+        if (extras?.PowerSettings is not { } settings) throw new InvalidOperationException("Power setting access is not available in this build.");
+        if (!Guid.TryParse(item.Scheme, out var scheme) || scheme != ownedPlan || !uint.TryParse(item.Prior, NumberStyles.None, CultureInfo.InvariantCulture, out var prior) || prior > 1 || item.Applied != "0")
+            throw new InvalidOperationException("Invalid saved USB selective suspend value.");
+        if (settings.ReadAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend) is not { } current) return new("powerPlan", "reverted", "The plan or setting no longer exists; nothing to restore.");
+        if (current == prior) return new("powerPlan", "reverted", $"USB selective suspend already back to {prior}.");
+        if (current != 0) return new("powerPlan", "conflict", $"USB selective suspend was changed outside Frameforge to {current}; kept.");
+        settings.WriteAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend, prior);
+        if (power.Active() == scheme) power.SetActive(scheme);
+        return settings.ReadAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend) == prior
+            ? new("powerPlan", "reverted", "USB selective suspend restored and verified.")
+            : new("powerPlan", "failed", "Windows did not restore USB selective suspend.");
     }
     private MechanismResult Timer()
     {
@@ -406,7 +443,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
             return id switch
             {
                 "gameMode" => RevertGameMode(item!),
-                "powerPlan" => RevertPower(item!),
+                "powerPlan" => item!.Setting == "usbsuspend" ? RevertUsbSuspend(item) : RevertPower(item),
                 "timerResolution" => RevertTimer(),
                 "priority" or "lowerBackground" => RevertPriority(item!),
                 "affinity" => RevertAffinity(item!),

@@ -23,6 +23,9 @@ public interface IPowerSettings
     // Null when the scheme does not expose the setting.
     uint? ReadAc(Guid scheme, Guid setting);
     void WriteAc(Guid scheme, Guid setting, uint value);
+    // Settings outside the Processor subgroup (USB selective suspend). Defaults keep older implementations valid.
+    uint? ReadAc(Guid scheme, Guid subgroup, Guid setting) => null;
+    void WriteAc(Guid scheme, Guid subgroup, Guid setting, uint value) => throw new InvalidOperationException("This power setting cannot be written here.");
 }
 // ProcessPowerThrottling control and state masks; null when Windows cannot report them.
 public interface IPowerThrottling
@@ -76,16 +79,16 @@ public sealed class WindowsGpuInfo : IGpuInfo
 
 public sealed class WindowsPowerSettings : IPowerSettings
 {
-    public uint? ReadAc(Guid scheme, Guid setting)
+    public uint? ReadAc(Guid scheme, Guid setting) => ReadAc(scheme, BoosterPaths.SubProcessor, setting);
+    public void WriteAc(Guid scheme, Guid setting, uint value) => WriteAc(scheme, BoosterPaths.SubProcessor, setting, value);
+    public uint? ReadAc(Guid scheme, Guid subgroup, Guid setting)
     {
-        var sub = BoosterPaths.SubProcessor;
-        var error = PowerReadACValueIndex(IntPtr.Zero, ref scheme, ref sub, ref setting, out var value);
+        var error = PowerReadACValueIndex(IntPtr.Zero, ref scheme, ref subgroup, ref setting, out var value);
         return error == 0 ? value : error == 2 ? null : throw new Win32Exception((int)error);
     }
-    public void WriteAc(Guid scheme, Guid setting, uint value)
+    public void WriteAc(Guid scheme, Guid subgroup, Guid setting, uint value)
     {
-        var sub = BoosterPaths.SubProcessor;
-        var error = PowerWriteACValueIndex(IntPtr.Zero, ref scheme, ref sub, ref setting, value);
+        var error = PowerWriteACValueIndex(IntPtr.Zero, ref scheme, ref subgroup, ref setting, value);
         if (error != 0) throw new Win32Exception((int)error);
     }
     [DllImport("powrprof.dll")] private static extern uint PowerReadACValueIndex(IntPtr root, ref Guid scheme, ref Guid subgroup, ref Guid setting, out uint value);
@@ -137,6 +140,9 @@ public static class BoosterPaths
 {
     public static readonly Guid SubProcessor = new("54533251-82be-4824-96c1-47b60b740d00");
     public static readonly Guid CpMinCores = new("0cc5b647-c1df-4637-891a-dec35c318583");
+    // USB settings subgroup and "USB selective suspend setting" (0 disabled, 1 enabled).
+    public static readonly Guid SubUsb = new("2a737441-1930-4402-8d77-b2bebba308a3");
+    public static readonly Guid UsbSuspend = new("48e6b7a6-50f5-4782-a5d4-53bb8f07e226");
     // Core parking minimum for the second efficiency class; on hybrid CPUs that class is the performance cores.
     public static readonly Guid CpMinCores1 = new("0cc5b647-c1df-4637-891a-dec35c318584");
     public const string GameConfigStore = @"System\GameConfigStore", GameDvr = @"Software\Microsoft\Windows\CurrentVersion\GameDVR", GameBar = @"Software\Microsoft\GameBar";

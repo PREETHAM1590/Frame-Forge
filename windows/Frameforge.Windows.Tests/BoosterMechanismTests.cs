@@ -60,6 +60,9 @@ public class BoosterMechanismTests
         public List<string> Writes { get; } = [];
         public uint? ReadAc(Guid scheme, Guid setting) => Values.TryGetValue((scheme, setting), out var v) ? v : null;
         public void WriteAc(Guid scheme, Guid setting, uint value) { Writes.Add($"{scheme}/{BoosterPaths.SettingName(setting)}={value}"); Values[(scheme, setting)] = value; }
+        public Dictionary<(Guid, Guid, Guid), uint> Sub { get; } = new();
+        public uint? ReadAc(Guid scheme, Guid subgroup, Guid setting) => Sub.TryGetValue((scheme, subgroup, setting), out var v) ? v : null;
+        public void WriteAc(Guid scheme, Guid subgroup, Guid setting, uint value) { Writes.Add($"{scheme}/usb={value}"); Sub[(scheme, subgroup, setting)] = value; }
     }
     private sealed class Throttling : IPowerThrottling
     {
@@ -504,6 +507,65 @@ public class BoosterMechanismTests
         affinity.Engine.Start(Command(Off() with { SmartCores = true, Affinity = [0, 1, 2, 3] }));
         Assert.Equal("skipped", affinity.Steps.Last(s => s.Mechanism == "smartCores").Event);
         Assert.Empty(affinity.Sets.Current);
+    }
+
+    // ---- USB selective suspend (Frameforge plan only) ----
+    private static readonly Guid UsbPlan = new("80a24a93-e78a-4c59-884d-5868d7da7cec");
+    private static BoostSessionEngine UsbEngine(Rig rig) => new(rig.Processes, rig.Power, new Timer(), new MemoryStore(), rig.Steps.Add, 999, UsbPlan, rig.Extras);
+    [Fact]
+    public void UsbSuspendIsSwitchedOffOnlyOnTheFrameforgePlanAndPutBack()
+    {
+        var rig = Setup(); rig.Power.Schemes.Add(UsbPlan); rig.Power.Current = UsbPlan;
+        rig.Settings.Sub[(UsbPlan, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)] = 1;
+        var engine = UsbEngine(rig);
+        engine.Start(Command(Off() with { PowerPlan = true }));
+        Assert.Equal(0u, rig.Settings.Sub[(UsbPlan, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)]);
+        var saved = CapturedOf(rig, "powerPlan");
+        Assert.Equal(("1", "0", UsbPlan.ToString(), "usbsuspend"), (saved.Prior, saved.Applied, saved.Scheme, saved.Setting));
+        Assert.Contains(rig.Steps, s => s.Event == "applied" && s.Mechanism == "powerPlan" && s.Detail!.Contains("USB selective suspend"));
+        // A change made outside Frameforge during the session is kept; otherwise the plan gets its old value back.
+        Assert.All(engine.Revert(), r => Assert.Equal("reverted", r.State));
+        Assert.Equal(1u, rig.Settings.Sub[(UsbPlan, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)]);
+    }
+    [Fact]
+    public void UsbSuspendLeavesOtherPlansAlonePlansWithoutTheSettingAndExternalChanges()
+    {
+        var other = Setup(); other.Settings.Sub[(Power.Balanced, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)] = 1;
+        UsbEngine(other).Start(Command(Off() with { PowerPlan = true }));
+        Assert.Equal(1u, other.Settings.Sub[(Power.Balanced, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)]);
+        Assert.DoesNotContain(other.Settings.Writes, w => w.EndsWith("usb=0"));
+        var missing = Setup(); missing.Power.Schemes.Add(UsbPlan); missing.Power.Current = UsbPlan;
+        UsbEngine(missing).Start(Command(Off() with { PowerPlan = true }));
+        Assert.Contains(missing.Steps, s => s.Event == "skipped" && s.Detail!.Contains("does not expose"));
+        var already = Setup(); already.Power.Schemes.Add(UsbPlan); already.Power.Current = UsbPlan;
+        already.Settings.Sub[(UsbPlan, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)] = 0;
+        UsbEngine(already).Start(Command(Off() with { PowerPlan = true }));
+        Assert.DoesNotContain(already.Steps, s => s.Event == "captured");
+        var external = Setup(); external.Power.Schemes.Add(UsbPlan); external.Power.Current = UsbPlan;
+        external.Settings.Sub[(UsbPlan, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)] = 1;
+        var engine = UsbEngine(external);
+        engine.Start(Command(Off() with { PowerPlan = true }));
+        external.Settings.Sub[(UsbPlan, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)] = 1;
+        // Back to 1 equals the saved prior, so nothing is written again; any other value is a conflict.
+        Assert.Equal("reverted", engine.Revert().Single().State);
+        var changed = Setup(); changed.Power.Schemes.Add(UsbPlan); changed.Power.Current = UsbPlan;
+        changed.Settings.Sub[(UsbPlan, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)] = 1;
+        var e2 = UsbEngine(changed);
+        e2.Start(Command(Off() with { PowerPlan = true }));
+        changed.Settings.Sub[(UsbPlan, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)] = 3;
+        Assert.Equal("conflict", e2.Revert().Single().State);
+        Assert.Equal(3u, changed.Settings.Sub[(UsbPlan, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend)]);
+    }
+    [Fact]
+    public void UsbSuspendRecoveryRejectsSavedValuesFromAnotherPlan()
+    {
+        var rig = Setup(); rig.Power.Schemes.Add(UsbPlan);
+        var engine = UsbEngine(rig);
+        var results = engine.Recover([
+            new Captured("powerPlan", Prior: "1", Applied: "0", Scheme: Power.Balanced.ToString(), Setting: "usbsuspend"),
+            new Captured("powerPlan", Prior: "9", Applied: "0", Scheme: UsbPlan.ToString(), Setting: "usbsuspend")
+        ]);
+        Assert.All(results, r => Assert.Equal("failed", r.State));
     }
 
     // ---- core parking ----

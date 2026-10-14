@@ -1730,7 +1730,7 @@ export const CapturedSchema = z
       .optional(),
     /** Power scheme and setting changed by coreParking (prior/applied hold the percentages). */
     scheme: PlanGuid.optional(),
-    setting: z.enum(["cpmincores", "cpmincores1"]).optional(),
+    setting: z.enum(["cpmincores", "cpmincores1", "usbsuspend"]).optional(),
     /** Prior and applied lists: paused service names, or CPU set ids (smartCores). */
     items: z.array(z.string().max(64)).max(256).optional(),
     appliedItems: z.array(z.string().max(64)).max(256).optional(),
