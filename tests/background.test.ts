@@ -346,7 +346,7 @@ describe("background mode helpers", () => {
     );
     expect(notices.next({ ...base, status: "active" }, "Doom")).toBeNull();
     expect(notices.next({ ...base, status: "ended" }, "Doom")?.body).toBe(
-      "Boost ended, everything restored",
+      "Boost ended, everything restored. No changes were recorded.",
     );
     expect(notices.next({ ...base, status: "ended" }, "Doom")).toBeNull();
     // A manual session ending unannounced (never active here) stays quiet.

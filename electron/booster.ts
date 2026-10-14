@@ -830,6 +830,7 @@ export class BoostEngine {
       failed: failed > 0 || !!live.aborted || reason === "start-failed",
       abnormal: !!live.aborted || reason === "start-failed",
       endedAt: failed ? null : now.toISOString(),
+      restoreFrom: Math.min(live.session.mechanisms.length, 399),
       mechanisms: [...live.session.mechanisms, ...reverts].slice(-400),
       message: incomplete
         ? `Session ended because ${why}, but the helper did not report every revert${detail && reason !== "start-failed" ? ` (${detail})` : ""}. Retry recovery.`

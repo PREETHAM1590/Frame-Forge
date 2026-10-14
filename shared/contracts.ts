@@ -516,6 +516,8 @@ export const BoostSessionSchema = z
     failed: z.boolean().default(false),
     // True when the session ended abnormally (helper crash, rejected report, failed start), whatever else failed earlier.
     abnormal: z.boolean().default(false),
+    /** Index in `mechanisms` where the end-of-session restore results begin (older rows lack it). */
+    restoreFrom: z.number().int().nonnegative().optional(),
   })
   .strict();
 export type BoostSession = z.infer<typeof BoostSessionSchema>;
@@ -920,6 +922,16 @@ export const FpsSummarySchema = z
     avgFps: z.number().nonnegative(),
     low1Fps: z.number().nonnegative().nullable(),
     boost: FpsBoostSchema,
+    // Added with the benchmark report; saved summaries from earlier versions lack them.
+    low01Fps: z.number().nonnegative().nullish(),
+    /** Frame time at the 99th percentile, ms. */
+    p99Ms: z.number().nonnegative().nullish(),
+    stutters: Count.nullish(),
+    /** Average of the game's CPU and GPU use over the capture. */
+    cpuPercent: Gauge.nullish(),
+    gpuPercent: Gauge.nullish(),
+    /** Set when the capture was a timed benchmark run of this many seconds. */
+    benchmarkSeconds: Count.nullish(),
   })
   .strict();
 export type FpsSummary = z.infer<typeof FpsSummarySchema>;
@@ -947,6 +959,8 @@ export const FpsStatusSchema = z
       .strict()
       .nullable(),
     boost: FpsBoostSchema,
+    /** Length of the timed benchmark run in progress or just ended; null for a free capture. */
+    benchmarkSeconds: Count.nullish(),
     /** The saved summary once a capture ended and was long enough to keep. */
     saved: FpsSummarySchema.nullable(),
     /** Library games running now (refreshed by fpsStatus). */
@@ -982,6 +996,105 @@ export const FpsEventSchema = z.union([
   z.object({ event: z.literal("ended"), reason: z.string().max(40) }).strict(),
 ]);
 export type FpsEvent = z.infer<typeof FpsEventSchema>;
+/** Saved A/B benchmark: the timed runs it was made from. Results are always recomputed from the runs (shared/benchmark.ts). */
+export const BenchReportSchema = z
+  .object({
+    id: Id,
+    gameId: Id,
+    gameName: z.string().max(80),
+    at: z.string().max(40),
+    runs: z.array(FpsSummarySchema).max(40),
+  })
+  .strict();
+export type BenchReport = z.infer<typeof BenchReportSchema>;
+export const BenchDataSchema = z
+  .object({
+    /** Timed runs of the current, unsaved set. */
+    runs: z.array(FpsSummarySchema).max(40),
+    reports: z.array(BenchReportSchema).max(20),
+  })
+  .strict();
+export const CleanupIds = [
+  "userTemp",
+  "windowsTemp",
+  "directxShaders",
+  "nvidiaShaders",
+  "amdShaders",
+  "intelShaders",
+] as const;
+export const CleanupId = z.enum(CleanupIds);
+export type CleanupId = z.infer<typeof CleanupId>;
+export const CleanupPreviewSchema = z
+  .object({
+    categories: z
+      .array(
+        z
+          .object({
+            id: CleanupId,
+            label: z.string().max(80),
+            present: z.boolean(),
+            /** Needs Frameforge to run as administrator; it is not, so nothing was measured and nothing will be deleted. */
+            needsAdmin: z.boolean(),
+            shader: z.boolean(),
+            /** Only files older than this many hours are touched (0 = all files). */
+            minAgeHours: Count,
+            bytes: z.number().nonnegative().nullable(),
+            files: Count,
+            folders: z.array(z.string().max(500)).max(10),
+          })
+          .strict(),
+      )
+      .max(10),
+    elevated: z.boolean(),
+  })
+  .strict();
+export type CleanupPreview = z.infer<typeof CleanupPreviewSchema>;
+export const CleanupResultSchema = z
+  .object({
+    categories: z
+      .array(
+        z
+          .object({
+            id: CleanupId,
+            label: z.string().max(80),
+            freedBytes: z.number().nonnegative(),
+            deleted: Count,
+            skipped: Count,
+            note: z.string().max(200),
+          })
+          .strict(),
+      )
+      .max(10),
+    freedBytes: z.number().nonnegative(),
+    deleted: Count,
+    skipped: Count,
+  })
+  .strict();
+export type CleanupResult = z.infer<typeof CleanupResultSchema>;
+export const DriverVendor = z.enum(["nvidia", "amd", "intel"]);
+export type DriverVendor = z.infer<typeof DriverVendor>;
+export const GpuDriversSchema = z
+  .object({
+    adapters: z
+      .array(
+        z
+          .object({
+            name: z.string().max(160),
+            vendor: z.enum(["nvidia", "amd", "intel", "other"]),
+            /** Windows' own version string, for example 32.0.15.6094. */
+            driverVersion: z.string().max(40),
+            /** The version the vendor shows (NVIDIA 560.94), when it can be told. */
+            displayVersion: z.string().max(40).nullable(),
+            /** yyyy-MM-dd */
+            driverDate: z.string().max(10).nullable(),
+          })
+          .strict(),
+      )
+      .max(8),
+    warnings: z.array(z.string().max(200)).max(5),
+  })
+  .strict();
+export type GpuDrivers = z.infer<typeof GpuDriversSchema>;
 const Empty = z.object({}).strict();
 export const UpdateStatusSchema = z
   .object({
@@ -1173,9 +1286,37 @@ export const requests = {
   monitorStop: Empty,
   // Game Monitor: FPS capture needs one Windows administrator prompt, so it only starts after an explicit click.
   fpsStatus: Empty,
-  fpsStart: z.object({ gameId: Id, confirmed: z.literal(true) }).strict(),
+  fpsStart: z
+    .object({
+      gameId: Id,
+      confirmed: z.literal(true),
+      /** A timed benchmark run: stops itself after this many seconds. */
+      benchmarkSeconds: z.number().int().min(20).max(300).optional(),
+    })
+    .strict(),
   fpsStop: z.object({ confirmed: z.literal(true) }).strict(),
   fpsHistory: z.object({ gameId: Id }).strict(),
+  // Benchmark report: timed runs of the current set plus saved reports; saving snapshots the runs and starts a new set.
+  benchData: z.object({ gameId: Id }).strict(),
+  benchSave: z.object({ gameId: Id }).strict(),
+  benchDiscard: z.object({ gameId: Id, confirmed: z.literal(true) }).strict(),
+  // The main process asks where to save; the renderer never sends a path.
+  benchExport: z
+    .object({ reportId: Id, format: z.enum(["md", "csv"]) })
+    .strict(),
+  // Finished and live boost sessions with what each mechanism did.
+  boostHistory: z.object({ gameId: Id.optional() }).strict(),
+  // Cleanup: preview reads sizes only. Run deletes the named categories' contents; paths are never sent.
+  cleanupPreview: Empty,
+  cleanupRun: z
+    .object({
+      ids: z.array(CleanupId).min(1).max(6),
+      confirmed: z.literal(true),
+    })
+    .strict(),
+  gpuDrivers: Empty,
+  // Opens the vendor's official driver page (fixed list, chosen in the main process).
+  openDriverPage: z.object({ vendor: DriverVendor }).strict(),
 };
 export const responses = {
   bootstrap: BootstrapSchema,
@@ -1229,6 +1370,15 @@ export const responses = {
   fpsStart: FpsStatusSchema,
   fpsStop: FpsStatusSchema,
   fpsHistory: z.array(FpsSummarySchema).max(50),
+  benchData: BenchDataSchema,
+  benchSave: BenchDataSchema,
+  benchDiscard: BenchDataSchema,
+  benchExport: z.string().max(2048).nullable(),
+  boostHistory: z.array(BoostSessionSchema).max(20),
+  cleanupPreview: CleanupPreviewSchema,
+  cleanupRun: CleanupResultSchema,
+  gpuDrivers: GpuDriversSchema,
+  openDriverPage: z.boolean(),
 };
 export type Method = keyof typeof requests;
 export type Request<M extends Method> = z.infer<(typeof requests)[M]>;
@@ -1381,6 +1531,8 @@ export const HelperResult = z
     backgroundProcesses: z.array(RunningProcessSchema).optional(),
     capabilities: BoostCapabilitiesSchema.optional(),
     network: NetworkCheckSchema.optional(),
+    cleanup: z.union([CleanupPreviewSchema, CleanupResultSchema]).optional(),
+    gpuDrivers: GpuDriversSchema.optional(),
     launch: LaunchResultSchema.optional(),
     timerGlobal: TimerGlobalResultSchema.optional(),
     reverts: z.array(MechanismResultSchema).optional(),

@@ -3,9 +3,15 @@ import { EventEmitter } from "node:events";
 import { createInterface } from "node:readline";
 import os from "node:os";
 import {
+  CleanupPreviewSchema,
+  CleanupResultSchema,
   HelperResult,
   OperationId,
   RunningGamesSchema,
+  type CleanupId,
+  type CleanupPreview,
+  type CleanupResult,
+  type GpuDrivers,
   type CreateRestorePointResult,
   type Frequency,
   type HelperRestoreStatus,
@@ -206,6 +212,11 @@ export interface Platform {
   ): Promise<MechanismResult[]>;
   // Diagnostics only: pings the host through the helper and changes nothing.
   networkCheck(host: string, count: number): Promise<NetworkCheck>;
+  /** Cleanup: preview reads sizes only; run deletes the contents of the named fixed categories. Absent without the Windows helper. */
+  cleanupPreview?(): Promise<CleanupPreview>;
+  cleanupRun?(ids: CleanupId[]): Promise<CleanupResult>;
+  /** Read-only GPU driver facts. */
+  gpuDrivers?(): Promise<GpuDrivers>;
   // Per-game launch settings (GPU preference, fullscreen optimizations): read, apply or revert one value.
   launchSetting(call: LaunchSettingCall): Promise<LaunchResult>;
   // Creates the Frameforge plan under a GUID Frameforge already recorded.
@@ -613,6 +624,35 @@ export class WindowsPlatform implements Platform {
     );
     if (!result.network) throw new Error("Missing network check result");
     return result.network;
+  }
+  async cleanupPreview() {
+    const result = await this.call(
+      { command: "cleanup-preview" },
+      undefined,
+      120000,
+    );
+    const parsed = CleanupPreviewSchema.safeParse(result.cleanup);
+    if (!parsed.success) throw new Error("Missing cleanup preview");
+    return parsed.data;
+  }
+  async cleanupRun(ids: CleanupId[]) {
+    const result = await this.call(
+      { command: "cleanup-run", ids },
+      undefined,
+      600000,
+    );
+    const parsed = CleanupResultSchema.safeParse(result.cleanup);
+    if (!parsed.success) throw new Error("Missing cleanup result");
+    return parsed.data;
+  }
+  async gpuDrivers() {
+    const result = await this.call(
+      { command: "gpu-drivers" },
+      undefined,
+      30000,
+    );
+    if (!result.gpuDrivers) throw new Error("Missing GPU driver result");
+    return result.gpuDrivers;
   }
   async createPowerPlan(destination: string) {
     await this.call({ command: "power-create-plan", ownedPlan: destination });

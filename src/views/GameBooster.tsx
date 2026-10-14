@@ -32,6 +32,7 @@ import {
   SessionLog,
   SessionPanel,
 } from "./gamemode/SessionPanel";
+import { SessionHistory } from "./gamemode/SessionChanges";
 import { StartBoost } from "./gamemode/StartBoost";
 import { HowItWorks } from "./gamemode/HowItWorks";
 
@@ -288,6 +289,15 @@ export function GameMode({
             onOpenLibrary={() => navigate("Game library")}
           />
           {!sessionActive && <SessionLog log={log} />}
+          {!sessionActive && (
+            <SessionHistory
+              key={session?.status ?? "none"}
+              limit={1}
+              names={Object.fromEntries(
+                data.state.games.map((g) => [g.id, g.name]),
+              )}
+            />
+          )}
           <ModeSelector
             mode={config.mode}
             pending={pending}

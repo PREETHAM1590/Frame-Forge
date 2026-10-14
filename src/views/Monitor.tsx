@@ -17,6 +17,7 @@ import {
 import { useMonitorFeed } from "../useMonitor";
 import { AreaChart } from "./monitor/Charts";
 import { GameMonitor } from "./monitor/GameMonitor";
+import { Benchmark } from "./monitor/Benchmark";
 import { formatLink, formatRate, formatSize, percent } from "./monitor/format";
 import type { MonitorSample } from "../../shared/contracts";
 import type { ViewProps } from "../types";
@@ -366,6 +367,7 @@ export function Monitor({ data }: ViewProps) {
         </div>
       )}
       <GameMonitor data={data} />
+      <Benchmark data={data} />
     </>
   );
 }

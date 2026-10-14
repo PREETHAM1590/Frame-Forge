@@ -1,6 +1,7 @@
 // Background mode: tray menu model, close-to-tray decision and boost notifications. Pure functions and one tiny class so they test without Electron.
 import { modeLabels } from "./booster.js";
 import type { BoostMode, BoostSession } from "../shared/contracts.js";
+import { summarizeSession } from "../shared/sessionChanges.js";
 
 export const hiddenArg = "--hidden";
 /** Started by "Launch at sign-in" (or by hand with --hidden): stay in the tray when Frameforge can keep running there. */
@@ -102,9 +103,11 @@ export class BoostNotices {
     if (session.status === "ended" && this.announced.delete(session.id))
       return {
         title: "Frameforge",
-        body: session.failed
-          ? "Boost ended. Open Frameforge to check what was restored."
-          : "Boost ended, everything restored",
+        body: `${
+          session.failed
+            ? "Boost ended. Open Frameforge to check what was restored."
+            : "Boost ended, everything restored"
+        }. ${summarizeSession(session).tray}`,
       };
     return null;
   }

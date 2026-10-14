@@ -4,6 +4,7 @@ import { GameIcon } from "../../components/GameIcon";
 import type { BoostSession, Game } from "../../../shared/contracts";
 import type { ViewProps } from "../../types";
 import { labels, modes, stateText, tones } from "./model";
+import { SessionChanges } from "./SessionChanges";
 
 type Outcome = { text: string; error: boolean };
 
@@ -127,6 +128,7 @@ export function SessionPanel({
             </li>
           ))}
         </ul>
+        <SessionChanges session={session} />
         <Button
           variant="primary"
           disabled={pending || waiting}
