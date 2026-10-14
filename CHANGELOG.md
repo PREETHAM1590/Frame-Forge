@@ -1,9 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
 
-- **Automatic updates (opt-in).** Frameforge can check GitHub for new releases at start and every 6 hours, or when you press Check for updates (Settings, or the tray menu). It shows the version and release notes, downloads only when you ask, and never installs while a Game Mode session is running.
-- **Anonymous usage statistics (opt-in, off by default).** A small allowlisted set of events, listed in the README Privacy section. First run asks once; both choices live in Settings > Privacy and updates.
+- Optional update checks at startup, every six hours, or from Settings and the tray. Downloads happen when requested. Installation waits until a boost has ended and the app quits; closing to the tray keeps it running.
+- Optional anonymous usage statistics, off by default. First run asks once; both privacy choices can be changed in Settings. Only the events and values listed in the README can be sent.
+- Background mode with one tray menu for opening the window, auto-boost, mode and status, stopping a boost, updates and quitting. Closing destroys the window to free its memory. Launch at sign-in starts hidden, and a second launch opens the existing app.
+- Auto-boost watches library games and restores their settings when they exit. Pages load when opened. Software rendering stays enabled to keep tray CPU use low.
+- Monitor shows live CPU, GPU, memory, disk and network readings. Sampling stops when the window is hidden or destroyed. Optional FPS capture reads DirectX present events through an administrator helper and saves local session summaries.
+- New reversible settings for ten Windows services, Large Send Offload on physical adapters, NVIDIA global power and pre-rendered frame settings, Windows Photo Viewer registration and Windows Mobility Center. Service settings preserve the exact start type and run state and are blocked during a boost.
+- Hardware-accelerated GPU scheduling is available only when the GPU and driver report support. It needs administrator approval and a restart, and rollback restores the exact prior value, including an absent override.
+- Removed information-only catalogue rows, including startup, driver and DNS reviews. Startup management and driver checks are planned for 1.4.0.
+- Fixed publishing into an existing helper folder so newer dependencies replace older runtime DLLs. Monitor charts update with each sample without continuous animation, reducing software-rendering CPU use.
 
 ## 1.2.2
 
@@ -15,7 +22,6 @@ First public release built by GitHub Actions (1.2.1 was never published: its rel
 - **Signing-ready.** The release workflow can sign the installer through SignPath Foundation once the project is approved; see `docs/CODE_SIGNING_POLICY.md`. Until then the installer is unsigned.
 - **Removed the default menu bar** (File, Edit, View, Window) from the app window.
 - **Docs.** Removed third-party reference material from the repository and reworded research notes neutrally.
-- **Optimizations that were information only now work, or are gone.** New: switches for SysMain, the Print Spooler and eight more Windows services (exact start type and run state restored on rollback, blocked while Game Mode runs), Large Send Offload off for physical network adapters, NVIDIA power management and pre-rendered frames through the driver's own settings interface, Windows Photo Viewer registration and the Windows Mobility Center policy. The "Not offered or information only" list is removed; items with no documented, reversible mechanism were dropped (reasons in `docs/research/catalog-mapping.md`).
 
 ## 1.2.0
 

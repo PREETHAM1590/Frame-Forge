@@ -39,7 +39,6 @@ function Cell({
   values,
   max,
   label2,
-  tick,
 }: {
   label: string;
   icon: React.ReactNode;
@@ -48,7 +47,6 @@ function Cell({
   values: number[];
   max?: number;
   label2: string;
-  tick: string;
 }) {
   const last = values.at(-1) ?? 0;
   return (
@@ -66,7 +64,6 @@ function Cell({
         max={max}
         label={`${label2}, last minute`}
         tone={tone(max ? (100 * last) / max : last)}
-        tick={tick}
       />
     </div>
   );
@@ -75,7 +72,6 @@ function Cell({
 export function Monitor({ data }: ViewProps) {
   const { samples, status, error, retry } = useMonitorFeed();
   const last = samples.at(-1);
-  const tick = last?.at ?? "none";
   return (
     <>
       <PageTitle
@@ -131,7 +127,6 @@ export function Monitor({ data }: ViewProps) {
               hint={`${last.cpu.cores.length} logical cores`}
               values={samples.map((s) => s.cpu.total)}
               label2={`CPU ${percent(last.cpu.total)}`}
-              tick={tick}
             />
             <Cell
               label="Memory"
@@ -140,7 +135,6 @@ export function Monitor({ data }: ViewProps) {
               hint={`${formatSize(last.memory.totalBytes - last.memory.availableBytes)} used / ${formatSize(last.memory.availableBytes)} available`}
               values={samples.map(usedPercent)}
               label2={`Memory ${percent(usedPercent(last))}`}
-              tick={tick}
             />
             {(() => {
               const gpu = mainGpu(last);
@@ -158,7 +152,6 @@ export function Monitor({ data }: ViewProps) {
                   }
                   values={samples.map((s) => mainGpu(s)?.engine3d ?? 0)}
                   label2={`GPU 3D ${gpu ? percent(gpu.engine3d) : "not available"}`}
-                  tick={tick}
                 />
               );
             })()}
@@ -177,7 +170,6 @@ export function Monitor({ data }: ViewProps) {
                 Math.max(0, ...s.disks.map((d) => d.activePercent)),
               )}
               label2="Busiest drive active time"
-              tick={tick}
             />
           </section>
 

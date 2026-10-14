@@ -27,11 +27,18 @@ test("desktop browser workflows and persistence", async ({ page }) => {
   await page.getByRole("button", { name: "Close dialog" }).click();
   await page.getByLabel("Search optimizations").fill("GPU");
   await page
-    .getByRole("button", { name: "Details for GPU scheduling review" })
+    .getByRole("button", {
+      name: "Details for Hardware-accelerated GPU scheduling",
+    })
     .click();
   await expect(
     page.getByRole("button", { name: "Open Graphics settings in Windows" }),
   ).toBeDisabled();
+  await expect(
+    page.getByText("Restart the PC for Windows to read the change.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Close dialog" }).click();
   await page.getByRole("button", { name: "Presets", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Beginner" })).toBeVisible();
@@ -78,6 +85,7 @@ test("desktop browser workflows and persistence", async ({ page }) => {
     "Game library",
     "Game Mode",
     "System",
+    "Monitor",
     "Activity",
     "Settings",
   ]) {
@@ -108,6 +116,7 @@ test("mobile navigation and dialogs have no page overflow", async ({
     "Game Mode",
     "Restore & backups",
     "System",
+    "Monitor",
     "Activity",
     "Settings",
   ]) {

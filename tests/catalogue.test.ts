@@ -111,13 +111,7 @@ describe("optimization catalogue", () => {
     ).toThrow(/never part of a preset/);
   });
   it("has no information-only entries: every offered item can be applied", () => {
-    for (const o of catalogue.filter((x) => !x.supported))
-      expect([
-        "hardware-scheduling",
-        "startup-review",
-        "driver-review",
-        "dns-tuning",
-      ]).toContain(o.id);
+    expect(catalogue.every((o) => o.supported)).toBe(true);
     expect(catalogue.some((o) => o.name.startsWith("Not offered"))).toBe(false);
   });
 });

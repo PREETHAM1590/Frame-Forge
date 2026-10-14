@@ -561,9 +561,14 @@ describe("settings and system wording", () => {
     ).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "System" }));
     expect(
-      await screen.findByText(/needs a hardware-monitoring driver/),
+      await screen.findByText(/Open Monitor for live CPU use/),
     ).toBeVisible();
-    expect(screen.getByText(/does not\s+measure FPS/)).toBeVisible();
+    expect(screen.getByText(/optional DirectX FPS capture/)).toBeVisible();
+    expect(
+      screen.getByText(
+        /Vulkan, OpenGL and some anti-cheat games are not measured/,
+      ),
+    ).toBeVisible();
     expect(screen.queryByText("Unsupported in this release")).toBeNull();
   });
   it("keeps launch at sign-in enabled in the installed (packaged) app", async () => {

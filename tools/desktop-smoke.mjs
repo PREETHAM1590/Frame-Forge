@@ -110,6 +110,23 @@ try {
     "Electron smoke passed: real Windows discovery, sandboxed preload, no renderer Node, invalid request rejected.",
   );
   // Closing the window destroys it (renderer freed) and keeps the app in the tray; the tray can bring it back.
+  await page.getByRole("button", { name: "Monitor", exact: true }).click();
+  await page.getByText("Live", { exact: true }).first().waitFor();
+  // Keep the real published helper live beyond the renderer's stall timeout.
+  const readingAt = () =>
+    page.evaluate(async () => window.frameforge.monitorStart({}));
+  assert.equal(await readingAt(), true);
+  await page.waitForTimeout(8000);
+  assert.equal(
+    await page.getByText("Live", { exact: true }).first().isVisible(),
+    true,
+  );
+  assert.equal(
+    await page
+      .getByText("No readings for a few seconds", { exact: true })
+      .count(),
+    0,
+  );
   const hooks = (fn, arg) =>
     app.evaluate((_e, { fn, arg }) => globalThis.__frameforgeTest[fn](arg), {
       fn,
@@ -118,6 +135,11 @@ try {
   await hooks("closeWindow");
   await until(async () => (await hooks("windows")) === 0, "window destroyed");
   assert.equal(await hooks("tray"), true, "tray survives the closed window");
+  assert.equal(
+    await hooks("monitoring"),
+    false,
+    "counter helper stops when the window is destroyed",
+  );
   await hooks("openWindow");
   await until(async () => (await hooks("windows")) === 1, "window reopened");
   console.log(

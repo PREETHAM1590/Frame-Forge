@@ -294,7 +294,7 @@ if (!app.requestSingleInstanceLock()) {
               ? "\n\nAnonymous usage statistics are never sent unless you tick the box below."
               : ""),
           buttons: ["Yes", "No"],
-          defaultId: 0,
+          defaultId: 1,
           cancelId: 1,
           noLink: true,
           ...(analytics.available
@@ -404,6 +404,7 @@ if (!app.requestSingleInstanceLock()) {
         window.on("closed", () => {
           // No window, no live counters.
           service.monitor.stop();
+          void service.fps.stop().catch(() => null);
           window = null;
         });
         // Background scan once the UI is up; due-ness (first launch / interval / setting) is decided in the service.
@@ -467,6 +468,12 @@ if (!app.requestSingleInstanceLock()) {
                 .stop()
                 .catch(() => null)
                 .finally(pushState),
+            checkUpdates: updates
+              ? () => {
+                  showWindow();
+                  void updates!.check();
+                }
+              : undefined,
             quit: () => app.quit(),
           },
         );
@@ -542,11 +549,8 @@ if (!app.requestSingleInstanceLock()) {
   });
   let quitting = false;
   app.on("before-quit", (event) => {
-    // "Install when I quit" (this update or the setting); electron-updater reads the flag at quit time.
-    if (updater && repo)
-      updater.autoInstallOnAppQuit =
-        repo.state().settings.updateAutoInstall === true ||
-        updates?.status.installOnQuit === true;
+    // Keep installation disarmed through refused quits and boost restoration.
+    if (updater) updater.autoInstallOnAppQuit = false;
     if (activeService?.isBusy) event.preventDefault();
     else if (activeService?.booster.active && !quitting) {
       leaving = true;
@@ -556,7 +560,9 @@ if (!app.requestSingleInstanceLock()) {
       void activeService.shutdown().finally(() => app.quit());
     } else {
       leaving = true;
-      activeService?.booster.dispose();
+      updates?.prepareQuit(repo?.state().settings.updateAutoInstall === true);
+      updates?.stop();
+      void activeService?.shutdown();
     }
   });
   app.on("will-quit", () => repo?.close());
@@ -570,6 +576,7 @@ function exposeTestHooks(tray: Tray, service: AppService, store: Repository) {
       active: () => service.booster.active,
       session: () => service.booster.liveSession,
       watching: () => service.booster.watching,
+      monitoring: () => service.monitor.active,
       closeWindow: () => BrowserWindow.getAllWindows()[0]?.close(),
       openWindow: () => showWindow(),
       stop: () => service.booster.stop(),

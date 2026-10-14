@@ -69,8 +69,8 @@ export function System({ data, run, pending }: ViewProps) {
           <dd>{h.cores || "Unavailable"}</dd>
           <dt>Live CPU utilization & temperature</dt>
           <dd>
-            Not shown. Reading temperatures needs a hardware-monitoring driver,
-            which Frameforge does not install. Task Manager shows live CPU use.
+            Open Monitor for live CPU use and temperature readings when Windows
+            exposes them. Frameforge does not install a sensor driver.
           </dd>
         </dl>
       </section>
@@ -88,9 +88,9 @@ export function System({ data, run, pending }: ViewProps) {
           <dd>{h.displays.join(" / ") || "Unavailable"}</dd>
           <dt>Temperature, live GPU use & FPS</dt>
           <dd>
-            Not shown. Frameforge does not install a monitoring driver and does
-            not measure FPS. Task Manager shows GPU use; the game's own counter
-            or Xbox Game Bar shows FPS.
+            Open Monitor for live GPU use, available temperature readings and
+            optional DirectX FPS capture. FPS capture needs administrator
+            approval; Vulkan, OpenGL and some anti-cheat games are not measured.
           </dd>
         </dl>
       </section>

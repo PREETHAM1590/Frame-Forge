@@ -13,12 +13,13 @@ public class OptimizationCatalogTests
         public ValueState Read(Setting s) => Values.GetValueOrDefault(Key(s), new(false, null, s.Kind));
         public void Write(Setting s, ValueState state) { Writes++; if (state.Existed) Values[Key(s)] = state; else Values.Remove(Key(s)); }
     }
-    private sealed class Facts(int build = 26100, bool nvidia = true, bool tamper = false) : IFacts
+    private sealed class Facts(int build = 26100, bool nvidia = true, bool tamper = false, bool hags = true) : IFacts
     {
         public int Build() => build;
         public bool MachineKeyExists(string path) => nvidia;
         public bool TamperProtectionOn() => tamper;
         public bool NvidiaProfiles() => nvidia;
+        public bool HardwareScheduling() => hags;
     }
     private sealed class Tools : IToolRunner
     {
@@ -29,6 +30,33 @@ public class OptimizationCatalogTests
     public static IEnumerable<object[]> AllOps() => Ops.Select(o => new object[] { o });
 
     private static object? Different(Setting s) => s.Kind == "DWord" ? (s.Target == 7 ? 8 : 7) : "9";
+
+    [Fact]
+    public void HagsRequiresDriverCapabilityAndRestoresWithoutIt()
+    {
+        var unsupported = new Facts(hags: false);
+        Assert.DoesNotContain("hardware-scheduling", OptimizationTable.Applicable(unsupported));
+        var store = new Memory();
+        Assert.Throws<InvalidOperationException>(() => new RegistryOperations(store, unsupported).Capture(["hardware-scheduling"]));
+        Assert.DoesNotContain("hardware-scheduling", OptimizationTable.Applicable(new Facts(build: 18363)));
+        Assert.Equal(0, store.Writes);
+        var engine = new RegistryOperations(store, new Facts());
+        var snapshot = engine.Capture(["hardware-scheduling"]);
+        Assert.Throws<InvalidOperationException>(() => new RegistryOperations(store, unsupported).Apply(["hardware-scheduling"], snapshot));
+        Assert.Equal(0, store.Writes);
+        engine.Apply(["hardware-scheduling"], snapshot);
+        var setting = Assert.Single(OptimizationTable.Settings, s => s.Operation == "hardware-scheduling");
+        Assert.Equal(@"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers", setting.Path);
+        Assert.Equal("HwSchMode", setting.Name);
+        Assert.Equal(new ValueState(true, 2, "DWord"), store.Read(setting));
+        new RegistryOperations(store, unsupported).Restore(snapshot);
+        Assert.False(store.Read(setting).Existed);
+        store.Values[Memory.Key(setting)] = new(true, 1, "DWord");
+        snapshot = engine.Capture(["hardware-scheduling"]);
+        engine.Apply(["hardware-scheduling"], snapshot);
+        new RegistryOperations(store, unsupported).Restore(snapshot);
+        Assert.Equal(new ValueState(true, 1, "DWord"), store.Read(setting));
+    }
 
     [Theory, MemberData(nameof(AllOps))]
     public void EveryOptimizationRoundTripsFromAbsent(string id)

@@ -285,7 +285,6 @@ export function GameMonitor({ data }: { data: Bootstrap }) {
                 slots={240}
                 tone="info"
                 label={`Frame time, latest ${s.frameTimes.at(-1)?.toFixed(1) ?? "none"} ms`}
-                tick={s.frames}
               />
             </div>
             <div>
@@ -295,7 +294,6 @@ export function GameMonitor({ data }: { data: Bootstrap }) {
                 max={fpsPeak}
                 slots={120}
                 label={`FPS, latest ${fpsText(s.fps)}`}
-                tick={s.elapsedSeconds}
               />
             </div>
           </div>

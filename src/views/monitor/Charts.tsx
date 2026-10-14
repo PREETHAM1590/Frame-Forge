@@ -17,7 +17,7 @@ export function linePoints(
 const d = (points: [number, number][]) =>
   points.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y}`).join(" ");
 /**
- * A small area chart. Each new reading slides the drawing left by one step (CSS; off when the person asked for reduced motion).
+ * A small area chart, redrawn only when a sample arrives. Continuous sliding is costly in software rendering.
  * `values` is oldest first. The text label carries the numbers, so the drawing itself is decorative.
  */
 export function AreaChart({
@@ -26,19 +26,15 @@ export function AreaChart({
   label,
   tone = "primary",
   slots = historyLength,
-  tick,
 }: {
   values: readonly number[];
   max?: number;
   label: string;
   tone?: "primary" | "caution" | "error" | "info";
   slots?: number;
-  /** Changes with every reading; restarts the slide even when the value did not change. */
-  tick?: string | number;
 }) {
   const shown = values.slice(-slots);
   const points = linePoints(shown, max, slots);
-  const step = W / (slots - 1);
   return (
     <svg
       className={`area-chart ${tone}`}
@@ -49,12 +45,7 @@ export function AreaChart({
     >
       <line className="grid" x1="0" x2={W} y1={H / 2} y2={H / 2} />
       {points.length > 1 && (
-        <g
-          // A new key restarts the slide for every reading.
-          key={tick ?? shown.length + ":" + (shown.at(-1) ?? 0)}
-          className="slide"
-          style={{ ["--step" as string]: `${step}px` }}
-        >
+        <g>
           <path
             className="area"
             d={`${d(points)} L${points.at(-1)![0]} ${H} L${points[0][0]} ${H} Z`}

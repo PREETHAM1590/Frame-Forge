@@ -41,13 +41,7 @@ const settingsLabels = {
   services: "Services",
   defender: "Windows Security (Tamper Protection)",
 } as const;
-export function Optimizations({
-  data,
-  preview,
-  run,
-  navigate,
-  pending,
-}: ViewProps) {
+export function Optimizations({ data, preview, run, pending }: ViewProps) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<"All" | Category>("All");
   const [availability, setAvailability] = useState("All");
@@ -351,17 +345,6 @@ export function Optimizations({
                 }
               >
                 Open {settingsLabels[detail.settingsPage]} in Windows
-                <ArrowUpRight size={17} />
-              </Button>
-            )}
-            {detail.id === "driver-review" && (
-              <Button
-                onClick={() => {
-                  setDetail(null);
-                  navigate("System");
-                }}
-              >
-                View drivers in System
                 <ArrowUpRight size={17} />
               </Button>
             )}

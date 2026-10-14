@@ -1,4 +1,8 @@
 /* Monitor page and Game monitor. Tokens only; charts are plain SVG. */
+/* Live readings already update each second. Interpolating every meter keeps the software compositor painting continuously. */
+.monitor .meter-fill {
+  transition: none;
+}
 .monitor {
   display: flex;
   flex-direction: column;
@@ -152,22 +156,6 @@
 }
 .area-chart.info .area {
   fill: var(--c-info);
-}
-.area-chart .slide {
-  animation: chart-slide 1s linear;
-}
-@keyframes chart-slide {
-  from {
-    transform: translateX(var(--step));
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .area-chart .slide {
-    animation: none;
-  }
 }
 /* Game monitor */
 .game-monitor {

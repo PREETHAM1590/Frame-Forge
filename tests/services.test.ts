@@ -33,12 +33,7 @@ describe("Windows service optimizations", () => {
   });
   it("has no entry that only informs: every item with an Apply is applicable", () => {
     const review = catalogue.filter((o) => !o.supported).map((o) => o.id);
-    expect(review.sort()).toEqual([
-      "dns-tuning",
-      "driver-review",
-      "hardware-scheduling",
-      "startup-review",
-    ]);
+    expect(review).toEqual([]);
     expect(catalogue.map((o) => o.id)).not.toContain("service-tuning");
   });
   it("waits for Game Mode before changing or rolling back a service", async () => {

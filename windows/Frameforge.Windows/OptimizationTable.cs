@@ -17,13 +17,14 @@ public record Setting(string Operation, string Path, string Name, string Kind, i
 }
 
 /// <summary>Per-optimization prerequisites checked at capture and apply (never at rollback). Tamper blocks Defender changes.</summary>
-public record OpRule(int MinBuild = 0, string? RequiresKey = null, bool Tamper = false, string Why = "", string[]? AlsoKeys = null, string? Service = null, bool Nvidia = false);
+public record OpRule(int MinBuild = 0, string? RequiresKey = null, bool Tamper = false, string Why = "", string[]? AlsoKeys = null, string? Service = null, bool Nvidia = false, bool Hags = false);
 
 /// <summary>One physical network adapter whose driver exposes Large Send Offload: the 4-digit class slot, its display name and which of the two properties it has.</summary>
 public record LsoAdapter(string Slot, string Name, bool V4, bool V6);
 
 public interface IFacts
 {
+    bool HardwareScheduling() => false;
     /// <summary>Present physical (PCI or USB) adapters whose driver key already holds *LsoV2IPv4 or *LsoV2IPv6 as a string. Never creates anything.</summary>
     IReadOnlyList<LsoAdapter> NetworkAdapters() => [];
     /// <summary>The NVIDIA driver's profile settings interface answers on this PC.</summary>
@@ -108,6 +109,7 @@ public static class OptimizationTable
         D("browser-hwaccel-off", Edge, "HardwareAccelerationModeEnabled", 0, 2),
         D("browser-hwaccel-off", Chrome, "HardwareAccelerationModeEnabled", 0, 2),
         // Machine settings, Advanced: administrator approval for every write.
+        D("hardware-scheduling", @"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 2),
         D("lock-screen-blur-off", WinPolicy + @"\System", "DisableAcrylicBackgroundOnLogon", 1, 1),
         D("insider-off", WinPolicy + @"\PreviewBuilds", "AllowBuildPreview", 0, 1),
         D("verbose-boot-status", @"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "VerboseStatus", 1),
@@ -163,6 +165,7 @@ public static class OptimizationTable
 
     public static readonly Dictionary<string, OpRule> Rules = new(ServiceOps.ToDictionary(p => p.Key, p => new OpRule(RequiresKey: @"SYSTEM\CurrentControlSet\Services\" + p.Value, Why: $"The {p.Value} service is not installed on this PC.", Service: p.Value)))
     {
+        ["hardware-scheduling"] = new(MinBuild: 19041, Hags: true, Why: "The GPU and driver do not report hardware-accelerated GPU scheduling support (WDDM 2.7 or later is required)."),
         ["nvidia-performance"] = new(Nvidia: true, Why: "The NVIDIA driver's settings interface is not available; an NVIDIA GPU with its driver installed is required."),
         ["photo-viewer"] = new(RequiresKey: @"SOFTWARE\Microsoft\Windows Photo Viewer\Capabilities\FileAssociations", AlsoKeys: [@"SOFTWARE\Classes\" + PvProgId], Why: "Windows Photo Viewer is not registered on this PC (its capabilities or file association entry is missing)."),
         ["classic-context-menu"] = new(MinBuild: 22000, Why: "The classic menu switch only exists on Windows 11."),
@@ -204,6 +207,7 @@ public static class OptimizationTable
         if (rule.RequiresKey is not null && !facts.MachineKeyExists(rule.RequiresKey)) throw new InvalidOperationException(rule.Why + " No change was made.");
         if (rule.Tamper && facts.TamperProtectionOn()) throw new InvalidOperationException(rule.Why + " No change was made.");
         if (rule.Nvidia && !facts.NvidiaProfiles()) throw new InvalidOperationException(rule.Why + " No change was made.");
+        if (rule.Hags && !facts.HardwareScheduling()) throw new InvalidOperationException(rule.Why + " No change was made.");
         if (rule.AlsoKeys is not null && rule.AlsoKeys.Any(k => !facts.MachineKeyExists(k))) throw new InvalidOperationException(rule.Why + " No change was made.");
         if (rule.Service is not null && facts.ServiceBlocker(rule.Service) is { } blocker) throw new InvalidOperationException($"{blocker} No change was made.");
     }
@@ -211,6 +215,6 @@ public static class OptimizationTable
     public static string[] Applicable(IFacts facts) => Settings.Select(s => s.Operation).Distinct().Concat(Dynamic.Where(id => Resolve(id, facts).Length > 0)).Where(id =>
     {
         if (!Rules.TryGetValue(id, out var rule)) return true;
-        return (rule.MinBuild == 0 || facts.Build() >= rule.MinBuild) && (rule.RequiresKey is null || facts.MachineKeyExists(rule.RequiresKey)) && (rule.AlsoKeys is null || rule.AlsoKeys.All(facts.MachineKeyExists)) && (!rule.Nvidia || facts.NvidiaProfiles());
+        return (rule.MinBuild == 0 || facts.Build() >= rule.MinBuild) && (rule.RequiresKey is null || facts.MachineKeyExists(rule.RequiresKey)) && (rule.AlsoKeys is null || rule.AlsoKeys.All(facts.MachineKeyExists)) && (!rule.Nvidia || facts.NvidiaProfiles()) && (!rule.Hags || facts.HardwareScheduling());
     }).ToArray();
 }

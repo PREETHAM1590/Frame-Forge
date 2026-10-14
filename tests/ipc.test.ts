@@ -144,7 +144,14 @@ describe("IPC surface", () => {
       "boostPowerPlan",
       "boostTimerGlobal",
       "monitorStart",
+      "monitorStop",
+      "fpsStatus",
       "fpsStart",
+      "fpsStop",
+      "fpsHistory",
+      "updateCheck",
+      "updateDownload",
+      "updateInstall",
     ];
     localStorage.clear();
     for (const method of Object.keys(requests) as Method[]) {

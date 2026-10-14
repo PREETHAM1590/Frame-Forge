@@ -1,5 +1,5 @@
 // Memory/CPU of every Frameforge process in three states: window open, tray idle (window destroyed), tray with a boost active.
-// Usage: node tools/measure-memory.mjs window|tray|boost   (isolated profile; needs the build and the helper)
+// Usage: node tools/measure-memory.mjs window|monitor|tray|boost (isolated profile; needs the build and helper)
 import { _electron as electron } from "@playwright/test";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
@@ -30,7 +30,7 @@ const sample = (root) => {
 const app = await electron.launch({
   args: [
     ".",
-    ...(scenario === "window" ? [] : ["--hidden"]),
+    ...(["window", "monitor"].includes(scenario) ? [] : ["--hidden"]),
     ...(process.env.MEASURE_ARGS?.split(" ").filter(Boolean) ?? []),
   ],
   env: {
@@ -42,9 +42,28 @@ const app = await electron.launch({
   timeout: 30000,
 });
 let dummy;
+let monitorPage;
 try {
   const pid = await app.evaluate(() => process.pid);
-  if (scenario === "window") await app.firstWindow();
+  if (["window", "monitor"].includes(scenario)) await app.firstWindow();
+  if (scenario === "monitor") {
+    const page = await app.firstWindow();
+    monitorPage = page;
+    await page.evaluate(() => {
+      globalThis.__monitorReadings = 0;
+      window.frameforge.onEvent((event) => {
+        if (event.type === "monitor") globalThis.__monitorReadings++;
+      });
+    });
+    await page.getByRole("button", { name: "Monitor", exact: true }).click();
+    await page.getByText("Live", { exact: true }).first().waitFor();
+    if (
+      !(await app.evaluate(({ app }) =>
+        app.commandLine.hasSwitch("disable-gpu"),
+      ))
+    )
+      throw new Error("Monitor measurement requires --disable-gpu.");
+  }
   if (scenario === "boost") {
     const exe = path.join(process.env.SystemRoot, "System32", "PING.EXE");
     dummy = spawn(exe, ["-t", "127.0.0.1"], { stdio: "ignore" });
@@ -59,10 +78,37 @@ try {
       if (await app.evaluate(() => globalThis.__frameforgeTest.active())) break;
     }
   }
-  await new Promise((r) => setTimeout(r, 25000));
+  await new Promise((r) =>
+    setTimeout(r, scenario === "monitor" ? 65000 : 25000),
+  );
+  const readingsBefore = monitorPage
+    ? await monitorPage.evaluate(() => globalThis.__monitorReadings)
+    : 0;
+  const started = performance.now();
   const a = sample(pid);
-  await new Promise((r) => setTimeout(r, 10000));
+  const firstAt = performance.now();
+  await new Promise((r) =>
+    setTimeout(r, scenario === "monitor" ? 30000 : 10000),
+  );
+  const secondStarted = performance.now();
   const b = sample(pid);
+  const secondAt = performance.now();
+  // Account for the sampling command itself; midpoint timestamps bound its collection latency.
+  const elapsed =
+    ((secondStarted + secondAt) / 2 - (started + firstAt) / 2) / 1000;
+  const monitorReadings = monitorPage
+    ? (await monitorPage.evaluate(() => globalThis.__monitorReadings)) -
+      readingsBefore
+    : undefined;
+  if (
+    monitorPage &&
+    (monitorReadings < 20 ||
+      !(await monitorPage
+        .getByText("Live", { exact: true })
+        .first()
+        .isVisible()))
+  )
+    throw new Error("Monitor readings stalled during the CPU measurement.");
   const cpu = b.reduce((s, p) => {
     const before = a.find((x) => x.pid === p.pid);
     return s + (before ? p.cpu - before.cpu : 0);
@@ -70,7 +116,7 @@ try {
   console.table(
     b.map(({ pid, cpu: total, ...r }) => ({
       ...r,
-      cpuSecIn10s: +(
+      cpuSeconds: +(
         total - (a.find((x) => x.pid === pid)?.cpu ?? total)
       ).toFixed(2),
     })),
@@ -78,10 +124,12 @@ try {
   console.log(
     JSON.stringify({
       scenario,
+      sampleSeconds: +elapsed.toFixed(2),
+      monitorReadings,
       processes: b.length,
       workingSetMB: +b.reduce((s, p) => s + p.ws, 0).toFixed(1),
       privateWorkingSetMB: +b.reduce((s, p) => s + p.priv, 0).toFixed(1),
-      cpuPercentOfOneCore: +((cpu / 10) * 100).toFixed(2),
+      cpuPercentOfOneCore: +((cpu / elapsed) * 100).toFixed(2),
     }),
   );
 } finally {

@@ -115,6 +115,8 @@ export class FpsService {
     const target = (await this.platform.runningGames([game]))[0]?.target;
     if (!target)
       throw new Error(`${game.name} is not running. Start the game first.`);
+    // Another start may have won while runningGames was awaited; never open a second prompt.
+    if (this.active) throw new Error("An FPS capture is already running.");
     // Throws NotApplied when another administrator prompt is open.
     this.platform.elevation.hold("fps");
     this.game = game;

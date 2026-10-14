@@ -179,6 +179,7 @@ public sealed class WindowsRegistryStore(IToolRunner? tools = null, IServiceStor
 
 public sealed class WindowsFacts : IFacts
 {
+    public bool HardwareScheduling() => GpuScheduling.Supported();
     public int Build() => Environment.OSVersion.Version.Build;
     public bool MachineKeyExists(string path) { using var key = Registry.LocalMachine.OpenSubKey(path, false); return key is not null; }
     // Tamper Protection is only read. 4 means off; any other present value is treated as on so Frameforge never tries around it.

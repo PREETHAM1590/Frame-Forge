@@ -5,8 +5,59 @@ import os from "node:os";
 import path from "node:path";
 import { Repository } from "../electron/repository";
 import { migrations } from "../electron/migrations";
-import { BoostSessionSchema, type ProcessTarget } from "../shared/contracts";
+import {
+  BoostSessionSchema,
+  defaultState,
+  type ProcessTarget,
+} from "../shared/contracts";
 describe("SQLite migrations and configuration recovery", () => {
+  it("appends the review-id migration and preserves real presets in configuration and backups", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "frameforge-migration-"));
+    const file = path.join(dir, "state.db");
+    try {
+      const db = new DatabaseSync(file);
+      for (const migration of migrations.slice(0, -1)) {
+        if (typeof migration === "string") db.exec(migration);
+        else migration(db);
+      }
+      db.exec(`PRAGMA user_version=${migrations.length - 1}`);
+      const retained = {
+        id: crypto.randomUUID(),
+        name: "Keep",
+        ids: ["mouse-precision", "startup-review"],
+      };
+      const removed = {
+        id: crypto.randomUUID(),
+        name: "Review",
+        ids: ["driver-review", "dns-tuning"],
+      };
+      const payload = JSON.stringify({
+        ...defaultState,
+        presets: [retained, removed],
+      });
+      db.prepare("INSERT INTO configuration(id,payload) VALUES(1,?)").run(
+        payload,
+      );
+      db.prepare("INSERT INTO backups(id,name,at,payload) VALUES(?,?,?,?)").run(
+        crypto.randomUUID(),
+        "Old",
+        new Date().toISOString(),
+        payload,
+      );
+      db.close();
+      for (let i = 0; i < 2; i++) {
+        const repo = new Repository(file);
+        expect(repo.state().presets).toEqual([
+          { ...retained, ids: ["mouse-precision"] },
+        ]);
+        expect(repo.backups()[0].state.presets).toEqual(repo.state().presets);
+        expect(repo.state().settings).toEqual(defaultState.settings);
+        repo.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it("persists validated configuration and restores named backups transactionally", () => {
     const repo = new Repository(":memory:");
     const initial = repo.state();

@@ -13,7 +13,7 @@ Get `Frameforge-Setup-<version>.exe` and `SHA256SUMS.txt` from the [Releases pag
 - **Verify the download** (compare with the line in `SHA256SUMS.txt`):
 
   ```powershell
-  Get-FileHash .\Frameforge-Setup-1.2.2.exe -Algorithm SHA256
+  Get-FileHash .\Frameforge-Setup-1.3.0.exe -Algorithm SHA256
   ```
 
 - Pausing background services during a boost, and creating or listing Windows restore points, need administrator approval. Windows shows a UAC prompt for each of those actions. Declining the prompt changes nothing.
@@ -26,7 +26,7 @@ Code signing policy: [docs/CODE_SIGNING_POLICY.md](docs/CODE_SIGNING_POLICY.md).
 - **Administrator prompts.** Windows asks for approval for each of these, and declining changes nothing: creating or listing restore points, turning on System Protection, pausing services or clearing the standby memory list during a boost, and turning on the Windows 11 timer setting. Only one prompt is open at a time. If you leave a prompt unanswered it times out and nothing is changed; a prompt that is still open after that does nothing.
 - **Security trade-offs lower your PC's security.** They are opt-in, one at a time, and each can be rolled back. A rollback that needs administrator approval waits for you; declining leaves the item restorable. If Game Mode ends by itself (the game exits) while services were paused, the end-of-session restart prompt is not covered by the shared gate.
 - **Restore point prompts time out.** An unanswered prompt ends after 2 minutes as "Not approved - cancelled" (Cancel request withdraws it sooner).
-- **No benchmark.** Frameforge shows system CPU and RAM snapshots, not FPS. A PresentMon-based benchmark is not included.
+- **Local monitoring.** Monitor shows live system counters and optional DirectX FPS capture with local summaries. FPS capture needs administrator approval; Vulkan, OpenGL and some anti-cheat games are not measured. Results describe this PC and scene, with no performance improvement promised.
 - **Not verified by a person on a second PC.** See [Feature Status](docs/FEATURE_STATUS.md) for what was run on real hardware and what only ran against fakes.
 
 See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
@@ -123,7 +123,7 @@ Notes on each mechanism:
 - **Clear the standby memory list once** (Custom only, off by default) calls `NtSetSystemInformation` with `SystemMemoryListInformation` and `MemoryPurgeStandbyList` once when the boost starts, after enabling `SeProfileSingleProcessPrivilege`. It runs inside the same administrator step as pausing services (one prompt for both), never during auto-boost, and is not reversible. It is harmless: Windows refills its cache as programs need memory.
 - **Waiting for administrator approval.** The boost starts right away and works without the services or standby step. While Windows waits for you, Game Mode shows the step as "waiting for admin approval" and Stop is available; Stop (or ignoring the prompt for 2 minutes) withdraws the request, and a late approval changes nothing.
 
-Session behaviour: the helper runs detached and reports every prior value before it changes it. On revert, a value is restored only if Frameforge's value is still in place. An external change is kept and shown as a conflict. A failed revert leaves a recovery banner with Retry and Dismiss. Auto-start, when enabled, checks every 5 seconds for a running library game and starts one session per game process. CPU and RAM figures are system readings, not FPS.
+Session behaviour: the helper runs detached and reports every prior value before it changes it. On revert, a value is restored only if Frameforge's value is still in place. An external change is kept and shown as a conflict. A failed revert leaves a recovery banner with Retry and Dismiss. Auto-start, when enabled, watches library games in the background and starts one session per game process. CPU and RAM figures are system readings, not FPS.
 
 ## Data and Recovery
 
@@ -135,7 +135,7 @@ Interrupted registry operations and booster sessions are recorded in a durable j
 
 ## Security
 
-Frameforge runs as the current user (`asInvoker`). Only these actions ask for elevation, one UAC prompt per action, through the same helper: restore-point actions, pausing services and clearing the standby list during a boost, and the Windows 11 timer setting. An elevated request only works while a short-lived request file next to its result file still exists, so a prompt answered after the app stopped waiting changes nothing. See [Security](docs/SECURITY.md) for the boundaries and the parts of the elevation and booster design that document does not yet cover.
+Frameforge runs as the current user (`asInvoker`). Only these actions ask for elevation, one UAC prompt per action, through the same helper: restore-point actions, pausing services and clearing the standby list during a boost, the Windows 11 timer setting, machine catalogue changes (including services, Large Send Offload and supported HAGS), and optional FPS capture. An elevated request only works while a short-lived request file next to its result file still exists, so a prompt answered after the app stopped waiting changes nothing. See [Security](docs/SECURITY.md) for the boundaries and the parts of the elevation and booster design that document does not yet cover.
 
 ## Privacy
 

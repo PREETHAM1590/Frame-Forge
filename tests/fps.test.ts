@@ -146,6 +146,22 @@ const steady = (n = 60) => ({
   frameTimesMs: Array(n).fill(1000 / n),
 });
 
+it("allows only one FPS prompt when two starts await the running-game check", async () => {
+  const h = fpsHarness();
+  const spawn = vi.spyOn(h.platform, "spawnFps");
+  const results = await Promise.allSettled([
+    h.service.start(game.id),
+    h.service.start(game.id),
+  ]);
+  expect(results.map((r) => r.status).sort()).toEqual([
+    "fulfilled",
+    "rejected",
+  ]);
+  expect(spawn).toHaveBeenCalledOnce();
+  expect(h.platform.elevation.current).toBe("fps");
+  h.service.dispose();
+});
+
 describe("FpsService", () => {
   it("runs approval, capture and a saved summary, and releases the prompt gate", async () => {
     const h = fpsHarness(true);

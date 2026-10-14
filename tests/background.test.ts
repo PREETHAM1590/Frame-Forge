@@ -295,6 +295,7 @@ describe("background mode helpers", () => {
       open: vi.fn(),
       toggleAutoBoost: vi.fn(),
       stopBoost: vi.fn(),
+      checkUpdates: vi.fn(),
       quit: vi.fn(),
     };
     const idle = trayModel(
@@ -307,6 +308,9 @@ describe("background mode helpers", () => {
     expect(label(idle, "Auto-boost").checked).toBe(true);
     expect(label(idle, "Mode:").label).toBe("Mode: Performance");
     expect(label(idle, "Stop boost").enabled).toBe(false);
+    expect(label(idle, "Check for updates").enabled).toBe(true);
+    label(idle, "Check for updates").click!();
+    expect(actions.checkUpdates).toHaveBeenCalledOnce();
     const session = {
       id: crypto.randomUUID(),
       gameId: crypto.randomUUID(),

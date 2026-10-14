@@ -65,8 +65,10 @@ describe("update manager", () => {
     await m.download();
     expect(m.status.state).toBe("downloaded");
     m.install("onQuit");
-    expect(u.autoInstallOnAppQuit).toBe(true);
+    expect(u.autoInstallOnAppQuit).toBe(false);
     expect(m.status.installOnQuit).toBe(true);
+    m.prepareQuit(false);
+    expect(u.autoInstallOnAppQuit).toBe(true);
     m.install("now");
     expect(u.installs).toBe(1);
   });
@@ -91,6 +93,23 @@ describe("update manager", () => {
     await m.check();
     expect(m.status.state).toBe("error");
     expect(m.status.error).toBe("offline");
+  });
+  it("arms quit installation only after the boost has ended", async () => {
+    const u = new FakeUpdater();
+    const state = { boost: true };
+    const { m } = make(u, state);
+    await m.check();
+    await m.download();
+    m.install("onQuit");
+    expect(u.autoInstallOnAppQuit).toBe(false);
+    m.prepareQuit(true);
+    expect(u.autoInstallOnAppQuit).toBe(false);
+    state.boost = false;
+    m.prepareQuit(false);
+    expect(u.autoInstallOnAppQuit).toBe(true);
+    state.boost = true;
+    m.prepareQuit(false);
+    expect(u.autoInstallOnAppQuit).toBe(false);
   });
   it("checks at start and every interval only when allowed and not boosting", () => {
     vi.useFakeTimers();

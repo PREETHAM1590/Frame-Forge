@@ -58,4 +58,30 @@ CREATE INDEX operations_at ON operations(at DESC);
           row.rid as number,
         );
   },
+  // v1.3 removes three non-applicable review ids. Keep every real setting in configuration and backups.
+  (db) => {
+    const removed = new Set(["startup-review", "driver-review", "dns-tuning"]);
+    for (const table of ["configuration", "backups"])
+      for (const row of db
+        .prepare(`SELECT rowid AS rid, payload FROM ${table}`)
+        .all()) {
+        const state = JSON.parse(String(row.payload)) as Json;
+        if (!Array.isArray(state.presets)) continue;
+        state.presets = state.presets
+          .map((preset: Json) => ({
+            ...preset,
+            ids: Array.isArray(preset.ids)
+              ? preset.ids.filter((id) => !removed.has(String(id)))
+              : preset.ids,
+          }))
+          .filter(
+            (preset: Json) =>
+              !Array.isArray(preset.ids) || preset.ids.length > 0,
+          );
+        db.prepare(`UPDATE ${table} SET payload=? WHERE rowid=?`).run(
+          JSON.stringify(state),
+          row.rid as number,
+        );
+      }
+  },
 ];

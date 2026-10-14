@@ -157,7 +157,7 @@ export class UpdateManager {
     if (!u || this.s.state !== "downloaded")
       throw new Error("There is no downloaded update to install.");
     if (when === "onQuit") {
-      u.autoInstallOnAppQuit = true;
+      // Only arm the installer at an actual quit, after boost cleanup. Closing to the tray is not a quit.
       this.set({ installOnQuit: true });
       return this.s;
     }
@@ -167,5 +167,10 @@ export class UpdateManager {
       );
     u.quitAndInstall(false, true);
     return this.s;
+  }
+  prepareQuit(autoInstall: boolean) {
+    if (this.o.updater)
+      this.o.updater.autoInstallOnAppQuit =
+        !this.o.boostActive() && (autoInstall || this.s.installOnQuit);
   }
 }
