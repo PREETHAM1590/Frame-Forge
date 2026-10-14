@@ -8,6 +8,7 @@
 @import "./styles/library.css";
 @import "./styles/optimize.css";
 @import "./styles/safety.css";
+@import "./styles/applyflow.css";
 @theme {
   --font-sans: "Space Grotesk", sans-serif;
 }
