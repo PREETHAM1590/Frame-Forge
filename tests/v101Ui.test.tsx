@@ -256,7 +256,10 @@ describe("I-5: Game Mode follows the library", () => {
 });
 
 const timerRow = async () =>
-  (await screen.findByText(/High timer resolution on this PC/)).closest("li")!;
+  (await screen.findByText("Timer Resolution")).closest("li")!;
+// The info tooltip button is always there; these are the one-click fixes.
+const fixButtons = (row: HTMLElement) =>
+  within(row).queryAllByRole("button", { name: /Allow games|Turn back off/ });
 const off = (detail: string) => ({ available: false, detail, active: false });
 describe("timer resolution on Windows 11", () => {
   const win11Off = (h: ReturnType<typeof harness>) => {
@@ -360,7 +363,7 @@ describe("timer resolution on Windows 11", () => {
     expect(
       within(row).getByText(/nothing Frameforge can change/),
     ).toBeVisible();
-    expect(within(row).queryByRole("button")).toBeNull();
+    expect(fixButtons(row)).toHaveLength(0);
   });
   it("shows an already-on setting as such, without a button", async () => {
     const h = harness();
@@ -374,7 +377,7 @@ describe("timer resolution on Windows 11", () => {
     await openGameMode();
     const row = await timerRow();
     await within(row).findByText("already on in Windows");
-    expect(within(row).queryByRole("button")).toBeNull();
+    expect(fixButtons(row)).toHaveLength(0);
   });
 });
 describe("standby list purge", () => {
@@ -388,11 +391,11 @@ describe("standby list purge", () => {
     };
     h.install();
     await openGameMode();
-    const row = (await screen.findByText("Standby list purge")).closest("li")!;
-    await within(row).findByText(/off \(opt-in under Custom\)/);
+    const row = (await screen.findByText("Standby Purge")).closest("li")!;
     expect(within(row).queryByText("unsupported")).toBeNull();
+    expect(within(row).getByText("admin")).toBeVisible();
     const toggle = await screen.findByRole("switch", {
-      name: /Clear the standby memory list once/,
+      name: "Standby Purge",
     });
     expect(toggle).toBeEnabled();
     fireEvent.click(toggle);

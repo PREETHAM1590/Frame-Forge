@@ -48,6 +48,7 @@ export const labels: Record<MechanismId, string> = {
   smartCores: "Smart core targeting",
   coreParking: "Disable core parking",
   powerThrottling: "Power throttling opt-out",
+  gpuPriority: "GPU priority",
 };
 export const launchLabels = {
   gpuPreference: "High-performance GPU preference",
@@ -112,6 +113,7 @@ export function enabled(m: CustomMechanisms): Entry[] {
     m.gameBarCapture && { id: "gameBarCapture" },
     m.smartCores && { id: "smartCores" },
     m.coreParking && { id: "coreParking" },
+    m.gpuPriority && { id: "gpuPriority" },
     m.pauseServices && { id: "pauseServices", note: "administrator prompt" },
     m.standbyPurge && { id: "standbyPurge", note: "administrator prompt" },
   ];

@@ -13,7 +13,7 @@ using Microsoft.Win32.SafeHandles;
 namespace Frameforge.Windows;
 
 public record Mechanisms(bool GameMode, string Priority, int[]? Affinity, bool PowerPlan, bool LowerBackground, bool SuspendBackground, bool CloseBackground, bool TimerResolution,
-    bool PauseServices = false, bool GameBarCapture = false, bool SmartCores = false, bool CoreParking = false, bool PowerThrottling = false, bool StandbyPurge = false);
+    bool PauseServices = false, bool GameBarCapture = false, bool SmartCores = false, bool CoreParking = false, bool PowerThrottling = false, bool StandbyPurge = false, bool GpuPriority = false);
 public record BackgroundRule(string Image, string Action);
 // StoreGame: the game comes from the Xbox app or Microsoft Store. Unattended: auto-boost, which must not open an administrator prompt.
 // Preset: a preset mode rather than Custom; smart core targeting stays off in presets on Windows 11 hybrid CPUs.
@@ -251,6 +251,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         if (mechanisms.Affinity is { Length: > 0 } cpus) Run("affinity", () => Affinity(game, cpus));
         if (mechanisms.GameBarCapture) Run("gameBarCapture", GameBarCapture);
         if (mechanisms.PowerThrottling) Run("powerThrottling", () => PowerThrottling(game));
+        if (mechanisms.GpuPriority) Run("gpuPriority", () => GpuPriority(game));
         if (mechanisms.SmartCores) Run("smartCores", () => SmartCoresStep(game, mechanisms.Affinity is { Length: > 0 }, command.Preset));
         if (mechanisms.CoreParking) Run("coreParking", CoreParking);
         foreach (var rule in rules) Background(rule, mechanisms, info, command.ParentPid, all);
@@ -410,6 +411,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
                 "pauseServices" => RevertServices(item!),
                 "gameBarCapture" => RevertRegValues(item!),
                 "powerThrottling" => RevertPowerThrottling(item!),
+                "gpuPriority" => RevertGpuPriority(item!),
                 "smartCores" => RevertSmartCores(item!),
                 "coreParking" => RevertCoreParking(item!),
                 // Node only sends known mechanism ids; the ones without a revert (close) are reported under their own id.

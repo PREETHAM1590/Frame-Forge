@@ -3,7 +3,7 @@ import os from "node:os";
 import { isDeepStrictEqual } from "node:util";
 import {
   SessionEventSchema,
-  modeMechanisms,
+  effectiveMechanisms,
   type BoostCapabilities,
   type BoostMode,
   type BoostSession,
@@ -455,8 +455,7 @@ export class BoostEngine {
           ),
           { logged: true },
         );
-      const mechanisms =
-        mode === "custom" ? state.booster.custom : modeMechanisms[mode];
+      const mechanisms = effectiveMechanisms(state.booster, mode);
       return this.run(
         game,
         mode,

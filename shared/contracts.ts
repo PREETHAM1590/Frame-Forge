@@ -145,28 +145,47 @@ export const MechanismId = z.enum([
   "smartCores",
   "coreParking",
   "powerThrottling",
+  "gpuPriority",
 ]);
 export type MechanismId = z.infer<typeof MechanismId>;
+const mechanismFields = {
+  gameMode: z.boolean(),
+  priority: z.enum(["Normal", "AboveNormal", "High"]),
+  affinity: z.array(z.number().int().min(0).max(255)).max(256).nullable(),
+  powerPlan: z.boolean(),
+  lowerBackground: z.boolean(),
+  suspendBackground: z.boolean(),
+  closeBackground: z.boolean(),
+  timerResolution: z.boolean(),
+  pauseServices: z.boolean(),
+  gameBarCapture: z.boolean(),
+  smartCores: z.boolean(),
+  coreParking: z.boolean(),
+  powerThrottling: z.boolean(),
+  // Clears Windows' cached (standby) memory once at the start. Off in every preset.
+  standbyPurge: z.boolean(),
+  // Raises the game's GPU scheduling priority to High (never Realtime). Off in every preset.
+  gpuPriority: z.boolean(),
+};
 export const CustomMechanismsSchema = z
   .object({
-    gameMode: z.boolean(),
-    priority: z.enum(["Normal", "AboveNormal", "High"]),
-    affinity: z.array(z.number().int().min(0).max(255)).max(256).nullable(),
-    powerPlan: z.boolean(),
-    lowerBackground: z.boolean(),
-    suspendBackground: z.boolean(),
-    closeBackground: z.boolean(),
-    timerResolution: z.boolean(),
-    // Added with the second booster pass; old saved configurations omit them, so each defaults to off (GC-4).
-    pauseServices: z.boolean().default(false),
-    gameBarCapture: z.boolean().default(false),
-    smartCores: z.boolean().default(false),
-    coreParking: z.boolean().default(false),
-    powerThrottling: z.boolean().default(false),
-    // Clears Windows' cached (standby) memory once at the start. Custom only; off in every preset.
-    standbyPurge: z.boolean().default(false),
+    ...mechanismFields,
+    // Added after the first release; old saved configurations omit them, so each defaults to off (GC-4).
+    pauseServices: mechanismFields.pauseServices.default(false),
+    gameBarCapture: mechanismFields.gameBarCapture.default(false),
+    smartCores: mechanismFields.smartCores.default(false),
+    coreParking: mechanismFields.coreParking.default(false),
+    powerThrottling: mechanismFields.powerThrottling.default(false),
+    standbyPurge: mechanismFields.standbyPurge.default(false),
+    gpuPriority: mechanismFields.gpuPriority.default(false),
   })
   .strict();
+/** Enhancer toggles saved on top of the selected preset mode; a missing key means "the mode decides". */
+export const MechanismOverridesSchema = z
+  .object(mechanismFields)
+  .partial()
+  .strict();
+export type MechanismOverrides = z.infer<typeof MechanismOverridesSchema>;
 export type CustomMechanisms = z.infer<typeof CustomMechanismsSchema>;
 const BoostModeSchema = z.enum([
   "off",
@@ -191,6 +210,7 @@ const noMechanisms: CustomMechanisms = {
   coreParking: false,
   powerThrottling: false,
   standbyPurge: false,
+  gpuPriority: false,
 };
 // What each preset mode applies. Custom uses the saved toggles.
 // Nothing that opens an administrator prompt (pauseServices) is in Balanced or Performance. GPU preference and fullscreen
@@ -234,11 +254,21 @@ export const modeMechanisms: Record<
     pauseServices: true,
   },
 };
+/** The set a mode really applies: Custom is its own toggles; presets get the saved enhancer overrides on top. */
+export function effectiveMechanisms(
+  config: Pick<BoosterConfig, "mode" | "custom" | "overrides">,
+  mode: BoostMode = config.mode,
+): CustomMechanisms {
+  if (mode === "custom") return config.custom;
+  if (mode === "off") return noMechanisms;
+  return { ...modeMechanisms[mode], ...config.overrides };
+}
 export const BoosterConfigSchema = z
   .object({
     mode: BoostModeSchema.default("off"),
     autoBoost: z.boolean().default(false),
     custom: CustomMechanismsSchema.default(noMechanisms),
+    overrides: MechanismOverridesSchema.default({}),
     background: z
       .array(
         z
@@ -274,6 +304,7 @@ export const StateSchema = z
       mode: "off",
       autoBoost: false,
       custom: noMechanisms,
+      overrides: {},
       background: [],
     }),
   })
@@ -307,6 +338,7 @@ export const defaultState: AppState = {
     mode: "off",
     autoBoost: false,
     custom: noMechanisms,
+    overrides: {},
     background: [],
   },
 };

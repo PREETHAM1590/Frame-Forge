@@ -30,6 +30,12 @@ public interface IPowerThrottling
     (uint Control, uint State)? Get(ProcessTarget identity);
     void Set(ProcessTarget identity, uint control, uint state);
 }
+// D3DKMT GPU scheduling priority class of a process (0 idle .. 4 high, 5 realtime); null when Windows cannot report it.
+public interface IGpuPriority
+{
+    int? Get(ProcessTarget identity);
+    void Set(ProcessTarget identity, int priorityClass);
+}
 public interface IGpuInfo { int Count(); }
 
 public sealed class WindowsRegistryAccess : IRegistryAccess
@@ -104,6 +110,26 @@ public sealed class WindowsPowerThrottling : IPowerThrottling
     }
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetProcessInformation(Microsoft.Win32.SafeHandles.SafeProcessHandle process, int information, ref State state, uint size);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetProcessInformation(Microsoft.Win32.SafeHandles.SafeProcessHandle process, int information, ref State state, uint size);
+}
+
+public sealed class WindowsGpuPriority : IGpuPriority
+{
+    private const uint PrivilegeNotHeld = 0xC0000061;
+    public int? Get(ProcessTarget identity)
+    {
+        using var handle = WindowsProcessControl.Verified(identity, WindowsProcesses.SetInformation);
+        return D3DKMTGetProcessSchedulingPriorityClass(handle.DangerousGetHandle(), out var value) == 0 ? value : null;
+    }
+    public void Set(ProcessTarget identity, int priorityClass)
+    {
+        if (priorityClass is < 0 or > 4) throw new InvalidOperationException("Frameforge never sets the GPU scheduling priority above High.");
+        using var handle = WindowsProcessControl.Verified(identity, WindowsProcesses.SetInformation);
+        var status = (uint)D3DKMTSetProcessSchedulingPriorityClass(handle.DangerousGetHandle(), priorityClass);
+        if (status == PrivilegeNotHeld) throw new InvalidOperationException("Windows needs more privilege than Frameforge has to change this game's GPU priority.");
+        if (status != 0) throw new InvalidOperationException($"Windows refused the GPU priority change (status 0x{status:X8}).");
+    }
+    [DllImport("gdi32.dll")] private static extern int D3DKMTGetProcessSchedulingPriorityClass(IntPtr process, out int priorityClass);
+    [DllImport("gdi32.dll")] private static extern int D3DKMTSetProcessSchedulingPriorityClass(IntPtr process, int priorityClass);
 }
 
 public static class BoosterPaths

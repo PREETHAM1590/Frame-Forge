@@ -351,12 +351,10 @@ describe("smart core targeting and Windows 11", () => {
     cleanup();
     install("custom", {}, win11);
     await openGameMode();
-    const section = await screen.findByRole("region", {
-      name: "Custom mechanisms",
-    });
+    const section = await screen.findByLabelText("Game enhancers");
     await waitFor(() =>
       expect(
-        within(section).getByRole("switch", { name: /Smart core targeting/ }),
+        within(section).getByRole("switch", { name: /CPU Affinity/ }),
       ).toBeEnabled(),
     );
   });
@@ -367,20 +365,18 @@ describe("custom toggles for the new mechanisms", () => {
       smartCores: bad("This CPU is not hybrid."),
     });
     await openGameMode();
-    const section = await screen.findByRole("region", {
-      name: "Custom mechanisms",
-    });
+    const section = await screen.findByLabelText("Game enhancers");
     for (const name of [
-      /Game Bar capture off/,
-      /Power throttling opt-out/,
-      /Smart core targeting/,
-      /Disable core parking/,
-      /Pause Windows services/,
+      /Game Bar Capture/,
+      /Power Throttling/,
+      /CPU Affinity/,
+      /Core Parking/,
+      /Pause Services/,
     ])
       expect(within(section).getByRole("switch", { name })).toBeVisible();
     await waitFor(() =>
       expect(
-        within(section).getByRole("switch", { name: /Smart core targeting/ }),
+        within(section).getByRole("switch", { name: /CPU Affinity/ }),
       ).toBeDisabled(),
     );
     // The two launch settings are not session toggles any more.
@@ -396,17 +392,17 @@ describe("custom toggles for the new mechanisms", () => {
       within(section).getByText(/also raises the performance-core setting/),
     ).toBeVisible();
     expect(
-      within(section).getByText(/Unsupported: This CPU is not hybrid/),
+      within(section).getByText(
+        /Not supported on this PC — This CPU is not hybrid/,
+      ),
     ).toBeVisible();
   });
   it("saves a toggle through the existing boostConfig request", async () => {
     const { calls } = install("custom");
     await openGameMode();
-    const section = await screen.findByRole("region", {
-      name: "Custom mechanisms",
-    });
+    const section = await screen.findByLabelText("Game enhancers");
     fireEvent.click(
-      within(section).getByRole("switch", { name: /Game Bar capture off/ }),
+      within(section).getByRole("switch", { name: /Game Bar Capture/ }),
     );
     await waitFor(() =>
       expect(calls.some((c) => c.method === "boostConfig")).toBe(true),
@@ -415,6 +411,110 @@ describe("custom toggles for the new mechanisms", () => {
       .input as BoosterConfig;
     expect(saved.custom.gameBarCapture).toBe(true);
     expect(saved.custom.pauseServices).toBe(false);
+  });
+});
+describe("game enhancers as overrides on top of the mode", () => {
+  const saves = (calls: { method: string; input: unknown }[]) =>
+    calls
+      .filter((c) => c.method === "boostConfig")
+      .map((c) => c.input as BoosterConfig);
+  it("lists every enhancer with an info tooltip, GPU priority included", async () => {
+    install("balanced");
+    await openGameMode();
+    const list = await screen.findByLabelText("Game enhancers");
+    for (const name of [
+      "Power Plan",
+      "CPU Priority",
+      "CPU Affinity",
+      "GPU Priority",
+      "Core Parking",
+      "Power Throttling",
+      "Game Bar Capture",
+      "Timer Resolution",
+      "Background Apps",
+      "Pause Services",
+      "Standby Purge",
+    ]) {
+      expect(within(list).getByRole("switch", { name })).toBeVisible();
+      expect(
+        within(list).getByRole("button", { name: `About ${name}` }),
+      ).toBeVisible();
+    }
+    expect(screen.queryByText(/premium/i)).toBeNull();
+  });
+  it("stores a toggle as an override, shows it on the mode card, and resets to the mode defaults", async () => {
+    const { calls } = install("balanced");
+    await openGameMode();
+    const list = await screen.findByLabelText("Game enhancers");
+    await waitFor(() =>
+      expect(
+        within(list).getByRole("switch", { name: "GPU Priority" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(within(list).getByRole("switch", { name: "GPU Priority" }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0]!.overrides).toEqual({ gpuPriority: true });
+    expect(saves(calls)[0]!.custom.gpuPriority).toBe(false);
+    // Turning a mode default off is an override too, added to the earlier one.
+    fireEvent.click(
+      within(list).getByRole("switch", { name: "Power Throttling" }),
+    );
+    await waitFor(() => expect(saves(calls)).toHaveLength(2));
+    expect(saves(calls)[1]!.overrides).toEqual({
+      gpuPriority: true,
+      powerThrottling: false,
+    });
+  });
+  it("shows overrides in the mode card and offers the reset", async () => {
+    const { calls } = install("balanced");
+    // Seed a saved override through the same request the page uses.
+    await window.frameforge!.boostConfig({
+      ...defaultState.booster,
+      mode: "balanced",
+      overrides: { gpuPriority: true },
+    });
+    await openGameMode();
+    const reset = await screen.findByRole("button", {
+      name: /Reset to mode defaults/,
+    });
+    expect(
+      await within(card("Balanced on this PC")).findByText("GPU priority"),
+    ).toBeVisible();
+    fireEvent.click(reset);
+    await waitFor(() => expect(saves(calls).at(-1)!.overrides).toEqual({}));
+  });
+  it("says why GPU priority is not available on this PC and will not turn on", async () => {
+    install("balanced", {
+      gpuPriority: bad("GPU priority control is not available in this build."),
+    });
+    await openGameMode();
+    const row = (await screen.findByText("GPU Priority")).closest("li")!;
+    await within(row).findByText(
+      /Not available on this PC — GPU priority control is not available/,
+    );
+    expect(
+      within(row).getByRole("switch", { name: "GPU Priority" }),
+    ).toBeDisabled();
+  });
+  it("Custom starts from all off and edits its own set, not the overrides", async () => {
+    const { calls } = install("custom");
+    await openGameMode();
+    const list = await screen.findByLabelText("Game enhancers");
+    expect(
+      within(list).getByRole("switch", { name: "GPU Priority" }),
+    ).not.toBeChecked();
+    expect(
+      within(list).queryByRole("button", { name: /Reset to mode defaults/ }),
+    ).toBeNull();
+    await waitFor(() =>
+      expect(
+        within(list).getByRole("switch", { name: "GPU Priority" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(within(list).getByRole("switch", { name: "GPU Priority" }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0]!.custom.gpuPriority).toBe(true);
+    expect(saves(calls)[0]!.overrides).toEqual({});
   });
 });
 describe("administrator prompt explanation", () => {
@@ -529,7 +629,7 @@ describe("administrator prompt explanation", () => {
       ),
     });
     await openGameMode();
-    await screen.findByText(/None of the pausable services/);
+    await screen.findAllByText(/None of the pausable services/);
     const start = await screen.findByRole("button", { name: /Start boost/ });
     await waitFor(() => expect(start).toBeEnabled());
     fireEvent.click(start);

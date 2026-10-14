@@ -5,7 +5,7 @@ import type {
   MechanismId,
   TimerStatus,
 } from "../../../shared/contracts";
-import { modeMechanisms } from "../../../shared/contracts";
+import { effectiveMechanisms } from "../../../shared/contracts";
 import type { Capability, Status } from "./model";
 import { enabled, intensity, labels, modes, onThisPc, tagline } from "./model";
 
@@ -30,9 +30,7 @@ export function ModeCards({
       {modes
         .filter((m) => m.id !== "off")
         .map((m) => {
-          const list = enabled(
-            m.id === "custom" ? config.custom : modeMechanisms[m.id],
-          );
+          const list = enabled(effectiveMechanisms(config, m.id));
           const plans = list.map((entry) => ({
             entry,
             plan: onThisPc(entry, cap(entry.id), config.background, {
@@ -76,6 +74,13 @@ export function ModeCards({
                   ? `Changes ${effects.length} of ${list.length} on this PC.`
                   : "Checking this PC…"}
               </p>
+              {m.id !== "custom" &&
+                Object.keys(config.overrides).length > 0 && (
+                  <p className="muted gm-count">
+                    Includes your {Object.keys(config.overrides).length}{" "}
+                    enhancer change(s).
+                  </p>
+                )}
               <ul className="mechanism-list">
                 {shown.map(({ entry, plan }) => (
                   <li key={entry.id}>

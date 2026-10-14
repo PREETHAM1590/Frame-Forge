@@ -67,6 +67,14 @@ public class BoosterMechanismTests
         public (uint Control, uint State)? Get(ProcessTarget identity) => State;
         public void Set(ProcessTarget identity, uint control, uint state) => State = (control, state);
     }
+    private sealed class GpuPrio : IGpuPriority
+    {
+        public int? Value { get; set; } = 2;
+        public bool Refuse { get; set; }
+        public List<int> Sets { get; } = [];
+        public int? Get(ProcessTarget identity) => Value;
+        public void Set(ProcessTarget identity, int priorityClass) { if (Refuse) throw new InvalidOperationException("Windows needs more privilege than Frameforge has to change this game's GPU priority."); Sets.Add(priorityClass); Value = priorityClass; }
+    }
     private sealed class Topology(string name, params (int Eff, int Threads)[] cores) : ICpuTopology
     {
         public string CpuName => name;
@@ -125,16 +133,16 @@ public class BoosterMechanismTests
     }
     private sealed class Controllers(bool connected) : IControllerProbe { public bool XboxControllerConnected() => connected; }
 
-    private sealed record Rig(Processes Processes, Power Power, List<Step> Steps, Registry Registry, Settings Settings, Throttling Throttling, CpuSets Sets, Services Services, Elevator Elevator, BoostSessionEngine Engine, Extras Extras);
+    private sealed record Rig(Processes Processes, Power Power, List<Step> Steps, Registry Registry, Settings Settings, Throttling Throttling, CpuSets Sets, Services Services, Elevator Elevator, BoostSessionEngine Engine, Extras Extras, GpuPrio Gpu);
     private static Rig Setup(string cpu = "13th Gen Intel(R) Core(TM) i5-13420H", (int, int)[]? cores = null, int gpus = 2, bool elevate = true, bool controller = false, int build = 26300)
     {
         var processes = new Processes(); var power = new Power(); var steps = new List<Step>(); var registry = new Registry(); var settings = new Settings();
-        var throttling = new Throttling(); var sets = new CpuSets(); var services = new Services();
+        var gpu = new GpuPrio(); var throttling = new Throttling(); var sets = new CpuSets(); var services = new Services();
         cores ??= [(1, 2), (1, 2), (1, 2), (1, 2), (0, 1), (0, 1), (0, 1), (0, 1)];
         var elevator = new Elevator(services, steps);
-        var extras = new Extras(registry, settings, throttling, new Topology(cpu, cores), sets, new Gpus(gpus), services, elevator, new Controllers(controller), build, elevate);
+        var extras = new Extras(registry, settings, throttling, new Topology(cpu, cores), sets, new Gpus(gpus), services, elevator, new Controllers(controller), build, elevate, gpu);
         var engine = new BoostSessionEngine(processes, power, new Timer(), new MemoryStore(), steps.Add, 999, null, extras);
-        return new(processes, power, steps, registry, settings, throttling, sets, services, elevator, engine, extras);
+        return new(processes, power, steps, registry, settings, throttling, sets, services, elevator, engine, extras, gpu);
     }
     private static Captured CapturedOf(Rig rig, string mechanism) => rig.Steps.Last(s => s.Event == "captured" && s.Mechanism == mechanism).Prior!;
     private static string[] Calls(Rig rig) => [.. rig.Elevator.Calls.Select(c => $"{c.Action} {string.Join(',', c.Names)}")];
@@ -385,6 +393,47 @@ public class BoosterMechanismTests
         old.Engine.Start(Command(Off() with { PowerThrottling = true }));
         Assert.Equal("unsupported", old.Steps.Single().Event);
         Assert.DoesNotContain(old.Steps, s => s.Event == "captured");
+    }
+
+    // ---- GPU priority ----
+    [Fact]
+    public void GpuPriorityIsCapturedRaisedToHighAndRestoredExactly()
+    {
+        var rig = Setup();
+        rig.Engine.Start(Command(Off() with { GpuPriority = true }));
+        var item = CapturedOf(rig, "gpuPriority");
+        Assert.Equal(("2", "4"), (item.Prior, item.Applied));
+        Assert.Equal([4], rig.Gpu.Sets);
+        Assert.Equal("applied", Result(rig, "gpuPriority").Event);
+        Assert.Equal("reverted", rig.Engine.Revert().Single().State);
+        Assert.Equal(2, rig.Gpu.Value);
+        rig.Gpu.Value = 4;
+        Assert.Equal("reverted", rig.Engine.Recover([item]).Single().State);
+        Assert.Equal(2, rig.Gpu.Value);
+        rig.Gpu.Value = 3;
+        Assert.Equal("conflict", rig.Engine.Recover([item]).Single().State);
+        Assert.Equal(3, rig.Gpu.Value);
+    }
+    [Fact]
+    public void GpuPriorityNeverLowersNeverGoesToRealtimeAndReportsRefusalHonestly()
+    {
+        var high = Setup(); high.Gpu.Value = 4;
+        high.Engine.Start(Command(Off() with { GpuPriority = true }));
+        Assert.Equal("skipped", high.Steps.Single().Event);
+        Assert.Empty(high.Gpu.Sets);
+        var none = Setup(); none.Gpu.Value = null;
+        none.Engine.Start(Command(Off() with { GpuPriority = true }));
+        Assert.Equal("unsupported", none.Steps.Single().Event);
+        var refused = Setup(); refused.Gpu.Refuse = true;
+        refused.Engine.Start(Command(Off() with { GpuPriority = true }));
+        Assert.Equal("failed", Result(refused, "gpuPriority").Event);
+        Assert.Contains("privilege", Result(refused, "gpuPriority").Detail);
+        Assert.Equal(2, refused.Gpu.Value);
+        var bad = Setup();
+        foreach (var applied in new[] { "5", "3", "x" })
+            Assert.Equal("failed", bad.Engine.Recover([new Captured("gpuPriority", Game, "2", applied)]).Single().State);
+        Assert.Equal("failed", bad.Engine.Recover([new Captured("gpuPriority", Game, "5", "4")]).Single().State);
+        Assert.Throws<InvalidOperationException>(() => new WindowsGpuPriority().Set(Game, 5));
     }
 
     // ---- smart cores ----
@@ -863,7 +912,7 @@ public class BoosterMechanismTests
     {
         var rig = Setup(); rig.Services.Add("DiagTrack"); rig.Settings.Values[(Power.Balanced, BoosterPaths.CpMinCores)] = 4;
         var caps = BoostSessionEngine.Capabilities(rig.Power, new Timer(), 12, new MemoryStore(), null, rig.Extras);
-        string[] ids = ["pauseServices", "gameBarCapture", "smartCores", "coreParking", "powerThrottling"];
+        string[] ids = ["pauseServices", "gameBarCapture", "smartCores", "coreParking", "powerThrottling", "gpuPriority"];
         foreach (var id in ids) Assert.Contains(caps.Mechanisms, m => m.Id == id);
         Assert.True(caps.Mechanisms.Single(m => m.Id == "pauseServices").Available);
         Assert.True(caps.Mechanisms.Single(m => m.Id == "smartCores").Available);
@@ -880,10 +929,10 @@ public class BoosterMechanismTests
     {
         var options = HelperJson.Options;
         // Every mechanism key Node sends; the helper rejects unknown members.
-        var keys = "gameMode,priority,affinity,powerPlan,lowerBackground,suspendBackground,closeBackground,timerResolution,pauseServices,gameBarCapture,smartCores,coreParking,powerThrottling".Split(',');
+        var keys = "gameMode,priority,affinity,powerPlan,lowerBackground,suspendBackground,closeBackground,timerResolution,pauseServices,gameBarCapture,smartCores,coreParking,powerThrottling,gpuPriority".Split(',');
         var json = "{" + string.Join(",", keys.Select(k => k == "priority" ? "\"priority\":\"High\"" : k == "affinity" ? "\"affinity\":null" : $"\"{k}\":true")) + "}";
         var parsed = JsonSerializer.Deserialize<Mechanisms>(json, options)!;
-        Assert.True(parsed.PauseServices && parsed.GameBarCapture && parsed.SmartCores && parsed.CoreParking && parsed.PowerThrottling);
+        Assert.True(parsed.PauseServices && parsed.GameBarCapture && parsed.SmartCores && parsed.CoreParking && parsed.PowerThrottling && parsed.GpuPriority);
         var command = JsonSerializer.Deserialize<SessionCommand>("{\"command\":\"start\",\"storeGame\":true,\"unattended\":true,\"preset\":true}", options)!;
         Assert.True(command.StoreGame && command.Unattended && command.Preset);
         var captured = new Captured("gameBarCapture", RegValues: [new RegCapture(BoosterPaths.GameDvr, "AppCaptureEnabled", "DWord", false, null, 0)]);

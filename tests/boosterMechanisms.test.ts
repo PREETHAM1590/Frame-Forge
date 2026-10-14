@@ -18,6 +18,8 @@ import {
   defaultState,
   dropLegacyMechanisms,
   modeMechanisms,
+  effectiveMechanisms,
+  BoosterConfigSchema,
   requests,
   type Captured,
   type MechanismResult,
@@ -44,7 +46,7 @@ const helperLines = {
   parking: `{"mechanism":"coreParking","prior":"4","applied":"100","scheme":"396783ca-20d2-459f-b042-4722bc020d51","setting":"cpmincores"}`,
 };
 const csharpMechanismKeys =
-  "gameMode,priority,affinity,powerPlan,lowerBackground,suspendBackground,closeBackground,timerResolution,pauseServices,gameBarCapture,smartCores,coreParking,powerThrottling,standbyPurge".split(
+  "gameMode,priority,affinity,powerPlan,lowerBackground,suspendBackground,closeBackground,timerResolution,pauseServices,gameBarCapture,smartCores,coreParking,powerThrottling,standbyPurge,gpuPriority".split(
     ",",
   );
 describe("second-pass booster contracts", () => {
@@ -293,6 +295,26 @@ describe("second-pass booster contracts", () => {
     );
     // Smart cores is a preset default only where Windows has no Thread Director (the helper keeps it off in presets on Windows 11).
     expect(modeMechanisms.balanced.smartCores).toBe(false);
+  });
+  it("resolves the effective set: presets plus overrides, Custom on its own, Off nothing", () => {
+    const base = BoosterConfigSchema.parse({ mode: "balanced" });
+    expect(base.overrides).toEqual({});
+    expect(effectiveMechanisms(base)).toEqual(modeMechanisms.balanced);
+    const over = {
+      ...base,
+      overrides: { gpuPriority: true, powerThrottling: false },
+    };
+    const eff = effectiveMechanisms(over);
+    expect(eff.gpuPriority).toBe(true);
+    expect(eff.powerThrottling).toBe(false);
+    expect(eff.gameBarCapture).toBe(true);
+    expect(modeMechanisms.competitive.gpuPriority).toBe(false);
+    expect(effectiveMechanisms(over, "off").gpuPriority).toBe(false);
+    const custom = { ...over, mode: "custom" as const };
+    expect(effectiveMechanisms(custom).gpuPriority).toBe(false);
+    expect(
+      BoosterConfigSchema.safeParse({ overrides: { nope: true } }).success,
+    ).toBe(false);
   });
   it("validates network check requests and results", () => {
     expect(

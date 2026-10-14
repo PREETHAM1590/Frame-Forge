@@ -12,10 +12,10 @@ public sealed record Extras(
     ICpuSets? CpuSets = null, IGpuInfo? Gpus = null, IServiceStore? Services = null, IServiceElevator? Elevator = null, IControllerProbe? Controllers = null,
     int Build = 0,
     // False for automatic recovery: it must never open an administrator prompt the user did not ask for.
-    bool Elevate = true)
+    bool Elevate = true, IGpuPriority? GpuPriority = null)
 {
     public static Extras Windows(bool elevate = true) => new(new WindowsRegistryAccess(), new WindowsPowerSettings(), new WindowsPowerThrottling(), new WindowsCpuTopology(),
-        new WindowsCpuSets(), new WindowsGpuInfo(), new WindowsServiceStore(), new WindowsServiceElevator(), new WindowsControllerProbe(), Environment.OSVersion.Version.Build, elevate);
+        new WindowsCpuSets(), new WindowsGpuInfo(), new WindowsServiceStore(), new WindowsServiceElevator(), new WindowsControllerProbe(), Environment.OSVersion.Version.Build, elevate, new WindowsGpuPriority());
 }
 
 public sealed partial class BoostSessionEngine
@@ -216,6 +216,38 @@ public sealed partial class BoostSessionEngine
             ? new("powerThrottling", "reverted", $"{Label(process)}: power throttling restored and verified.")
             : new("powerThrottling", "failed", $"{Label(process)}: Windows did not restore the power throttling state.");
     }
+    // ---- GPU scheduling priority (D3DKMT) of the game process: raised to High, never Realtime ----
+    private const int GpuHigh = 4;
+    private static readonly string[] GpuClasses = ["idle", "below normal", "normal", "above normal", "high", "realtime"];
+    private static string GpuName(int value) => value is >= 0 and <= 5 ? GpuClasses[value] : value.ToString(CultureInfo.InvariantCulture);
+    private MechanismResult GpuPriority(ProcessTarget game)
+    {
+        if (extras?.GpuPriority is not { } gpu) return Unsupported("gpuPriority", "GPU priority control is not available in this build.");
+        int? prior;
+        try { prior = gpu.Get(game); }
+        catch (Exception error) when (error is Win32Exception or InvalidOperationException or DllNotFoundException or EntryPointNotFoundException) { return Unsupported("gpuPriority", $"Windows would not report this game's GPU priority ({Describe(error)})."); }
+        if (prior is not { } before) return Unsupported("gpuPriority", "Windows did not report this game's GPU priority (it may not be using the GPU yet), so the prior value cannot be saved.");
+        if (before >= GpuHigh) return new("gpuPriority", "skipped", $"{Label(game)} already has {GpuName(before)} GPU priority; not lowered.");
+        Capture(new("gpuPriority", game, before.ToString(CultureInfo.InvariantCulture), GpuHigh.ToString(CultureInfo.InvariantCulture)));
+        gpu.Set(game, GpuHigh);
+        return gpu.Get(game) == GpuHigh
+            ? new("gpuPriority", "applied", $"{Label(game)}: GPU priority raised from {GpuName(before)} to high and verified.")
+            : new("gpuPriority", "failed", $"{Label(game)}: Windows did not keep the GPU priority. It is restored when the session ends.");
+    }
+    private MechanismResult RevertGpuPriority(Captured item)
+    {
+        var process = Valid(item.Process);
+        if (!int.TryParse(item.Prior, NumberStyles.None, CultureInfo.InvariantCulture, out var prior) || prior > 3 || !int.TryParse(item.Applied, NumberStyles.None, CultureInfo.InvariantCulture, out var applied) || applied != GpuHigh) throw new InvalidOperationException("Invalid saved GPU priority.");
+        if (extras?.GpuPriority is not { } gpu) throw new InvalidOperationException("GPU priority control is not available in this build.");
+        if (processes.Read(process) is null) return new("gpuPriority", "reverted", $"{Label(process)}: exited; nothing to restore.");
+        var current = gpu.Get(process) ?? throw new InvalidOperationException("Windows did not report the GPU priority.");
+        if (current == prior) return new("gpuPriority", "reverted", $"{Label(process)}: GPU priority already restored.");
+        if (current != applied) return new("gpuPriority", "conflict", $"{Label(process)}: GPU priority changed outside Frameforge; kept.");
+        gpu.Set(process, prior);
+        return gpu.Get(process) == prior
+            ? new("gpuPriority", "reverted", $"{Label(process)}: GPU priority restored to {GpuName(prior)} and verified.")
+            : new("gpuPriority", "failed", $"{Label(process)}: Windows did not restore the GPU priority.");
+    }
     private static (uint Control, uint State) Pair(string? text)
     {
         var parts = (text ?? "").Split(':');
@@ -384,6 +416,9 @@ public sealed partial class BoostSessionEngine
             : extras.Build is > 0 and < PowerThrottlingBuild
                 ? new("powerThrottling", false, "Needs Windows 10 version 1709 or later.")
                 : new("powerThrottling", true, "Asks Windows not to treat the game as efficiency (EcoQoS) work. Applies to the game process only and ends with it.")));
+        list.Add(Run("gpuPriority", () => extras?.GpuPriority is null
+            ? new("gpuPriority", false, "GPU priority control is not available in this build.")
+            : new("gpuPriority", true, "Windows accepts or refuses this per game; the result is shown when the boost starts.")));
         return [.. list];
     }
     internal static CpuTopology? ReadTopology(Extras? extras)

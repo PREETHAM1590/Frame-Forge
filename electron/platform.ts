@@ -117,6 +117,7 @@ export const capabilitiesUnavailable = (detail: string): BoostCapabilities => ({
       "smartCores",
       "coreParking",
       "powerThrottling",
+      "gpuPriority",
     ] as const
   ).map((id) => ({
     id,

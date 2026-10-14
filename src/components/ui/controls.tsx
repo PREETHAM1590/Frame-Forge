@@ -1,5 +1,5 @@
 import * as Switch from "@radix-ui/react-switch";
-import { ArrowRight, Search } from "lucide-react";
+import { ArrowRight, Info, Search } from "lucide-react";
 import { useId } from "react";
 import type { ReactNode, ButtonHTMLAttributes, CSSProperties } from "react";
 export type Tone = "neutral" | "lime" | "cyan" | "amber" | "red";
@@ -84,6 +84,31 @@ export function Toggle({
         <Switch.Thumb className="switch-thumb" />
       </Switch.Root>
     </div>
+  );
+}
+/** Info button whose text shows on hover and keyboard focus (no hover-only content). */
+export function InfoTip({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  const id = useId();
+  return (
+    <span className="infotip">
+      <button
+        type="button"
+        className="infotip-btn"
+        aria-label={`About ${label}`}
+        aria-describedby={id}
+      >
+        <Info size={14} aria-hidden="true" />
+      </button>
+      <span role="tooltip" id={id} className="infotip-body">
+        {children}
+      </span>
+    </span>
   );
 }
 /** Native range input (keyboard and screen reader support for free), styled by tokens. */

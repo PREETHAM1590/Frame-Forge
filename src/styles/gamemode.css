@@ -321,3 +321,84 @@
 .mode-card .disclosure-body {
   padding: var(--sp-2) var(--sp-3);
 }
+
+/* Game enhancers: one toggle row per mechanism, with an info tooltip. */
+.enh-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.enh-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: var(--bw) solid var(--c-border);
+  font-size: var(--fs-sm);
+}
+.enh-row .enh-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+}
+.enh-row .enh-note {
+  flex-basis: 100%;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.enh-row .enh-note[data-tone="amber"] {
+  color: var(--c-amber, #f5a524);
+}
+.enh-row .enh-extra {
+  flex-basis: 100%;
+}
+.enh-extra .check-list label {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  font-size: var(--fs-sm);
+}
+.enh-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-2);
+}
+.infotip {
+  position: relative;
+  display: inline-flex;
+}
+.infotip-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  background: none;
+  border: 0;
+  color: var(--c-muted, inherit);
+  cursor: help;
+}
+.infotip-body {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  top: calc(100% + 6px);
+  width: 260px;
+  padding: var(--sp-3);
+  background: var(--c-cell);
+  border: var(--bw) solid var(--c-border);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  line-height: 1.5;
+}
+.infotip:hover .infotip-body,
+.infotip:focus-within .infotip-body {
+  display: block;
+}

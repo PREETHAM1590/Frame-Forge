@@ -12,11 +12,10 @@ import {
 import { desktopOnly, onEvent, request } from "../api";
 import { PowerPlanDialog } from "../components/PowerPlanDialog";
 import {
-  modeMechanisms,
+  effectiveMechanisms,
   type BoostMode,
   type BoostSession,
   type BoosterConfig,
-  type CustomMechanisms as Custom,
   type MechanismId,
 } from "../../shared/contracts";
 import type { ViewProps } from "../types";
@@ -24,7 +23,6 @@ import { labels, modes, stateText, statusTones } from "./gamemode/model";
 import type { Status } from "./gamemode/model";
 import { ModeSelector } from "./gamemode/ModeSelector";
 import { ModeCards } from "./gamemode/ModeCards";
-import { CustomMechanisms } from "./gamemode/CustomMechanisms";
 import { Enhancers } from "./gamemode/Enhancers";
 import { BackgroundApps } from "./gamemode/BackgroundApps";
 import { LaunchSettings } from "./gamemode/LaunchSettings";
@@ -143,10 +141,7 @@ export function GameMode({
         : "";
   const save = (next: Partial<BoosterConfig>) =>
     run("boostConfig", { ...config, ...next }, "Game booster settings saved.");
-  const setCustom = (next: Partial<Custom>) =>
-    save({ custom: { ...config.custom, ...next } });
-  const mechanisms =
-    config.mode === "custom" ? config.custom : modeMechanisms[config.mode];
+  const mechanisms = effectiveMechanisms(config);
   const modeName = (id: BoostMode) =>
     modes.find((m) => m.id === id)?.label ?? id;
   const game = data.state.games.find((g) => g.id === gameId);
@@ -156,7 +151,6 @@ export function GameMode({
       : game.boostMode
     : config.mode;
   const sessionGame = data.state.games.find((g) => g.id === session?.gameId);
-  const cpus = Math.min(caps?.logicalCpus ?? 0, 64);
   const startReason =
     unavailable ||
     (session
@@ -170,11 +164,7 @@ export function GameMode({
             : "");
   // Whether the boost about to start will pause services: that is the one step that opens an administrator prompt.
   const gameMechanisms =
-    gameMode === "off"
-      ? null
-      : gameMode === "custom"
-        ? config.custom
-        : modeMechanisms[gameMode];
+    gameMode === "off" ? null : effectiveMechanisms(config, gameMode);
   const pausesServices =
     !!gameMechanisms?.pauseServices && cap("pauseServices")?.available === true;
   const clearsStandby =
@@ -313,20 +303,6 @@ export function GameMode({
             pending={pending}
             onSelect={(mode) => void save({ mode })}
           />
-          {config.mode === "custom" && (
-            <Panel flush>
-              <SectionHeader level={3} title="Custom mechanisms" />
-              <div className="gm-side-body">
-                <CustomMechanisms
-                  config={config}
-                  cap={cap}
-                  cpus={cpus}
-                  pending={pending}
-                  setCustom={setCustom}
-                />
-              </div>
-            </Panel>
-          )}
           <Disclosure title="Background apps" hint="Advanced">
             <BackgroundApps
               config={config}

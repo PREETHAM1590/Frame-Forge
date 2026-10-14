@@ -237,6 +237,28 @@ describe("game booster sessions", () => {
     expect(platform.elevation.current).toBeNull();
     repo.close();
   });
+  it("sends the mode's set with the saved enhancer overrides on top, GPU priority included", async () => {
+    const { repo, game, platform, engine } = setup("performance");
+    const state = repo.state();
+    repo.updateState({
+      ...state,
+      booster: {
+        ...state.booster,
+        overrides: { gpuPriority: true, lowerBackground: false },
+      },
+    });
+    await engine.start(game.id, "manual");
+    const sent = platform.sessions[0]!.sent[0] as {
+      mechanisms: Record<string, unknown>;
+    };
+    expect(sent.mechanisms).toMatchObject({
+      gpuPriority: true,
+      lowerBackground: false,
+      powerPlan: true,
+      priority: "High",
+    });
+    repo.close();
+  });
   it("without skipAdmin a competitive start still asks for the services step", async () => {
     const { repo, game, platform, engine } = setup("competitive");
     await engine.start(game.id, "manual");

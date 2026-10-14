@@ -235,6 +235,7 @@ describe("SQLite migrations and configuration recovery", () => {
       boostMode: "global",
     });
     expect(state.booster).toEqual({
+      overrides: {},
       mode: "off",
       autoBoost: false,
       custom: expect.objectContaining({ priority: "Normal", affinity: null }),

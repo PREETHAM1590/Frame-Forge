@@ -233,6 +233,6 @@ describe("configuration and safety UI", () => {
     card.querySelectorAll("details").forEach((d) => (d.open = true));
     expect(within(card).getByText("Performance power plan")).toBeVisible();
     expect(within(card).getByText("not configured")).toBeVisible();
-    expect(screen.getByText("Standby list purge")).toBeInTheDocument();
+    expect(screen.getByText("Standby Purge")).toBeInTheDocument();
   });
 });
