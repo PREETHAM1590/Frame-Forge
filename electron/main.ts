@@ -30,6 +30,8 @@ import {
   BoostNotices,
   closeToTray,
   hiddenArg,
+  migrateLoginItem,
+  testHooksEnabled,
   startsHidden,
   trayModel,
   trayNotice,
@@ -59,6 +61,8 @@ let onBoost: (session: BoostSession) => void = () => {};
 let refreshTray = () => {};
 // Memory: the renderer heap is capped modestly, and Chromium features Frameforge never uses stay off.
 app.commandLine.appendSwitch("js-flags", "--max-old-space-size=256");
+// The GPU process is what wakes an idle tray app; this dashboard renders fine in software (idle CPU ~0.7% -> ~0.05%).
+app.commandLine.appendSwitch("disable-gpu");
 // Isolated profile for tests and smoke runs; must be set before the single-instance lock.
 try {
   const userData = userDataOverride(process.env, app.isPackaged);
@@ -331,6 +335,7 @@ if (!app.requestSingleInstanceLock()) {
           {
             open: showWindow,
             toggleAutoBoost: () => {
+              // Pushes the new state to an open window right away.
               const current = repo.state();
               repo.updateState({
                 ...current,
@@ -341,8 +346,13 @@ if (!app.requestSingleInstanceLock()) {
               });
               service.booster.configure();
               refreshTray();
+              pushState();
             },
-            stopBoost: () => void service.booster.stop().catch(() => null),
+            stopBoost: () =>
+              void service.booster
+                .stop()
+                .catch(() => null)
+                .finally(pushState),
             quit: () => app.quit(),
           },
         );
@@ -365,6 +375,10 @@ if (!app.requestSingleInstanceLock()) {
           ),
         );
       };
+      const pushState = () => {
+        if (window && !window.isDestroyed())
+          window.webContents.send("frameforge:event", { type: "state" });
+      };
       const notices = new BoostNotices();
       onBoost = (session) => {
         refreshTray();
@@ -382,7 +396,18 @@ if (!app.requestSingleInstanceLock()) {
       };
       service.booster.configure();
       refreshTray();
-      if (process.env.FRAMEFORGE_TEST_MODE)
+      if (app.isPackaged)
+        migrateLoginItem({
+          enabled: (hidden) =>
+            app.getLoginItemSettings(hidden ? { args: [hiddenArg] } : {})
+              .openAtLogin,
+          register: () =>
+            app.setLoginItemSettings({
+              openAtLogin: true,
+              args: [hiddenArg],
+            }),
+        });
+      if (testHooksEnabled(process.env, app.isPackaged))
         exposeTestHooks(tray, service, repo);
       // Signed in at boot (--hidden): no window until the tray asks for one.
       if (!startsHidden(process.argv, keepRunning())) createWindow();

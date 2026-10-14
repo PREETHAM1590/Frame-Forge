@@ -9,6 +9,24 @@ export const startsHidden = (argv: readonly string[], keepRunning: boolean) =>
 /** Closing the window destroys it (renderer memory is freed) and leaves the main process in the tray. */
 export const closeToTray = (keepRunning: boolean, quitting: boolean) =>
   keepRunning && !quitting;
+/** Test hooks (tray, dummy game) exist only in test mode; a packaged build also needs FRAMEFORGE_TEST_HOOKS=1. */
+export const testHooksEnabled = (
+  env: Record<string, string | undefined>,
+  packaged: boolean,
+) =>
+  env.FRAMEFORGE_TEST_MODE === "1" &&
+  (!packaged || env.FRAMEFORGE_TEST_HOOKS === "1");
+/** A sign-in entry made before --hidden existed: re-register it so a sign-in launch goes to the tray. */
+export function migrateLoginItem(login: {
+  enabled(hidden: boolean): boolean;
+  register(): void;
+}) {
+  if (login.enabled(false) && !login.enabled(true)) {
+    login.register();
+    return true;
+  }
+  return false;
+}
 export const trayNotice = "Frameforge is still running in the tray";
 
 export interface TrayItem {

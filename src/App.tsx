@@ -144,6 +144,12 @@ export default function App() {
           }
           return;
         }
+        if (event.type === "state") {
+          void request("bootstrap", {})
+            .then(setData)
+            .catch(() => undefined);
+          return;
+        }
         if (event.type !== "boost") return;
         const s = event.session;
         setData((old) =>

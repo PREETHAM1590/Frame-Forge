@@ -16,6 +16,7 @@ const app = await electron.launch({
     ...process.env,
     FRAMEFORGE_USER_DATA: userData,
     FRAMEFORGE_TEST_MODE: "1",
+    FRAMEFORGE_TEST_HOOKS: "1",
   },
   timeout: 30000,
 });
@@ -133,6 +134,7 @@ const hidden = await electron.launch({
     ...process.env,
     FRAMEFORGE_USER_DATA: backgroundData,
     FRAMEFORGE_TEST_MODE: "1",
+    FRAMEFORGE_TEST_HOOKS: "1",
   },
   timeout: 30000,
 });

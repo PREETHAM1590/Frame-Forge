@@ -1005,6 +1005,8 @@ export const EventSchema = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ type: z.literal("boost"), session: BoostSessionSchema }).strict(),
+  // Saved state changed outside the window (tray menu): reload it.
+  z.object({ type: z.literal("state") }).strict(),
   // A whole-PC game scan began or ended; `added` is the number of new library games.
   z
     .object({

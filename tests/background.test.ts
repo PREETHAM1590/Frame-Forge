@@ -11,7 +11,9 @@ import { BoostEngine } from "../electron/booster";
 import {
   BoostNotices,
   closeToTray,
+  migrateLoginItem,
   startsHidden,
+  testHooksEnabled,
   trayModel,
 } from "../electron/background";
 import {
@@ -250,6 +252,34 @@ describe("auto-boost watcher", () => {
 });
 
 describe("background mode helpers", () => {
+  it("re-registers an old sign-in entry with --hidden, and only that", () => {
+    const login = (plain: boolean, hidden: boolean) => {
+      const register = vi.fn();
+      const done = migrateLoginItem({
+        enabled: (h) => (h ? hidden : plain),
+        register,
+      });
+      return { done, register };
+    };
+    expect(login(true, false)).toMatchObject({ done: true });
+    expect(login(true, false).register).toHaveBeenCalled();
+    // Already hidden, or sign-in is off: left alone.
+    expect(login(false, true).register).not.toHaveBeenCalled();
+    expect(login(false, false).register).not.toHaveBeenCalled();
+    expect(login(true, true).register).not.toHaveBeenCalled();
+  });
+  it("exposes test hooks only in test mode, and in a packaged build only when asked", () => {
+    expect(testHooksEnabled({}, false)).toBe(false);
+    expect(testHooksEnabled({ FRAMEFORGE_TEST_MODE: "1" }, false)).toBe(true);
+    expect(testHooksEnabled({ FRAMEFORGE_TEST_MODE: "1" }, true)).toBe(false);
+    expect(
+      testHooksEnabled(
+        { FRAMEFORGE_TEST_MODE: "1", FRAMEFORGE_TEST_HOOKS: "1" },
+        true,
+      ),
+    ).toBe(true);
+    expect(testHooksEnabled({ FRAMEFORGE_TEST_HOOKS: "1" }, true)).toBe(false);
+  });
   it("closes to the tray only while keeping Frameforge running and not quitting", () => {
     expect(closeToTray(true, false)).toBe(true);
     expect(closeToTray(false, false)).toBe(false);
