@@ -118,12 +118,12 @@ public static class ElevatedCall
 
     // Child side of every elevated entry point: the result file must be ours and the request still valid.
     // Returns the open result file, or null with the exit code to use (2: rejected file, 3: request not fresh).
-    public static FileStream? OpenResult(string path, out int exitCode)
+    public static FileStream? OpenResult(string path, out int exitCode, FileShare share = FileShare.None)
     {
         exitCode = 2;
         if (!RestoreCommands.ValidResultPath(path)) return null;
         if (!ElevationRequest.Fresh(path)) { exitCode = ElevationRequest.NotFreshExitCode; return null; }
-        var file = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None);
+        var file = new FileStream(path, FileMode.Open, FileAccess.Write, share);
         // Reject a swapped file or a junction anywhere in the path before an elevated write.
         if (file.Length != 0 || !string.Equals(RestoreCommands.FinalPath(file.SafeFileHandle), path, StringComparison.OrdinalIgnoreCase)) { file.Dispose(); return null; }
         return file;

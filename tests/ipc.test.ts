@@ -98,6 +98,12 @@ const inputs: { [M in Method]: () => Request<M> } = {
   updateDownload: () => ({}),
   updateInstall: () => ({ when: "now" }),
   trackUsage: () => ({ event: "feature_opened", page: "Dashboard" }),
+  monitorStart: () => ({}),
+  monitorStop: () => ({}),
+  fpsStatus: () => ({}),
+  fpsStart: () => ({ gameId: id(), confirmed: true }),
+  fpsStop: () => ({ confirmed: true }),
+  fpsHistory: () => ({ gameId: id() }),
 };
 describe("IPC surface", () => {
   it("has identical request, response and handler sets", () => {
@@ -137,6 +143,8 @@ describe("IPC surface", () => {
       "launchSettingApply",
       "boostPowerPlan",
       "boostTimerGlobal",
+      "monitorStart",
+      "fpsStart",
     ];
     localStorage.clear();
     for (const method of Object.keys(requests) as Method[]) {

@@ -809,6 +809,169 @@ export const BootstrapSchema = z
   })
   .strict();
 export type Bootstrap = z.infer<typeof BootstrapSchema>;
+// ---- Monitor page (live system counters) and Game Monitor (FPS) ----
+const Gauge = z.number().min(0).max(100);
+const Count = z.number().int().nonnegative();
+const ProcessUseSchema = z
+  .object({
+    name: z.string().max(64),
+    count: Count,
+    cpuPercent: Gauge,
+    workingSetBytes: Count,
+  })
+  .strict();
+/** One second of Windows performance counters, from the helper. Nothing here is stored. */
+export const MonitorSampleSchema = z
+  .object({
+    at: z.string().max(40),
+    counters: z.boolean(),
+    cpu: z.object({ total: Gauge, cores: z.array(Gauge).max(256) }).strict(),
+    memory: z.object({ totalBytes: Count, availableBytes: Count }).strict(),
+    gpu: z
+      .object({
+        available: z.boolean(),
+        detail: z.string().max(300).nullable(),
+        adapters: z
+          .array(
+            z
+              .object({
+                id: z.string().max(64),
+                engine3d: Gauge,
+                compute: Gauge,
+                copy: Gauge,
+                video: Gauge,
+                dedicatedBytes: Count,
+                sharedBytes: Count,
+              })
+              .strict(),
+          )
+          .max(4),
+      })
+      .strict(),
+    disks: z
+      .array(
+        z
+          .object({
+            name: z.string().max(80),
+            readBytesPerSec: Count,
+            writeBytesPerSec: Count,
+            activePercent: Gauge,
+          })
+          .strict(),
+      )
+      .max(8),
+    network: z
+      .array(
+        z
+          .object({
+            name: z.string().max(80),
+            downBytesPerSec: Count,
+            upBytesPerSec: Count,
+            linkBitsPerSec: Count,
+          })
+          .strict(),
+      )
+      .max(4),
+    processes: z
+      .object({
+        byCpu: z.array(ProcessUseSchema).max(8),
+        byMemory: z.array(ProcessUseSchema).max(8),
+      })
+      .strict(),
+    temperatures: z
+      .object({
+        gpu: z
+          .array(
+            z
+              .object({
+                name: z.string().max(80),
+                celsius: z.number().min(0).max(150),
+              })
+              .strict(),
+          )
+          .max(4),
+        cpuCelsius: z.number().min(0).max(150).nullable(),
+        note: z.string().max(200).nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+export type MonitorSample = z.infer<typeof MonitorSampleSchema>;
+/** Was Game Mode running for the game while it was measured? "mixed" when it started or stopped during the capture. */
+export const FpsBoostSchema = z.enum(["on", "off", "mixed"]);
+export const FpsSummarySchema = z
+  .object({
+    id: Id,
+    gameId: Id,
+    gameName: z.string().max(80),
+    at: z.string().max(40),
+    durationSeconds: Count,
+    frames: Count,
+    avgFps: z.number().nonnegative(),
+    low1Fps: z.number().nonnegative().nullable(),
+    boost: FpsBoostSchema,
+  })
+  .strict();
+export type FpsSummary = z.infer<typeof FpsSummarySchema>;
+export const FpsStatusSchema = z
+  .object({
+    state: z.enum(["idle", "starting", "capturing", "unavailable", "ended"]),
+    gameId: Id.nullable(),
+    gameName: z.string().max(80).nullable(),
+    /** Why FPS is unavailable (declined, protected, not-running, ...) or a note while capturing (no-frames). */
+    code: z.string().max(40).nullable(),
+    detail: z.string().max(500),
+    elapsedSeconds: Count,
+    fps: z.number().nonnegative().nullable(),
+    avgFps: z.number().nonnegative().nullable(),
+    low1Fps: z.number().nonnegative().nullable(),
+    frames: Count,
+    frameTimes: z.array(z.number().min(0).max(5000)).max(240),
+    fpsHistory: z.array(z.number().min(0).max(100000)).max(120),
+    usage: z
+      .object({
+        cpuPercent: Gauge,
+        workingSetBytes: Count,
+        gpuPercent: Gauge.nullable(),
+      })
+      .strict()
+      .nullable(),
+    boost: FpsBoostSchema,
+    /** The saved summary once a capture ended and was long enough to keep. */
+    saved: FpsSummarySchema.nullable(),
+    /** Library games running now (refreshed by fpsStatus). */
+    running: z.array(Id).max(500),
+  })
+  .strict();
+export type FpsStatus = z.infer<typeof FpsStatusSchema>;
+// One JSON line from `Frameforge.Windows.exe --fps`.
+export const FpsEventSchema = z.union([
+  z.object({ event: z.literal("approval") }).strict(),
+  z.object({ event: z.literal("ready") }).strict(),
+  z
+    .object({
+      event: z.literal("frames"),
+      frameTimesMs: z.array(z.number().min(0).max(100000)).max(2000),
+    })
+    .strict(),
+  z
+    .object({
+      event: z.literal("usage"),
+      cpuPercent: Gauge,
+      workingSetBytes: Count,
+      gpuPercent: Gauge.nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      event: z.literal("unavailable"),
+      code: z.string().max(40),
+      detail: z.string().max(500),
+    })
+    .strict(),
+  z.object({ event: z.literal("ended"), reason: z.string().max(40) }).strict(),
+]);
+export type FpsEvent = z.infer<typeof FpsEventSchema>;
 const Empty = z.object({}).strict();
 export const UpdateStatusSchema = z
   .object({
@@ -843,6 +1006,7 @@ export const featurePages = [
   "Game Mode",
   "Restore & backups",
   "System",
+  "Monitor",
   "Activity",
   "Settings",
 ] as const;
@@ -994,6 +1158,14 @@ export const requests = {
     .strict(),
   // Ends this user's explorer.exe; Windows starts it again. Never called automatically.
   restartExplorer: z.object({ confirmed: z.literal(true) }).strict(),
+  // Live counters, read once a second only while the Monitor page is visible; monitorStop ends the helper completely.
+  monitorStart: Empty,
+  monitorStop: Empty,
+  // Game Monitor: FPS capture needs one Windows administrator prompt, so it only starts after an explicit click.
+  fpsStatus: Empty,
+  fpsStart: z.object({ gameId: Id, confirmed: z.literal(true) }).strict(),
+  fpsStop: z.object({ confirmed: z.literal(true) }).strict(),
+  fpsHistory: z.object({ gameId: Id }).strict(),
 };
 export const responses = {
   bootstrap: BootstrapSchema,
@@ -1041,6 +1213,12 @@ export const responses = {
   updateDownload: UpdateStatusSchema,
   updateInstall: UpdateStatusSchema,
   trackUsage: z.boolean(),
+  monitorStart: z.boolean(),
+  monitorStop: z.boolean(),
+  fpsStatus: FpsStatusSchema,
+  fpsStart: FpsStatusSchema,
+  fpsStop: FpsStatusSchema,
+  fpsHistory: z.array(FpsSummarySchema).max(50),
 };
 export type Method = keyof typeof requests;
 export type Request<M extends Method> = z.infer<(typeof requests)[M]>;
@@ -1062,6 +1240,10 @@ export const EventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("update"), status: UpdateStatusSchema }).strict(),
   // Saved state changed outside the window (tray menu): reload it.
   z.object({ type: z.literal("state") }).strict(),
+  z
+    .object({ type: z.literal("monitor"), sample: MonitorSampleSchema })
+    .strict(),
+  z.object({ type: z.literal("fps"), status: FpsStatusSchema }).strict(),
   // A whole-PC game scan began or ended; `added` is the number of new library games.
   z
     .object({

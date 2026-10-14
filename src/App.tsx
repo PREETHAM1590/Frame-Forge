@@ -7,6 +7,7 @@ import {
   Play,
   Archive,
   Cpu,
+  Activity as ActivityIcon,
   History,
   Settings as SettingsIcon,
   Flame,
@@ -53,6 +54,9 @@ const System = lazy(() =>
 const Settings = lazy(() =>
   import("./views/System").then((m) => ({ default: m.Settings })),
 );
+const Monitor = lazy(() =>
+  import("./views/Monitor").then((m) => ({ default: m.Monitor })),
+);
 // These can sit behind a Windows administrator prompt for minutes, so they must not lock the rest of the app.
 const elevatedMethods: ReadonlySet<Method> = new Set([
   "createRestorePoint",
@@ -61,7 +65,7 @@ const elevatedMethods: ReadonlySet<Method> = new Set([
   "recoverRestoreFrequency",
   "openSystemRestore",
 ]);
-// Seven rail entries; Presets and Activity sit under their parent so every page stays one click away.
+// Eight rail entries; Presets and Activity sit under their parent so every page stays one click away.
 const navigation: readonly RailItem<Page>[] = [
   { page: "Dashboard", label: "Dashboard", icon: LayoutDashboard, index: "01" },
   { page: "Game Mode", label: "Game Mode", icon: Play, index: "02" },
@@ -81,6 +85,7 @@ const navigation: readonly RailItem<Page>[] = [
   },
   { page: "Activity", label: "Activity", icon: History, child: true },
   { page: "System", label: "System", icon: Cpu, index: "06" },
+  { page: "Monitor", label: "Monitor", icon: ActivityIcon, index: "07" },
 ];
 const settingsItem: RailItem<Page> = {
   page: "Settings",
@@ -149,6 +154,14 @@ export default function App() {
           void request("bootstrap", {})
             .then(setData)
             .catch(() => undefined);
+          return;
+        }
+        // A finished FPS capture wrote an Activity row.
+        if (event.type === "fps") {
+          if (event.status.state === "ended" && event.status.saved)
+            void request("bootstrap", {})
+              .then(setData)
+              .catch(() => undefined);
           return;
         }
         if (event.type !== "boost") return;
@@ -285,6 +298,7 @@ export default function App() {
     "Game Mode": <GameMode {...props} />,
     "Restore & backups": <Backups {...props} />,
     System: <System {...props} />,
+    Monitor: <Monitor {...props} />,
     Activity: <ActivityLog {...props} />,
     Settings: <Settings {...props} />,
   };

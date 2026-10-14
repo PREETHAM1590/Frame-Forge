@@ -38,8 +38,9 @@ export interface GameWatch {
 }
 export type RunningGame = { gameId: string; target: ProcessTarget };
 export type ElevationUse =
-  "restore" | "boost" | "recover" | "timer" | "optimize";
+  "restore" | "boost" | "recover" | "timer" | "optimize" | "fps";
 const waitingFor: Record<ElevationUse, string> = {
+  fps: "FPS capture is waiting for administrator approval.",
   restore: "A System Restore request is waiting for administrator approval.",
   boost:
     "Game Mode is waiting for administrator approval, or is stopping and may ask for it.",
@@ -214,6 +215,10 @@ export interface Platform {
   listPowerPlans(): Promise<PowerPlanEntry[]>;
   deleteDuplicatePlan(plan: string): Promise<string>;
   spawnSession(): SessionChannel;
+  /** `--monitor`: one JSON sample a second until killed or its stdin closes. Absent where the helper is. */
+  spawnMonitor?(): SessionChannel;
+  /** `--fps`: asks for one administrator prompt, then streams frame times of one game. */
+  spawnFps?(): SessionChannel;
   /** Withdraws an administrator request whose prompt is still open; false when none is waiting. */
   cancelElevated?(): boolean;
   /** Re-checks per-machine prerequisites and updates `capabilities`; returns a warning when the check itself failed. */
@@ -756,12 +761,20 @@ export class WindowsPlatform implements Platform {
     };
   }
   spawnSession(): SessionChannel {
-    // detached: libuv otherwise puts the child in a kill-on-close job, and the helper
-    // must outlive a crashed Frameforge long enough to revert (stdin EOF).
-    const child = spawn(this.executable, ["--session"], {
+    return this.channel(["--session"], true);
+  }
+  // Monitor and FPS helpers are not detached: they should end with Frameforge (and also end on stdin EOF).
+  spawnMonitor(): SessionChannel {
+    return this.channel(["--monitor"], false);
+  }
+  spawnFps(): SessionChannel {
+    return this.channel(["--fps"], false);
+  }
+  private channel(args: string[], detached: boolean): SessionChannel {
+    const child = spawn(this.executable, args, {
       windowsHide: true,
       shell: false,
-      detached: true,
+      detached,
       stdio: ["pipe", "pipe", "ignore"],
     });
     const channel = new EventEmitter();

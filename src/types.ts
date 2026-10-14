@@ -14,6 +14,7 @@ export type Page =
   | "Game Mode"
   | "Restore & backups"
   | "System"
+  | "Monitor"
   | "Activity"
   | "Settings";
 export interface ViewProps {

@@ -1,0 +1,233 @@
+/* Monitor page and Game monitor. Tokens only; charts are plain SVG. */
+.monitor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.mon-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--c-border);
+  border: var(--bw) solid var(--c-border);
+}
+.mon-cell {
+  background: var(--c-cell);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.mon-cell .label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mon-value {
+  font-variant-numeric: tabular-nums;
+}
+.mon-two {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--sp-4);
+}
+.mon-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 0;
+}
+.mon-block + .mon-block {
+  border-top: var(--bw) solid var(--c-border);
+}
+.mon-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 52px;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.mon-row.simple {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.mon-row .mono,
+.mon-row.simple .mono,
+.core-grid .mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mon-note {
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.notice-text {
+  color: var(--c-caution);
+  font-size: var(--fs-sm);
+}
+.core-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--sp-2) var(--sp-4);
+}
+.core-grid li {
+  display: grid;
+  grid-template-columns: 32px 1fr 44px;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mon-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.mon-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--c-muted);
+  font-weight: 500;
+  padding: var(--sp-1) var(--sp-2);
+}
+.mon-table td {
+  padding: var(--sp-2);
+  border-top: var(--bw) solid var(--c-border);
+  overflow-wrap: anywhere;
+}
+.mon-table td.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Charts */
+.area-chart {
+  width: 100%;
+  height: 64px;
+  display: block;
+  overflow: hidden;
+  background: var(--c-canvas);
+  border: var(--bw) solid var(--c-border);
+}
+.area-chart .grid {
+  stroke: var(--c-border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 3 4;
+}
+.area-chart .line {
+  fill: none;
+  stroke: var(--c-primary);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+.area-chart .area {
+  fill: var(--c-primary);
+  opacity: 0.16;
+}
+.area-chart.caution .line {
+  stroke: var(--c-caution);
+}
+.area-chart.caution .area {
+  fill: var(--c-caution);
+}
+.area-chart.error .line {
+  stroke: var(--c-error);
+}
+.area-chart.error .area {
+  fill: var(--c-error);
+}
+.area-chart.info .line {
+  stroke: var(--c-info);
+}
+.area-chart.info .area {
+  fill: var(--c-info);
+}
+.area-chart .slide {
+  animation: chart-slide 1s linear;
+}
+@keyframes chart-slide {
+  from {
+    transform: translateX(var(--step));
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .area-chart .slide {
+    animation: none;
+  }
+}
+/* Game monitor */
+.game-monitor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.fps-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.fps-controls .field {
+  min-width: 260px;
+  flex: 1;
+}
+.fps-hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+}
+.fps-usage {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-top: var(--sp-3);
+}
+.fps-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+}
+.mon-two > * {
+  min-width: 0;
+}
+.mon-table {
+  table-layout: fixed;
+}
+.mon-table th:nth-child(n + 2),
+.mon-table td:nth-child(n + 2) {
+  width: 84px;
+  text-align: right;
+}
+.mon-table,
+.mon-table th,
+.mon-table td {
+  box-sizing: border-box;
+}
+.mon-table {
+  max-width: 100%;
+}
+.mon-table th:nth-child(n + 2),
+.mon-table td:nth-child(n + 2) {
+  width: 76px;
+  padding-left: 0;
+}
+.mon-table {
+  min-width: 0;
+}
