@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2
+
+- **Restore points: clearer when Windows skips creating one.** When Windows skips creating a point because a recent one exists, Frameforge now says so (with the existing point's description and time) instead of suggesting System Protection is off. "Create anyway" temporarily lifts the limit, verifies the new point and restores the setting; a fallback creation path is used if needed.
+
 ## 1.1.1
 
 - **No shared administrator prompts when a game exits on its own.** The elevation gate is held until the paused services are restored, so a game that closes by itself no longer opens a second prompt over another action.
