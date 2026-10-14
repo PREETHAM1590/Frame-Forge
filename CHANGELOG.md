@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.1
+
+- **No shared administrator prompts when a game exits on its own.** The elevation gate is held until the paused services are restored, so a game that closes by itself no longer opens a second prompt over another action.
+- **The Optimizations preview marks settings Windows already has**, and the header counts only the changes that will be made.
+- **Fonts load without Content Security Policy errors.** Bundled fonts are emitted as files instead of inline data, so the console stays clean.
+- **Boost without administrator approval.** Starting a boost offers "Skip steps that need administrator approval" for that start only (services and standby list are shown as skipped, the rest of the mode runs). The choice is never remembered.
+- **No false failure when the game is not running.** Start boost now says to start the game first instead of logging a failed request.
+- **A fresh session log for each Game Mode session**, instead of stacking under the previous one.
+- **Game Mode keeps the game you selected** after a session ends and when you return to the page, unless that game was removed.
+
 ## 1.1.0
 
 ### 43 new optimizations
