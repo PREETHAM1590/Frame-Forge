@@ -53,7 +53,9 @@ public static class ServicePolicy
     public static readonly string[] Allowlist =
     [
         "XblAuthManager", "XblGameSave", "XboxNetApiSvc", "XboxGipSvc", "DiagTrack", "WSearch", "SysMain", "Spooler",
-        "MapsBroker", "lfsvc", "RetailDemo", "WerSvc", "PhoneSvc", "TrkWks"
+        "MapsBroker", "lfsvc", "RetailDemo", "WerSvc", "PhoneSvc", "TrkWks",
+        // v1.4 ruling: update, delivery, Click-to-Run and inventory services are paused for the session only (stop-only; the start type is never changed).
+        "wuauserv", "UsoSvc", "DoSvc", "ClickToRunSvc", "InventorySvc", "DusmSvc", "StiSvc"
     ];
     // Needed for Xbox, Game Pass and Microsoft Store titles (sign-in, saves, multiplayer).
     public static readonly string[] StoreServices = ["XblAuthManager", "XblGameSave", "XboxNetApiSvc"];
@@ -74,7 +76,7 @@ public static class ServicePolicy
         // Security
         "WinDefend", "WdNisSvc", "Sense", "SecurityHealthService", "wscsvc",
         // Windows Update and its helpers
-        "wuauserv", "UsoSvc", "WaaSMedicSvc", "sedsvc", "BITS", "DoSvc", "InstallService",
+        "WaaSMedicSvc", "sedsvc", "BITS", "InstallService",
         // Anti-cheat and DRM
         "EasyAntiCheat", "EasyAntiCheat_EOS", "BEService", "vgc", "vgk", "FACEIT", "faceit", "PnkBstrA", "PnkBstrB", "xhunter1", "Steam Client Service", "EpicOnlineServices",
         // GPU

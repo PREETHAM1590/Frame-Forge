@@ -152,12 +152,16 @@ public class BoosterMechanismTests
     [Fact]
     public void DenyListWinsAndAllowlistNeverOverlapsIt()
     {
-        foreach (var name in new[] { "RpcSs", "Audiosrv", "AudioEndpointBuilder", "Dhcp", "Dnscache", "hidserv", "BthServ", "WinDefend", "mpssvc", "BFE", "wuauserv", "UsoSvc", "BITS", "DoSvc", "WaaSMedicSvc",
+        foreach (var name in new[] { "RpcSs", "Audiosrv", "AudioEndpointBuilder", "Dhcp", "Dnscache", "hidserv", "BthServ", "WinDefend", "mpssvc", "BFE", "BITS", "WaaSMedicSvc", "sedsvc", "InstallService",
             "EasyAntiCheat_EOS", "vgc", "vgk", "BEService", "NVDisplay.ContainerLocalSystem", "NvContainerLocalSystem", "GamingServices", "GamingServicesNet", "WacomPenService", "RazerCentralService", "LGHUBUpdaterService", "Steam Client Service" })
             Assert.True(ServicePolicy.Denied(name), name);
         Assert.All(ServicePolicy.Allowlist, name => Assert.False(ServicePolicy.Denied(name), name));
         Assert.False(ServicePolicy.Allowed("RpcSs"));
-        Assert.False(ServicePolicy.Allowed("wuauserv"));
+        // v1.4 ruling: session-only pause of these is allowed; their repair/installer siblings stay denied.
+        foreach (var name in new[] { "wuauserv", "UsoSvc", "DoSvc", "ClickToRunSvc", "InventorySvc", "DusmSvc", "StiSvc" }) Assert.True(ServicePolicy.Allowed(name), name);
+        Assert.False(ServicePolicy.Allowed("WaaSMedicSvc"));
+        Assert.False(ServicePolicy.Allowed("BITS"));
+        Assert.True(ServicePolicy.Allowlist.Length <= ServiceCommands.MaxServices);
         Assert.False(ServicePolicy.Allowed("GamingServices"));
         Assert.True(ServicePolicy.Allowed("DiagTrack"));
     }
@@ -272,7 +276,7 @@ public class BoosterMechanismTests
     {
         var rig = Setup();
         rig.Services.Add("RpcSs", running: false);
-        foreach (var name in new[] { "RpcSs", "wuauserv", "WinDefend", "NoSuchService" })
+        foreach (var name in new[] { "RpcSs", "WaaSMedicSvc", "WinDefend", "NoSuchService" })
             Assert.Equal("failed", rig.Engine.Recover([new Captured("pauseServices", Items: [name])]).Single().State);
         Assert.Empty(rig.Elevator.Calls);
         Assert.Equal("failed", rig.Engine.Recover([new Captured("pauseServices", Items: [])]).Single().State);
