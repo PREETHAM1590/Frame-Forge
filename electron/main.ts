@@ -258,7 +258,14 @@ if (!app.requestSingleInstanceLock()) {
             });
           }
         });
+        // Minimized or hidden windows read nothing; the helper starts again when the window returns.
+        window.on("minimize", () => service.monitor.suspend());
+        window.on("hide", () => service.monitor.suspend());
+        window.on("restore", () => service.monitor.resume());
+        window.on("show", () => service.monitor.resume());
         window.on("closed", () => {
+          // No window, no live counters.
+          service.monitor.stop();
           window = null;
         });
         // Background scan once the UI is up; due-ness (first launch / interval / setting) is decided in the service.

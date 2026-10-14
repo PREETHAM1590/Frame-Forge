@@ -9,6 +9,9 @@ if (OperatingSystem.IsWindows() && args is ["--elevated", ..]) Environment.Exit(
 if (OperatingSystem.IsWindows() && args is ["--elevated-services", ..]) Environment.Exit(ServiceCommands.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--elevated-timer", ..]) Environment.Exit(TimerGlobalSetting.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--elevated-optimize", ..]) Environment.Exit(WindowsAdminGateway.RunChild(args[1..], value => JsonSerializer.Serialize(value, options)));
+if (OperatingSystem.IsWindows() && args is ["--elevated-fps", ..]) Environment.Exit(FpsChild.RunElevated(args[1..]));
+if (OperatingSystem.IsWindows() && args is ["--monitor"]) { MonitorHost.Host(); return; }
+if (OperatingSystem.IsWindows() && args is ["--fps"]) { FpsHost.Host(); return; }
 if (OperatingSystem.IsWindows() && args is ["--session"]) { SessionRunner.Host(); return; }
 object response;
 try

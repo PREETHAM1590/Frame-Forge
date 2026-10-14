@@ -21,6 +21,8 @@ import { OperationEngine } from "./operations.js";
 import { BoostEngine } from "./booster.js";
 import { RestorePointService } from "./restore.js";
 import { LaunchSettingsService } from "./launchSettings.js";
+import { MonitorService } from "./monitor.js";
+import { FpsService } from "./fps.js";
 import { within, type DetectionResult } from "./games.js";
 import { fallbackHardware, type Platform } from "./platform.js";
 import {
@@ -58,6 +60,8 @@ export interface DesktopServices {
 export class AppService {
   private engine: OperationEngine;
   readonly booster: BoostEngine;
+  readonly monitor: MonitorService;
+  readonly fps: FpsService;
   private restorePoints: RestorePointService;
   private launch: LaunchSettingsService;
   private hardware: Hardware = fallbackHardware();
@@ -77,6 +81,8 @@ export class AppService {
   }
   // App quit: stop the watcher and revert a live boost session before exiting.
   async shutdown() {
+    this.monitor.stop();
+    this.fps.dispose();
     this.booster.dispose();
     if (this.booster.active) await this.booster.stop();
   }
@@ -92,6 +98,20 @@ export class AppService {
       this.desktop.notify?.({ type: "boost", session }),
     );
     this.booster.configure();
+    this.monitor = new MonitorService(platform, (event) =>
+      this.desktop.notify?.(event),
+    );
+    this.fps = new FpsService(platform, {
+      games: () => this.repo.state().games,
+      boostOn: (gameId) => {
+        const session = this.repo.boostSession();
+        return session?.gameId === gameId && session.status === "active";
+      },
+      meta: (key) => this.repo.meta(key),
+      setMeta: (key, value) => this.repo.setMeta(key, value),
+      log: (label, message) => this.log(label, message),
+      notify: (event) => this.desktop.notify?.(event),
+    });
     const guard = () => {
       if (this.engine.isBusy)
         throw new Error("Wait for the Windows operation to finish.");
@@ -487,6 +507,12 @@ export class AppService {
         this.repo.clearActivity();
         return true;
       },
+      monitorStart: async () => this.monitor.start(),
+      monitorStop: async () => this.monitor.stop(),
+      fpsStatus: async () => this.fps.status(),
+      fpsStart: async ({ gameId }) => this.fps.start(gameId),
+      fpsStop: async () => this.fps.stop(),
+      fpsHistory: async ({ gameId }) => this.fps.history(gameId),
     };
   }
   private dismissed() {
@@ -789,7 +815,16 @@ export class AppService {
       try {
         if (
           this.repo.state().settings.diagnostics &&
-          !["bootstrap", "clearActivity", "cancel", "gameIcon"].includes(key)
+          ![
+            "bootstrap",
+            "clearActivity",
+            "cancel",
+            "gameIcon",
+            "monitorStart",
+            "monitorStop",
+            "fpsStatus",
+            "fpsHistory",
+          ].includes(key)
         )
           this.log(
             "Local diagnostics",

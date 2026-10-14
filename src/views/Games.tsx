@@ -27,6 +27,7 @@ import {
   type Game,
 } from "../../shared/contracts";
 import { GameIcon } from "../components/GameIcon";
+import { FpsHistory } from "./monitor/GameMonitor";
 import type { ViewProps } from "../types";
 export { GameMode } from "./GameBooster";
 const modeNames: Record<Game["boostMode"], string> = {
@@ -312,6 +313,7 @@ export function Games({
               : "Matched by folder"}
           </p>
           <p className="muted">Source: {sourceLabels[selected.source]}</p>
+          <FpsHistory gameId={selected.id} />
           <form
             onSubmit={async (e) => {
               e.preventDefault();

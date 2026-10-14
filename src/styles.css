@@ -9,6 +9,7 @@
 @import "./styles/optimize.css";
 @import "./styles/safety.css";
 @import "./styles/applyflow.css";
+@import "./styles/monitor.css";
 @theme {
   --font-sans: "Space Grotesk", sans-serif;
 }
