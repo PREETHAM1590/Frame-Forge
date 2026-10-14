@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "dev:desktop": "npm run windows:ensure && npm run build:electron && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
-    "build:electron": "tsc -p tsconfig.electron.json && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/electron/preload.cjs",
+    "build:electron": "tsc -p tsconfig.electron.json && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/electron/preload.cjs && node tools/write-build-info.mjs",
     "build": "npm run typecheck && vite build && npm run build:electron",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
@@ -26,11 +26,13 @@
     "windows:ensure": "node tools/ensure-helper.mjs"
   },
   "dependencies": {
+    "@aptabase/electron": "^0.3.1",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/space-grotesk": "^5.2.10",
     "@node-steam/vdf": "^2.2.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-switch": "^1.2.6",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -110,6 +112,13 @@
     },
     "copyright": "Copyright (c) 2026 PREETHAM1590",
     "artifactName": "Frameforge-Setup-${version}.exe",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "PREETHAM1590",
+        "repo": "Frame-Forge"
+      }
+    ],
     "extraFiles": [
       {
         "from": "LICENSE",

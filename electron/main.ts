@@ -6,11 +6,18 @@ import {
   ipcMain,
   nativeImage,
   shell,
+  Tray,
   type NativeImage,
 } from "electron";
+import electronUpdater from "electron-updater";
+import {
+  initialize as aptabaseInit,
+  trackEvent,
+} from "@aptabase/electron/main";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import { randomUUID } from "node:crypto";
 import { Repository } from "./repository.js";
 import { WindowsPlatform, MockPlatform } from "./platform.js";
@@ -24,6 +31,8 @@ import { EventSchema } from "../shared/contracts.js";
 import { settingsTarget } from "./settingsPages.js";
 import { userDataOverride } from "./userData.js";
 import { GameIcons, maxIconBytes } from "./icons.js";
+import { UpdateManager } from "./updater.js";
+import { Analytics, validAppKey } from "./analytics.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = !app.isPackaged && process.argv.includes("--dev");
 const rendererFile = path.join(here, "../../dist/index.html");
@@ -39,7 +48,26 @@ function trustedUrl(value: string) {
     return false;
   }
 }
+// Test and smoke runs never touch the network: no updater, no analytics.
+const testMode = process.env.FRAMEFORGE_TEST_MODE === "1";
+// The Aptabase key is written at build time (tools/write-build-info.mjs) from the CI secret; absent means analytics is off.
+const appKey = (() => {
+  try {
+    const raw = JSON.parse(
+      readFileSync(path.join(here, "build-info.json"), "utf8"),
+    ) as { aptabaseKey?: unknown };
+    return typeof raw.aptabaseKey === "string" ? raw.aptabaseKey : undefined;
+  } catch {
+    return undefined;
+  }
+})();
+const analyticsOn = !testMode && validAppKey(appKey);
+// Must run before the app is ready. It only registers local handlers; nothing is sent until an allowlisted event passes the opt-in check.
+if (analyticsOn) void aptabaseInit(appKey!).catch(() => {});
 let window: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let updates: UpdateManager | undefined;
+let updater: { autoInstallOnAppQuit: boolean } | undefined;
 let repo: Repository;
 let activeService: AppService | undefined;
 // Isolated profile for tests and smoke runs; must be set before the single-instance lock.
@@ -105,8 +133,27 @@ if (!app.requestSingleInstanceLock()) {
             }),
           ),
       });
+      const analytics = new Analytics(
+        analyticsOn ? { trackEvent } : null,
+        () => repo.state().settings.analytics === true,
+      );
+      if (app.isPackaged && !testMode) {
+        const { autoUpdater } = electronUpdater;
+        autoUpdater.setFeedURL({
+          provider: "github",
+          owner: "PREETHAM1590",
+          repo: "Frame-Forge",
+        });
+        // Signature check stays off until releases are signed; see docs/CODE_SIGNING_POLICY.md.
+        updater = autoUpdater;
+      }
       const service = new AppService(repo, platform, {
         version: app.getVersion(),
+        analyticsAvailable: analytics.available,
+        get updates() {
+          return updates;
+        },
+        track: (event, props) => analytics.track(event, props),
         gameIcon: (game) => icons.dataUrl(game),
         pruneIcons: (games) => icons.prune(games),
         startupSupported: app.isPackaged,
@@ -197,7 +244,67 @@ if (!app.requestSingleInstanceLock()) {
         },
       });
       activeService = service;
+      if (updater) {
+        updates = new UpdateManager({
+          updater: electronUpdater.autoUpdater,
+          current: app.getVersion(),
+          analyticsAvailable: analytics.available,
+          boostActive: () => service.booster.active,
+          autoCheck: () => repo.state().settings.updateCheck === true,
+          notify: (status) =>
+            window?.webContents.send(
+              "frameforge:event",
+              EventSchema.parse({ type: "update", status }),
+            ),
+        });
+      }
       await service.refresh();
+      // First run: one native dialog; both choices default to off and live in Settings > Privacy.
+      if (!testMode && !repo.state().settings.privacyAsked) {
+        const answer = await dialog.showMessageBox({
+          type: "question",
+          title: "Frameforge",
+          message: "Check for updates automatically?",
+          detail:
+            "Update checks contact github.com only. You choose when to download and install. You can change this in Settings > Privacy." +
+            (analytics.available
+              ? "\n\nAnonymous usage statistics are never sent unless you tick the box below."
+              : ""),
+          buttons: ["Yes", "No"],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+          ...(analytics.available
+            ? {
+                checkboxLabel:
+                  "Share anonymous usage statistics to help improve Frameforge",
+                checkboxChecked: false,
+              }
+            : {}),
+        });
+        const state = repo.state();
+        repo.updateState({
+          ...state,
+          settings: {
+            ...state.settings,
+            privacyAsked: true,
+            updateCheck: answer.response === 0,
+            analytics: analytics.available && answer.checkboxChecked,
+          },
+        });
+      }
+      if (analytics.available) {
+        const file = path.join(app.getPath("userData"), "last-version.txt");
+        const last = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
+        analytics.track("app_started", {
+          version: app.getVersion(),
+          os_build: os.release().split(".")[2] ?? "0",
+        });
+        if (last && last !== app.getVersion())
+          analytics.track("update_installed", { version: app.getVersion() });
+        writeFileSync(file, app.getVersion());
+      }
+      updates?.start();
       // GC-10: revert a boost interrupted by a crash or power loss (conflict-aware).
       await service.booster.recoverAtStartup().catch(() => null);
       ipcMain.handle(
@@ -272,6 +379,39 @@ if (!app.requestSingleInstanceLock()) {
         else void window.loadFile(rendererFile);
       }
       createWindow();
+      if (!testMode) {
+        try {
+          tray = new Tray(
+            nativeImage
+              .createFromPath(path.join(here, "../../dist/icon.png"))
+              .resize({ width: 16, height: 16 }),
+          );
+          tray.setToolTip("Frameforge");
+          const show = () => {
+            if (!window) createWindow();
+            window?.show();
+            window?.focus();
+          };
+          tray.on("click", show);
+          tray.setContextMenu(
+            Menu.buildFromTemplate([
+              { label: "Open Frameforge", click: show },
+              {
+                label: "Check for updates",
+                enabled: !!updates,
+                click: () => {
+                  show();
+                  void updates?.check();
+                },
+              },
+              { type: "separator" },
+              { label: "Quit", click: () => app.quit() },
+            ]),
+          );
+        } catch {
+          /* the tray is a convenience */
+        }
+      }
       app.on("activate", () => {
         if (!window) createWindow();
       });
@@ -286,6 +426,11 @@ if (!app.requestSingleInstanceLock()) {
   app.on("window-all-closed", () => app.quit());
   let quitting = false;
   app.on("before-quit", (event) => {
+    // "Install when I quit" (this update or the setting); electron-updater reads the flag at quit time.
+    if (updater && repo)
+      updater.autoInstallOnAppQuit =
+        repo.state().settings.updateAutoInstall === true ||
+        updates?.status.installOnQuit === true;
     if (activeService?.isBusy) event.preventDefault();
     else if (activeService?.booster.active && !quitting) {
       // Revert the live boost session before exiting; app.quit() re-enters once it has ended.

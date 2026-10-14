@@ -13,6 +13,8 @@ jobs:
       actions: read
     env:
       SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      # Opt-in anonymous analytics; empty means the build ships with analytics disabled.
+      APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,6 +40,7 @@ jobs:
         run: |
           mkdir -p unsigned
           cp release/Frameforge-Setup-*.exe unsigned/
+          cp release/Frameforge-Setup-*.exe.blockmap unsigned/
       - name: Upload unsigned installer
         id: upload-unsigned
         uses: actions/upload-artifact@v4
@@ -63,14 +66,20 @@ jobs:
         run: |
           mkdir -p publish
           if [ -d signed ] && ls signed/*.exe >/dev/null 2>&1; then
+            # Signing changes the bytes, so the electron-builder blockmap no longer matches: publish none.
             cp signed/*.exe publish/; echo "Publishing SIGNED installer"
           else
-            cp unsigned/*.exe publish/; echo "Publishing UNSIGNED installer"
+            cp unsigned/*.exe unsigned/*.blockmap publish/; echo "Publishing UNSIGNED installer"
           fi
+          # latest.yml (electron-updater) is always computed from the exact file being published.
+          node tools/make-latest-yml.mjs publish/Frameforge-Setup-*.exe publish
       - uses: actions/upload-artifact@v4
         with:
           name: installer
-          path: publish/*.exe
+          path: |
+            publish/*.exe
+            publish/*.blockmap
+            publish/latest.yml
           if-no-files-found: error
 
   release:
@@ -97,4 +106,6 @@ jobs:
           body_path: notes.md
           files: |
             dist-release/*.exe
+            dist-release/*.blockmap
+            dist-release/latest.yml
             dist-release/SHA256SUMS.txt

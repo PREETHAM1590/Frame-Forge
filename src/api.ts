@@ -241,6 +241,23 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "recoverRestoreFrequency":
     case "openSystemRestore":
       throw new Error("Windows System Restore requires the desktop app.");
+    case "updateStatus":
+      return {
+        state: "unsupported",
+        current: "demo",
+        version: null,
+        notes: "",
+        percent: 0,
+        error: "",
+        installOnQuit: false,
+        analyticsAvailable: false,
+      };
+    case "trackUsage":
+      return true;
+    case "updateCheck":
+    case "updateDownload":
+    case "updateInstall":
+      throw new Error("Updates require the desktop app.");
     case "openSettings":
       throw new Error("Opening Windows Settings requires the desktop app.");
     case "restartExplorer":

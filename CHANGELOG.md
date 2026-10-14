@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Automatic updates (opt-in).** Frameforge can check GitHub for new releases at start and every 6 hours, or when you press Check for updates (Settings, or the tray menu). It shows the version and release notes, downloads only when you ask, and never installs while a Game Mode session is running.
+- **Anonymous usage statistics (opt-in, off by default).** A small allowlisted set of events, listed in the README Privacy section. First run asks once; both choices live in Settings > Privacy and updates.
+
 ## 1.2.2
 
 First public release built by GitHub Actions (1.2.1 was never published: its release build failed before shipping, so its changes ship here).

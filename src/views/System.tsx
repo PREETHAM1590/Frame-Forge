@@ -9,6 +9,7 @@ import {
   Settings2,
   Archive,
   Info,
+  ShieldCheck,
 } from "lucide-react";
 import {
   PageTitle,
@@ -20,6 +21,8 @@ import {
   formatTime,
 } from "../components/ui";
 import type { ViewProps } from "../types";
+import { UpdateCard } from "../components/UpdatePanel";
+import { useUpdate } from "../useUpdate";
 export function System({ data, run, pending }: ViewProps) {
   const h = data.hardware;
   const [refreshing, setRefreshing] = useState(false);
@@ -134,6 +137,7 @@ export function System({ data, run, pending }: ViewProps) {
 }
 export function Settings({ data, run, pending, navigate }: ViewProps) {
   const settings = data.state.settings;
+  const analyticsAvailable = useUpdate().status?.analyticsAvailable === true;
   const update = (patch: Partial<typeof settings>) =>
     void run("settings", { ...settings, ...patch }, "Preferences saved.");
   return (
@@ -234,6 +238,38 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
       </section>
       <section className="settings-section">
         <h2>
+          <ShieldCheck size={20} />
+          Privacy and updates
+        </h2>
+        <Toggle
+          label="Check for updates automatically"
+          description="At start and every 6 hours. Contacts github.com only. Nothing is downloaded or installed until you choose."
+          checked={settings.updateCheck === true}
+          disabled={pending || data.mode === "demo"}
+          onChange={(updateCheck) => update({ updateCheck })}
+        />
+        <Toggle
+          label="Install downloaded updates when I quit"
+          description="Otherwise an update waits until you press Restart to update."
+          checked={settings.updateAutoInstall === true}
+          disabled={pending || data.mode === "demo"}
+          onChange={(updateAutoInstall) => update({ updateAutoInstall })}
+        />
+        <Toggle
+          label="Share anonymous usage statistics"
+          description={
+            analyticsAvailable
+              ? "Off by default. Sends only: app start (version, Windows build), Game Mode mode, optimization and preset ids, update installed, and which page you open. No game names, paths, user or PC names. Turning it off stops sending immediately."
+              : "Not available in this build."
+          }
+          checked={analyticsAvailable && settings.analytics === true}
+          disabled={pending || !analyticsAvailable}
+          onChange={(analytics) => update({ analytics })}
+        />
+        <UpdateCard always />
+      </section>
+      <section className="settings-section">
+        <h2>
           <Play size={20} />
           Booster
         </h2>
@@ -285,8 +321,12 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           <dd>
             {data.mode === "desktop" ? "Electron desktop" : "Browser demo"}
           </dd>
-          <dt>Telemetry</dt>
-          <dd>None</dd>
+          <dt>Usage statistics</dt>
+          <dd>
+            {settings.analytics === true && analyticsAvailable
+              ? "Anonymous, opted in"
+              : "Off"}
+          </dd>
           <dt>Windows operation access</dt>
           <dd>
             {data.capabilities.length
