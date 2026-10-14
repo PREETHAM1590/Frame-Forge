@@ -424,6 +424,7 @@ export class BoostEngine {
     gameId: string,
     reason: "manual" | "auto",
     target?: ProcessTarget,
+    skipAdmin = false,
   ): Promise<BoostSession | null> {
     return this.exclusive(async () => {
       if (!this.platform.boostAvailable)
@@ -446,24 +447,44 @@ export class BoostEngine {
         );
       }
       target ??= (await this.platform.runningGames([game]))[0]?.target;
+      // An expected refusal (the page says so), not a failed request: no Activity row.
       if (!target)
-        throw new Error(
-          "Start the game first. Frameforge boosts a game that is already running.",
+        throw Object.assign(
+          new Error(
+            "Start the game first. Frameforge boosts a game that is already running.",
+          ),
+          { logged: true },
         );
       const mechanisms =
         mode === "custom" ? state.booster.custom : modeMechanisms[mode];
-      return this.run(game, mode, target, mechanisms, state.booster, reason);
+      return this.run(
+        game,
+        mode,
+        target,
+        mechanisms,
+        state.booster,
+        reason,
+        skipAdmin,
+      );
     });
   }
   private run(
     game: Game,
     mode: BoostMode,
     target: ProcessTarget,
-    requested: CustomMechanisms,
+    wanted: CustomMechanisms,
     config: BoosterConfig,
     reason: "manual" | "auto",
+    skipAdmin = false,
   ): Promise<BoostSession> {
     const captured: Captured[] = [];
+    // "Skip steps that need administrator approval": never sent to the helper, so no prompt can open.
+    const skipped = skipAdmin
+      ? (["pauseServices", "standbyPurge"] as const).filter((id) => wanted[id])
+      : [];
+    const requested = skipped.length
+      ? { ...wanted, pauseServices: false, standbyPurge: false }
+      : wanted;
     // Services and the standby list open an administrator prompt: nothing else may open one while it is pending.
     const prompts = (
       reason === "manual" ? (["pauseServices", "standbyPurge"] as const) : []
@@ -487,16 +508,25 @@ export class BoostEngine {
           endedAt: null,
           status: "preparing",
           message: `${modeLabels[mode]} mode starting for ${game.name}.${mechanisms.pauseServices && reason === "manual" ? " Windows will ask for administrator approval to pause services." : ""}`,
-          mechanisms: managed
-            ? [
-                {
-                  id: "gameBarCapture",
-                  state: "skipped",
-                  detail: capturePolicy,
-                  code: "managed",
-                },
-              ]
-            : [],
+          mechanisms: [
+            ...skipped.map((id) => ({
+              id,
+              state: "skipped" as const,
+              detail:
+                "You chose to skip steps that need administrator approval.",
+              code: "admin-not-requested",
+            })),
+            ...(managed
+              ? [
+                  {
+                    id: "gameBarCapture" as const,
+                    state: "skipped" as const,
+                    detail: capturePolicy,
+                    code: "managed",
+                  },
+                ]
+              : []),
+          ],
           samples: [],
           failed: false,
           abnormal: false,

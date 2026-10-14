@@ -99,7 +99,7 @@ function scripted(session: FakeSession) {
       });
   };
 }
-function setup(mode: "off" | "performance" = "performance") {
+function setup(mode: "off" | "performance" | "competitive" = "performance") {
   const repo = new Repository(":memory:");
   const game = GameSchema.parse({
     id: crypto.randomUUID(),
@@ -219,6 +219,33 @@ describe("game booster sessions", () => {
     expect(platform.sessions).toHaveLength(1);
     repo.close();
   });
+  it("skipAdmin drops the administrator steps, shows them skipped and never holds the gate", async () => {
+    const { repo, game, platform, engine } = setup("competitive");
+    await engine.start(game.id, "manual", undefined, true);
+    const sent = platform.sessions[0]!.sent[0] as {
+      mechanisms: { pauseServices: boolean; standbyPurge: boolean };
+    };
+    expect(sent.mechanisms.pauseServices).toBe(false);
+    expect(sent.mechanisms.standbyPurge).toBe(false);
+    expect((await engine.status()).session?.mechanisms).toContainEqual(
+      expect.objectContaining({
+        id: "pauseServices",
+        state: "skipped",
+        code: "admin-not-requested",
+      }),
+    );
+    expect(platform.elevation.current).toBeNull();
+    repo.close();
+  });
+  it("without skipAdmin a competitive start still asks for the services step", async () => {
+    const { repo, game, platform, engine } = setup("competitive");
+    await engine.start(game.id, "manual");
+    const sent = platform.sessions[0]!.sent[0] as {
+      mechanisms: { pauseServices: boolean };
+    };
+    expect(sent.mechanisms.pauseServices).toBe(true);
+    repo.close();
+  });
   it("holds the elevation gate while paused services restart after the game exits on its own", async () => {
     const { repo, game, platform, engine } = setup();
     const services: Captured = {
@@ -262,13 +289,29 @@ describe("game booster sessions", () => {
     expect(repo.boostSession()).toBeNull();
     repo.close();
   });
-  it("requires a running game for manual starts", async () => {
+  it("requires a running game for manual starts, without a failure row", async () => {
     const { repo, game, platform, engine } = setup();
     platform.running = [];
-    await expect(engine.start(game.id, "manual")).rejects.toThrow(
-      /Start the game first/,
-    );
+    const refused = await engine.start(game.id, "manual").catch((e) => e);
+    expect(refused.message).toMatch(/Start the game first/);
+    expect(refused.logged).toBe(true);
     expect(platform.sessions).toHaveLength(0);
+    const service = new AppService(repo, platform, {
+      pickGame: async () => null,
+      detectGames: async () => ({
+        games: [],
+        warnings: [],
+        launchers: [],
+        perLauncher: [],
+      }),
+      scanFolder: async () => null,
+      setStartup: () => {},
+      version: "test",
+    });
+    await expect(
+      service.dispatch("boostStart", { gameId: game.id, confirmed: true }),
+    ).rejects.toThrow(/Start the game first/);
+    expect(repo.activity().some((a) => a.status === "failed")).toBe(false);
     repo.close();
   });
   it("accepts helper output with absent registry values as explicit null (C-1)", () => {

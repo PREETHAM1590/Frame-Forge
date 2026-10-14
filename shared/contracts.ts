@@ -815,7 +815,14 @@ export const requests = {
   openSystemRestore: Empty,
   boostStatus: Empty,
   boostConfig: BoosterConfigSchema,
-  boostStart: z.object({ gameId: Id, confirmed: z.literal(true) }).strict(),
+  boostStart: z
+    .object({
+      gameId: Id,
+      confirmed: z.literal(true),
+      /** Do not run the steps that need administrator approval (services, standby list). */
+      skipAdmin: z.boolean().optional(),
+    })
+    .strict(),
   boostStop: z.object({ confirmed: z.literal(true) }).strict(),
   boostRecover: z
     .object({ confirmed: z.literal(true), dismiss: z.boolean().optional() })

@@ -18,6 +18,10 @@ export default defineConfig({
       },
     },
   ],
+  build: {
+    // The CSP is font-src 'self': a font inlined as a data: URI is blocked, so fonts always ship as files.
+    assetsInlineLimit: (file) => (/\.woff2?$/.test(file) ? false : undefined),
+  },
   test: {
     maxWorkers: 2,
     testTimeout: 15000,

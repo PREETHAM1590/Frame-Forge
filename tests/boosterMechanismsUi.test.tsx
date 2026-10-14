@@ -16,6 +16,7 @@ import {
   MechanismId,
   type AppEvent,
   type BoosterConfig,
+  type BoostSession,
   type FrameforgeApi,
   type MechanismId as Id,
 } from "../shared/contracts";
@@ -56,6 +57,7 @@ function install(
   },
 ) {
   const calls: { method: string; input: unknown }[] = [];
+  const listeners = new Set<(event: AppEvent) => void>();
   // Per-game launch settings behind the fake helper: "ready", "applied" or "conflict".
   const launch: Record<string, string> = {
     gpuPreference: "ready",
@@ -199,11 +201,15 @@ function install(
       }),
     ]),
     onEvent: (callback: (event: AppEvent) => void) => {
-      void callback;
-      return () => {};
+      listeners.add(callback);
+      return () => listeners.delete(callback);
     },
   } as unknown as FrameforgeApi;
-  return { calls, results };
+  return {
+    calls,
+    results,
+    emit: (event: AppEvent) => listeners.forEach((l) => l(event)),
+  };
 }
 async function openGameMode() {
   render(<App />);
@@ -437,6 +443,70 @@ describe("administrator prompt explanation", () => {
     await waitFor(() =>
       expect(calls.some((c) => c.method === "boostStart")).toBe(true),
     );
+  });
+  it("offers to skip administrator steps per start, default off", async () => {
+    const { calls } = install("competitive");
+    await openGameMode();
+    const start = await screen.findByRole("button", { name: /Start boost/ });
+    await waitFor(() => expect(start).toBeEnabled());
+    fireEvent.click(start);
+    let dialog = await screen.findByRole("dialog");
+    const box = within(dialog).getByRole("checkbox", {
+      name: "Skip steps that need administrator approval",
+    });
+    expect(box).not.toBeChecked();
+    fireEvent.click(box);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "boostStart")?.input).toMatchObject(
+        { skipAdmin: true },
+      ),
+    );
+    // Not remembered: the next confirmation starts unticked.
+    fireEvent.click(screen.getByRole("button", { name: /Start boost/ }));
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
+  });
+  it("a new session starts a fresh session log", async () => {
+    const { emit } = install("performance");
+    await openGameMode();
+    const session = (id: string, detail: string): BoostSession => ({
+      id,
+      gameId: game.id,
+      mode: "performance",
+      target: {
+        pid: 4,
+        startTime: "2026-10-12T10:00:00.0000000Z",
+        executablePath: "C:/Games/Test/game.exe",
+        name: "game",
+        priority: "Normal",
+      },
+      startedAt: "2026-10-13T10:00:00.000Z",
+      endedAt: "2026-10-13T10:01:00.000Z",
+      status: "ended",
+      message: detail,
+      mechanisms: [],
+      samples: [],
+      failed: false,
+      abnormal: false,
+    });
+    act(() =>
+      emit({
+        type: "boost",
+        session: session(crypto.randomUUID(), "First one"),
+      }),
+    );
+    const log = () =>
+      within(screen.getByRole("region", { name: "Session log" }));
+    await waitFor(() => expect(log().getByText(/First one/)).toBeVisible());
+    act(() =>
+      emit({
+        type: "boost",
+        session: session(crypto.randomUUID(), "Second one"),
+      }),
+    );
+    await waitFor(() => expect(log().getByText(/Second one/)).toBeVisible());
+    expect(log().queryByText(/First one/)).toBeNull();
   });
   it("starts a mode without services directly and without any explanation", async () => {
     const { calls } = install("performance");

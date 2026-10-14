@@ -322,10 +322,15 @@ export class AppService {
         );
         return state;
       },
-      boostStart: async ({ gameId }) => {
+      boostStart: async ({ gameId, skipAdmin }) => {
         guard();
         noRestoreInFlight();
-        const session = await this.booster.start(gameId, "manual");
+        const session = await this.booster.start(
+          gameId,
+          "manual",
+          undefined,
+          skipAdmin,
+        );
         if (!session) throw new Error("Booster mode is Off for this game.");
         return session;
       },

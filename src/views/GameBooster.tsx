@@ -58,6 +58,8 @@ export function GameMode({
   const [now, setNow] = useState(0);
   const [confirmPlan, setConfirmPlan] = useState(false);
   const [confirmServices, setConfirmServices] = useState(false);
+  // Per start, never remembered: the choice to boost without any administrator prompt.
+  const [skipAdmin, setSkipAdmin] = useState(false);
   const [timerDialog, setTimerDialog] = useState<"enable" | "restore" | null>(
     null,
   );
@@ -81,6 +83,7 @@ export function GameMode({
         setStatus((old) =>
           old ? { ...old, session: s.status === "ended" ? null : s } : old,
         );
+        const before = logged.current.id;
         const seen =
           logged.current.id === s.id
             ? logged.current
@@ -98,7 +101,10 @@ export function GameMode({
           last: keys.at(-1) ?? seen.last,
           status: s.status,
         };
-        if (lines.length) setLog((old) => [...old, ...lines].slice(-80));
+        // A new session starts a fresh log instead of stacking under the last one.
+        const fresh = before !== s.id;
+        if (lines.length)
+          setLog((old) => (fresh ? lines : [...old, ...lines].slice(-80)));
         if (s.status === "ended" || s.status === "recovery-needed")
           setOutcome({
             text: s.message,
@@ -166,10 +172,11 @@ export function GameMode({
   // Either step opens the administrator prompt, so either one gets the explanation first.
   const willPauseServices = pausesServices || clearsStandby;
   const timer = status?.timer;
-  const startBoost = async () => {
+  const startBoost = async (skip = false) => {
     const result = await run("boostStart", {
       gameId,
       confirmed: true,
+      ...(skip && { skipAdmin: true }),
     });
     if (result)
       setOutcome({
@@ -184,7 +191,9 @@ export function GameMode({
 
   const sessionActive = session && session.status !== "recovery-needed";
   const startHere = () =>
-    willPauseServices ? setConfirmServices(true) : void startBoost();
+    willPauseServices
+      ? (setSkipAdmin(false), setConfirmServices(true))
+      : void startBoost();
   return (
     <div className="gm">
       <PageTitle
@@ -416,6 +425,21 @@ export function GameMode({
             {clearsStandby &&
               "Clearing the standby list cannot be undone and is harmless: Windows refills the cache as programs need memory."}
           </p>
+          <div className="check-list">
+            <label>
+              <input
+                type="checkbox"
+                checked={skipAdmin}
+                onChange={(e) => setSkipAdmin(e.target.checked)}
+              />
+              <span>Skip steps that need administrator approval</span>
+            </label>
+          </div>
+          <p className="muted">
+            {skipAdmin
+              ? "No administrator prompt will open. These steps are shown as skipped and the rest of the mode still runs."
+              : "Tick this to boost without any administrator prompt."}
+          </p>
           <div className="dialog-actions">
             <Button onClick={() => setConfirmServices(false)}>Cancel</Button>
             <Button
@@ -423,7 +447,7 @@ export function GameMode({
               disabled={pending}
               onClick={() => {
                 setConfirmServices(false);
-                void startBoost();
+                void startBoost(skipAdmin);
               }}
             >
               Continue

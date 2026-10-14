@@ -24,6 +24,15 @@ try {
     userData,
   );
   const page = await app.firstWindow();
+  // The CSP is strict on purpose: any violation (blocked font, script, style) is a build bug.
+  const violations = [];
+  page.on("console", (m) => {
+    if (
+      m.type() === "error" ||
+      /Content Security Policy|violates/.test(m.text())
+    )
+      violations.push(m.text());
+  });
   await page.getByText("Your setup, in focus.").waitFor();
   const info = await page.evaluate(async () => window.frameforge.bootstrap({}));
   assert.equal(info.mode, "desktop");
@@ -78,6 +87,14 @@ try {
       document.activeElement.blur();
     window.scrollTo(0, 0);
   });
+  // Visit every page, then check nothing was blocked.
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  const buttons = nav.getByRole("button");
+  for (let i = 0, n = await buttons.count(); i < n; i++) {
+    await buttons.nth(i).click();
+    await page.waitForTimeout(300);
+  }
+  assert.deepEqual(violations, [], "console errors / CSP violations");
   await mkdir("artifacts", { recursive: true });
   await page.screenshot({
     path: "artifacts/desktop-real-hardware.png",

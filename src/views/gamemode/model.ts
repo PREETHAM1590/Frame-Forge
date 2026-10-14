@@ -78,6 +78,8 @@ export function stateText(m: MechanismResult) {
   if (m.state === "pending") return "waiting for admin approval";
   if (m.state === "skipped" && m.code === "policy")
     return "already off by policy";
+  if (m.state === "skipped" && m.code === "admin-not-requested")
+    return "skipped — admin not requested";
   if (m.state === "skipped" && m.code === "managed")
     return "managed by an optimization";
   return m.state;
