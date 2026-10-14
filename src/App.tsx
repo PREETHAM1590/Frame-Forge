@@ -15,6 +15,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { onEvent, request } from "./api";
+import { UpdateCard } from "./components/UpdatePanel";
 import { useScan } from "./useScan";
 import type { Bootstrap, Method, Request, Response } from "../shared/contracts";
 import type { Page, ViewProps } from "./types";
@@ -213,6 +214,10 @@ export default function App() {
     }
   }
   function navigate(next: Page) {
+    if (next !== page)
+      void request("trackUsage", { event: "feature_opened", page: next }).catch(
+        () => undefined,
+      );
     setPage(next);
     setMobile(false);
     window.scrollTo({ top: 0 });
@@ -311,7 +316,7 @@ export default function App() {
           <div className="rail-chassis">
             <div>
               <span className="label">Local by design</span>
-              <strong>No telemetry. No account.</strong>
+              <strong>Private by default. No account.</strong>
             </div>
             <span className={`led ${data.mode === "demo" ? "warn" : ""}`} />
           </div>
@@ -364,6 +369,7 @@ export default function App() {
             <ChevronRight size={17} />
           </button>
         )}
+        <UpdateCard />
         <main id="main-content" tabIndex={-1}>
           <PageTransition pageKey={page}>{views[page]}</PageTransition>
         </main>

@@ -10,12 +10,13 @@ import {
   type Response,
   type Game,
   type Settings,
+  type UpdateStatus,
   type Hardware,
   type Bootstrap,
   type Activity,
   type AppEvent,
 } from "../shared/contracts.js";
-import { catalogue, upsertPreset } from "../shared/catalogue.js";
+import { catalogue, presets, upsertPreset } from "../shared/catalogue.js";
 import { Repository } from "./repository.js";
 import { OperationEngine } from "./operations.js";
 import { BoostEngine } from "./booster.js";
@@ -54,6 +55,16 @@ export interface DesktopServices {
   gameIcon?: (game: Game) => Promise<string | null>;
   /** Deletes cached icons that no library game uses any more. */
   pruneIcons?: (games: Game[]) => Promise<void>;
+  /** Auto-update controller; absent in dev, test mode and the browser demo. */
+  updates?: {
+    status: UpdateStatus;
+    check(): Promise<UpdateStatus>;
+    download(): Promise<UpdateStatus>;
+    install(when: "now" | "onQuit"): UpdateStatus;
+  };
+  analyticsAvailable?: boolean;
+  /** Anonymous, allowlisted usage event; the callee drops it unless the user opted in. */
+  track?: (event: string, props?: Record<string, string>) => void;
 }
 export class AppService {
   private engine: OperationEngine;
@@ -73,6 +84,20 @@ export class AppService {
       this.booster.isBusy ||
       this.restorePoints.isBusy ||
       this.launch.isBusy
+    );
+  }
+  private updateStatus(): UpdateStatus {
+    return (
+      this.desktop.updates?.status ?? {
+        state: "unsupported",
+        current: this.desktop.version.slice(0, 40),
+        version: null,
+        notes: "",
+        percent: 0,
+        error: "",
+        installOnQuit: false,
+        analyticsAvailable: this.desktop.analyticsAvailable ?? false,
+      }
     );
   }
   // App quit: stop the watcher and revert a live boost session before exiting.
@@ -144,7 +169,33 @@ export class AppService {
       preview: async ({ ids }) => this.engine.preview(ids),
       confirm: async ({ token, acknowledged }) => {
         noRestoreInFlight();
-        return this.engine.confirm(token, acknowledged);
+        const activity = await this.engine.confirm(token, acknowledged);
+        if (activity.status === "success") {
+          for (const id of activity.ids)
+            this.desktop.track?.("optimization_applied", { id });
+          // A built-in preset counts as applied when exactly its items were applied together.
+          const applied = [...activity.ids].sort().join();
+          const preset = presets.find(
+            (p) => [...p.ids].sort().join() === applied,
+          );
+          if (preset)
+            this.desktop.track?.("preset_applied", { id: preset.name });
+        }
+        return activity;
+      },
+      updateStatus: async () => this.updateStatus(),
+      updateCheck: async () =>
+        (await this.desktop.updates?.check()) ?? this.updateStatus(),
+      updateDownload: async () =>
+        (await this.desktop.updates?.download()) ?? this.updateStatus(),
+      updateInstall: async ({ when }) => {
+        if (!this.desktop.updates)
+          throw new Error("Updates are not available in this build.");
+        return this.desktop.updates.install(when);
+      },
+      trackUsage: async (usage) => {
+        this.desktop.track?.(usage.event, { page: usage.page });
+        return true;
       },
       cancel: async () => {
         const operation = this.engine.cancel();
@@ -332,6 +383,7 @@ export class AppService {
           skipAdmin,
         );
         if (!session) throw new Error("Booster mode is Off for this game.");
+        this.desktop.track?.("mode_started", { mode: session.mode });
         return session;
       },
       boostStop: async () => {

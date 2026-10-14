@@ -91,6 +91,11 @@ const inputs: { [M in Method]: () => Request<M> } = {
   removePreset: () => ({ id: id() }),
   clearActivity: () => ({ confirmed: true }),
   restartExplorer: () => ({ confirmed: true }),
+  updateStatus: () => ({}),
+  updateCheck: () => ({}),
+  updateDownload: () => ({}),
+  updateInstall: () => ({ when: "now" }),
+  trackUsage: () => ({ event: "feature_opened", page: "Dashboard" }),
 };
 describe("IPC surface", () => {
   it("has identical request, response and handler sets", () => {

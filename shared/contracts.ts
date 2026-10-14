@@ -65,6 +65,11 @@ export const SettingsSchema = z
     /** Scan for installed games in the background at app start, at most once per interval. */
     autoScan: z.boolean().default(true),
     autoScanHours: z.number().int().min(1).max(720).default(24),
+    /** Privacy: all opt-in. Missing means off; privacyAsked missing means the first-run dialog has not been answered. */
+    updateCheck: z.boolean().optional(),
+    updateAutoInstall: z.boolean().optional(),
+    analytics: z.boolean().optional(),
+    privacyAsked: z.boolean().optional(),
   })
   .strict();
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -797,6 +802,42 @@ export const BootstrapSchema = z
   .strict();
 export type Bootstrap = z.infer<typeof BootstrapSchema>;
 const Empty = z.object({}).strict();
+export const UpdateStatusSchema = z
+  .object({
+    state: z.enum([
+      "unsupported",
+      "idle",
+      "checking",
+      "none",
+      "available",
+      "downloading",
+      "downloaded",
+      "error",
+    ]),
+    current: z.string().max(40),
+    version: z.string().max(40).nullable(),
+    /** Plain text only (tags stripped in the main process); rendered as text, never as HTML. */
+    notes: z.string().max(8000),
+    percent: z.number().min(0).max(100),
+    error: z.string().max(500),
+    /** The user chose "Install when I quit" for the downloaded update. */
+    installOnQuit: z.boolean(),
+    /** False when this build has no Aptabase key: the analytics toggle shows "Not available in this build". */
+    analyticsAvailable: z.boolean(),
+  })
+  .strict();
+export type UpdateStatus = z.infer<typeof UpdateStatusSchema>;
+export const featurePages = [
+  "Dashboard",
+  "Optimizations",
+  "Presets",
+  "Game library",
+  "Game Mode",
+  "Restore & backups",
+  "System",
+  "Activity",
+  "Settings",
+] as const;
 const Selection = z
   .object({
     ids: z
@@ -931,6 +972,14 @@ export const requests = {
     .strict(),
   removePreset: z.object({ id: Id }).strict(),
   clearActivity: z.object({ confirmed: z.literal(true) }).strict(),
+  updateStatus: Empty,
+  updateCheck: Empty,
+  updateDownload: Empty,
+  updateInstall: z.object({ when: z.enum(["now", "onQuit"]) }).strict(),
+  // Anonymous page-open event; ignored unless the user opted in.
+  trackUsage: z
+    .object({ event: z.literal("feature_opened"), page: z.enum(featurePages) })
+    .strict(),
   // Ends this user's explorer.exe; Windows starts it again. Never called automatically.
   restartExplorer: z.object({ confirmed: z.literal(true) }).strict(),
 };
@@ -975,6 +1024,11 @@ export const responses = {
   savePreset: StateSchema,
   removePreset: StateSchema,
   clearActivity: z.boolean(),
+  updateStatus: UpdateStatusSchema,
+  updateCheck: UpdateStatusSchema,
+  updateDownload: UpdateStatusSchema,
+  updateInstall: UpdateStatusSchema,
+  trackUsage: z.boolean(),
 };
 export type Method = keyof typeof requests;
 export type Request<M extends Method> = z.infer<(typeof requests)[M]>;
@@ -993,6 +1047,7 @@ export const EventSchema = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ type: z.literal("boost"), session: BoostSessionSchema }).strict(),
+  z.object({ type: z.literal("update"), status: UpdateStatusSchema }).strict(),
   // A whole-PC game scan began or ended; `added` is the number of new library games.
   z
     .object({
