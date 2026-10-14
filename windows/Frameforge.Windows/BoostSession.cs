@@ -528,6 +528,8 @@ public static class SessionRunner
         }
         catch (Exception error) { reason = "start-failed"; detail = BoostSessionEngine.Describe(error); }
         MechanismResult[] reverts;
+        // Tells Frameforge the revert (and any administrator prompt in it) is starting, so it takes the elevation gate like a user Stop.
+        write(new { @event = "ending", reason });
         // Revert never throws per item; this guard keeps "ended" (and the exit) reachable even on an unexpected fault.
         try { reverts = engine.Revert(); }
         catch (Exception error) { reverts = []; detail = $"Revert stopped unexpectedly: {BoostSessionEngine.Describe(error)}"; }

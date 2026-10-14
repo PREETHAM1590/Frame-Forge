@@ -627,6 +627,11 @@ export class BoostEngine {
               settle(live.session);
               break;
             }
+            case "ending":
+              // Same as a user Stop: hold the gate while paused services are restarted.
+              live.stopping = true;
+              this.syncGate();
+              break;
             case "sample": {
               const sample = {
                 at: event.at,

@@ -368,6 +368,8 @@ export const PreviewSchema = z
         setting: z.string(),
         before: z.string(),
         after: z.string(),
+        /** The current value already equals the target: applying writes nothing for this row. */
+        alreadySet: z.boolean().default(false),
       }),
     ),
     warnings: z.array(z.string()),
@@ -1159,6 +1161,19 @@ export const SessionEventSchema = z.union([
     })
     .strict(),
   z.object({ event: z.literal("ready") }).strict(),
+  // The helper starts reverting on its own (for example the game exited).
+  z
+    .object({
+      event: z.literal("ending"),
+      reason: z.enum([
+        "game-exited",
+        "stop",
+        "parent-exited",
+        "stdin-closed",
+        "start-failed",
+      ]),
+    })
+    .strict(),
   SampleSchema.extend({ event: z.literal("sample") }).strict(),
   z
     .object({

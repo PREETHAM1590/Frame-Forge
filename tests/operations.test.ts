@@ -45,6 +45,7 @@ describe("confirmed reversible operations", () => {
         setting: "Active Windows power plan",
         before: "Balanced",
         after: "High performance",
+        alreadySet: false,
       },
     ]);
     platform.capture = async () => ({

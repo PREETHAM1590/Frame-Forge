@@ -126,6 +126,7 @@ export class OperationEngine {
           setting: `${value.path} / ${value.name}`,
           before: value.existed ? String(value.value) : "Not set",
           after: afterText(value),
+          alreadySet: sameAsTarget(value),
         })),
         ...(snapshot.scheme
           ? [
@@ -136,6 +137,7 @@ export class OperationEngine {
                 after: alreadyOnTarget(snapshot)
                   ? `${targetLabel(snapshot)} (already active; no change)`
                   : targetLabel(snapshot),
+                alreadySet: alreadyOnTarget(snapshot),
               },
             ]
           : []),

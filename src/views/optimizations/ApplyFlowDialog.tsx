@@ -6,7 +6,12 @@ import { Button, Busy, Modal } from "../../components/ui";
 import { PowerPlanDialog } from "../../components/PowerPlanDialog";
 import { ApplyProgress } from "./ApplyProgress";
 import { ResultStep } from "./ResultStep";
-import { ReviewStep, restoreWait, securityName } from "./ReviewStep";
+import {
+  ReviewStep,
+  changeCount,
+  restoreWait,
+  securityName,
+} from "./ReviewStep";
 import { StepIndicator } from "./StepIndicator";
 import type { ApplyFlow, RunFn } from "./useApplyFlow";
 
@@ -52,8 +57,10 @@ export function ApplyFlowDialog({
   ) : null;
   const step = result ? 3 : applying ? 2 : preview ? 1 : 0;
   const withPoint = flow.restoreOffer && flow.createPoint;
+  const nothingToChange = !!preview && changeCount(preview) === 0;
   const canApply =
     !!preview &&
+    !nothingToChange &&
     flow.confirmed &&
     (preview.security.length === 0 ||
       (flow.understood &&
@@ -162,6 +169,8 @@ export function ApplyFlowDialog({
                 >
                   {applying ? (
                     <Busy label="Applying and verifying" />
+                  ) : nothingToChange ? (
+                    "Nothing to change"
                   ) : (
                     "Confirm & apply"
                   )}

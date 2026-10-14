@@ -12,6 +12,10 @@ export const securityName = (flow: ApplyFlow) =>
     ? catalogue.find((o) => o.id === flow.preview!.security[0])!.name
     : "";
 
+/** Rows that would actually write something; already-set rows are shown but not counted. */
+export const changeCount = (preview: { changes: { alreadySet: boolean }[] }) =>
+  preview.changes.filter((c) => !c.alreadySet).length;
+
 /** Steps 1 and 2: what will change, then the safeguards that must be accepted before applying. */
 export function ReviewStep({
   flow,
@@ -52,8 +56,8 @@ export function ReviewStep({
       ) : preview ? (
         <>
           <span className="af-kicker">
-            {preview.changes.length} change
-            {preview.changes.length === 1 ? "" : "s"}
+            {changeCount(preview)} change
+            {changeCount(preview) === 1 ? "" : "s"}
           </span>
           <div className="change-list">
             {preview.changes.map((change) => (
@@ -63,6 +67,7 @@ export function ReviewStep({
                   <span className="af-before">{change.before}</span>
                   <ChevronRight size={14} />
                   <strong>{change.after}</strong>
+                  {change.alreadySet && <Badge tone="lime">Already set</Badge>}
                 </span>
               </div>
             ))}

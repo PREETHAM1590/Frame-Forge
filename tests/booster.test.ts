@@ -219,6 +219,40 @@ describe("game booster sessions", () => {
     expect(platform.sessions).toHaveLength(1);
     repo.close();
   });
+  it("holds the elevation gate while paused services restart after the game exits on its own", async () => {
+    const { repo, game, platform, engine } = setup();
+    const services: Captured = {
+      mechanism: "pauseServices",
+      items: ["svc"],
+      appliedItems: [],
+    };
+    platform.onSpawn = (session) => {
+      session.onSend = ({ command }) => {
+        if (command !== "start") return;
+        session.line({
+          event: "captured",
+          mechanism: "pauseServices",
+          prior: services,
+        });
+        session.line({ event: "ready" });
+      };
+    };
+    await engine.start(game.id, "manual");
+    const gate = platform.elevation;
+    expect(gate.current).toBeNull();
+    const session = platform.sessions[0]!;
+    session.line({ event: "ending", reason: "game-exited" });
+    expect(gate.current).toBe("boost");
+    expect(() => gate.hold("optimize")).toThrow();
+    session.line({
+      event: "ended",
+      reason: "game-exited",
+      reverts: [{ id: "pauseServices", state: "reverted", detail: "ok" }],
+    });
+    expect(gate.current).toBeNull();
+    expect(() => gate.hold("optimize")).not.toThrow();
+    repo.close();
+  });
   it("does nothing in Off mode", async () => {
     const { repo, game, platform, engine } = setup("off");
     expect(await engine.start(game.id, "auto")).toBeNull();
