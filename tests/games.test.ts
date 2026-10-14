@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
@@ -6,7 +7,9 @@ import { detectInstalledGames } from "../electron/games.js";
 
 const temporary: string[] = [];
 async function fixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "frameforge-games-"));
+  const root = await mkdtemp(
+    path.join(realpathSync.native(os.tmpdir()), "frameforge-games-"),
+  );
   temporary.push(root);
   return root;
 }

@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import path from "node:path";
@@ -37,7 +38,9 @@ const records = async (name: string) =>
 
 const temporary: string[] = [];
 async function tempDir() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "frameforge-launchers-"));
+  const root = await mkdtemp(
+    path.join(realpathSync.native(os.tmpdir()), "frameforge-launchers-"),
+  );
   temporary.push(root);
   return root;
 }

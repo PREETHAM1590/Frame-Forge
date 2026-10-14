@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mkdir,
@@ -15,7 +16,9 @@ import { GameIconSchema, type Game } from "../shared/contracts";
 
 let root: string;
 beforeEach(async () => {
-  root = await mkdtemp(path.join(os.tmpdir(), "frameforge-icons-"));
+  root = await mkdtemp(
+    path.join(realpathSync.native(os.tmpdir()), "frameforge-icons-"),
+  );
 });
 afterEach(() => rm(root, { recursive: true, force: true }));
 
