@@ -922,7 +922,7 @@ export const catalogue: Optimization[] = [
     description:
       "Sets the NVIDIA driver's global profile to 'Prefer maximum performance' power management and a maximum of one pre-rendered frame.",
     reason:
-      "The same two settings as NVIDIA Control Panel > Manage 3D settings > Global settings (Power management mode, and Low Latency Mode On). Written through NVIDIA's own driver settings interface (NVAPI), with no administrator prompt. The GPU stays at higher clocks, so heat, fan noise and power use rise (more on laptops), and one pre-rendered frame can lower frame rate in GPU-bound games. No FPS gain is claimed. Games read it when they start.",
+      "Writes two NVIDIA driver profile settings (power management mode, and the maximum pre-rendered frames value) on the global profile, through NVIDIA's own driver settings interface (NVAPI), with no administrator prompt. The GPU stays at higher clocks, so heat, fan noise and power use rise (more on laptops), and one pre-rendered frame can lower frame rate in GPU-bound games. No FPS gain is claimed. Games read it when they start. After a rollback the NVIDIA driver may write its own entries for these settings back into the profile; they do not change behavior you did not choose.",
     settings: [
       "NVIDIA global driver profile (NVAPI DRS): PREFERRED_PSTATE_ID 0x1057EB71 = 1 (Prefer maximum performance)",
       "NVIDIA global driver profile (NVAPI DRS): PRERENDERLIMIT_ID 0x007BA09E = 1",
