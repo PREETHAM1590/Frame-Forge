@@ -574,6 +574,21 @@ export const catalogue: Optimization[] = [
 
   // ---- Machine settings: Advanced, administrator approval ----------------------------------------------
   adv({
+    id: "mobility-center-off",
+    name: "Turn off Windows Mobility Center",
+    category: "Quality of Life",
+    risk: "Low",
+    impact: "Laptop settings panel",
+    description:
+      "Stops the Windows Mobility Center panel (brightness, volume, battery, display) from opening, for every user of this PC.",
+    reason:
+      "Windows' own Group Policy 'Turn off Windows Mobility Center' (the machine setting from Windows' MobilePCMobilityCenter policy definitions). The machine policy hive is used because Windows blocks per-user policy writes without administrator rights. The same settings stay available in Windows Settings.",
+    settings: [
+      "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\MobilityCenter: NoMobilityCenter = 1 (DWORD). The key is removed again on rollback when empty.",
+    ],
+    rollback: exact(hklmNote.trim()),
+  }),
+  adv({
     id: "lock-screen-blur-off",
     name: "Clear lock screen background",
     category: "Quality of Life",
@@ -896,6 +911,50 @@ export const catalogue: Optimization[] = [
     impact: "Store demo mode",
     description: "Disables the service used only by in-store demo units.",
     reason: "Has no use on a PC you own.",
+  }),
+  item({
+    id: "nvidia-performance",
+    name: "NVIDIA: prefer maximum performance, one pre-rendered frame",
+    category: "FPS & Latency",
+    tier: "advanced",
+    risk: "Moderate",
+    impact: "NVIDIA driver profile",
+    description:
+      "Sets the NVIDIA driver's global profile to 'Prefer maximum performance' power management and a maximum of one pre-rendered frame.",
+    reason:
+      "The same two settings as NVIDIA Control Panel > Manage 3D settings > Global settings (Power management mode, and Low Latency Mode On). Written through NVIDIA's own driver settings interface (NVAPI), with no administrator prompt. The GPU stays at higher clocks, so heat, fan noise and power use rise (more on laptops), and one pre-rendered frame can lower frame rate in GPU-bound games. No FPS gain is claimed. Games read it when they start.",
+    settings: [
+      "NVIDIA global driver profile (NVAPI DRS): PREFERRED_PSTATE_ID 0x1057EB71 = 1 (Prefer maximum performance)",
+      "NVIDIA global driver profile (NVAPI DRS): PRERENDERLIMIT_ID 0x007BA09E = 1",
+    ],
+    prerequisites: [
+      "Windows desktop helper available",
+      "An NVIDIA GPU with its driver installed (the NVIDIA driver settings interface answers)",
+    ],
+    rollback:
+      "Puts each setting back exactly: the captured value, or removes the setting from the profile when it had none (the driver default applies again). Takes effect for games started afterwards.",
+  }),
+  adv({
+    id: "lso-off",
+    name: "Turn off Large Send Offload",
+    category: "FPS & Latency",
+    risk: "Moderate",
+    impact: "Network adapter offload",
+    description:
+      "Turns off Large Send Offload (IPv4 and IPv6) on each physical network adapter whose driver offers it, so Windows builds the packets instead of the adapter.",
+    reason:
+      "Some adapters and drivers add latency or stutter with LSO, others do not, and no FPS gain is claimed. Uses the standardized driver keywords *LsoV2IPv4 and *LsoV2IPv6. The preview lists every adapter it will change. Throughput for large uploads may drop slightly. Network drivers read the value only when the adapter starts again, so restart the PC (or disable and re-enable the adapter) afterwards.",
+    settings: [
+      'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\<adapter>: *LsoV2IPv4 and *LsoV2IPv6 = "0" (String), only for values the driver already has',
+    ],
+    prerequisites: [
+      ...machine,
+      "A physical (PCI or USB) network adapter whose driver already has an LSO setting",
+    ],
+    restart: "reboot",
+    rollback:
+      "Writes each adapter's captured value back exactly (an adapter that was removed since is skipped). Restart the PC or re-enable the adapter for the driver to read it." +
+      hklmNote,
   }),
   adv({
     id: "photo-viewer",

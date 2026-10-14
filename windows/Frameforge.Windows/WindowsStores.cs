@@ -58,8 +58,10 @@ public sealed class BcdStore(IToolRunner tools)
 /// <summary>Changes only a service's start type (2 automatic, 3 manual, 4 disabled) through the service manager, so the running Windows honours it at once.</summary>
 public interface IServiceConfig { void SetStartType(string name, int start); }
 
-public sealed class WindowsRegistryStore(IToolRunner? tools = null, IServiceStore? services = null, IServiceConfig? config = null) : IRegistryStore, IKeyDepth
+public sealed class WindowsRegistryStore(IToolRunner? tools = null, IServiceStore? services = null, IServiceConfig? config = null, INvidiaProfile? nvidia = null) : IRegistryStore, IKeyDepth
 {
+    private readonly INvidiaProfile gpu = nvidia ?? new NvApiProfile();
+    private uint NvidiaId(Setting setting) => NvidiaSettings.TryParse(setting.Name, out var id) ? id : throw new InvalidOperationException("Unsupported NVIDIA setting.");
     private readonly IToolRunner runner = tools ?? new SystemTools();
     private readonly WindowsServiceStore real = new();
     private IServiceStore Services => services ?? real;
@@ -73,6 +75,11 @@ public sealed class WindowsRegistryStore(IToolRunner? tools = null, IServiceStor
     public ValueState Read(Setting setting)
     {
         if (setting.IsBcd) { var text = new BcdStore(runner).Get(Entry(setting), setting.Name); return new(text is not null, text, "String"); }
+        if (setting.Via == "nvapi-drs")
+        {
+            var value = gpu.Get(NvidiaId(setting));
+            return new(value is not null, value is null ? null : checked((int)value.Value), "DWord");
+        }
         if (setting.Via == "service-stop")
         {
             var info = Services.Query(ServiceName(setting));
@@ -90,7 +97,7 @@ public sealed class WindowsRegistryStore(IToolRunner? tools = null, IServiceStor
 
     public int MissingKeys(Setting setting)
     {
-        if (setting.IsBcd) return 0;
+        if (setting.IsBcd || setting.Via is not null and not "adapter-prop") return 0;
         var (root, sub) = Split(setting);
         var missing = 0;
         for (var path = sub; path.Length > 0;)
@@ -128,6 +135,23 @@ public sealed class WindowsRegistryStore(IToolRunner? tools = null, IServiceStor
             catch (System.ComponentModel.Win32Exception error) { throw new InvalidOperationException($"Windows refused to {(run == 0 ? "stop" : "start")} the {name} service (error {error.NativeErrorCode}).", error); }
             return;
         }
+        if (setting.Via == "nvapi-drs")
+        {
+            if (!state.Existed) gpu.Delete(NvidiaId(setting));
+            else if (state.Value is int number && number is >= 0 and <= 8) gpu.Set(NvidiaId(setting), (uint)number);
+            else throw new InvalidOperationException("Invalid NVIDIA setting value.");
+            return;
+        }
+        if (setting.Via == "adapter-prop")
+        {
+            // The adapter's driver key and value must already exist: this only rewrites the string, it never creates a key or value.
+            if (!state.Existed || state.Value is not string text || text is not ("0" or "1")) throw new InvalidOperationException("Invalid adapter setting.");
+            var (machineRoot, machineSub) = Split(setting);
+            using var adapter = machineRoot.OpenSubKey(machineSub, true) ?? throw new InvalidOperationException("The network adapter is no longer present.");
+            if (!adapter.GetValueNames().Contains(setting.Name, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("The adapter driver no longer has this setting.");
+            adapter.SetValue(setting.Name, text, RegistryValueKind.String);
+            return;
+        }
         if (setting.Via == "hibernate")
         {
             if (!state.Existed || state.Value is not int on || on is not (0 or 1)) throw new InvalidOperationException("Invalid hibernation state.");
@@ -158,6 +182,31 @@ public sealed class WindowsFacts : IFacts
     public int Build() => Environment.OSVersion.Version.Build;
     public bool MachineKeyExists(string path) { using var key = Registry.LocalMachine.OpenSubKey(path, false); return key is not null; }
     // Tamper Protection is only read. 4 means off; any other present value is treated as on so Frameforge never tries around it.
+    // Physical adapters only (PCI or USB hardware, with a connection name, so ghost entries and virtual switches are left out); the value must already be there as a string.
+    public IReadOnlyList<LsoAdapter> NetworkAdapters()
+    {
+        var result = new List<LsoAdapter>();
+        using var cls = Registry.LocalMachine.OpenSubKey(OptimizationTable.NetClass[Setting.Machine.Length..], false);
+        if (cls is null) return result;
+        foreach (var slot in cls.GetSubKeyNames().Where(n => n.Length == 4 && n.All(char.IsAsciiDigit)).Order(StringComparer.Ordinal))
+        {
+            using var key = cls.OpenSubKey(slot, false);
+            if (key is null) continue;
+            var instance = key.GetValue("DeviceInstanceID") as string ?? "";
+            var guid = key.GetValue("NetCfgInstanceId") as string ?? "";
+            if (!(instance.StartsWith(@"PCI\", StringComparison.OrdinalIgnoreCase) || instance.StartsWith(@"USB\", StringComparison.OrdinalIgnoreCase)) || guid.Length == 0) continue;
+            bool Has(string name) => key.GetValueNames().Contains(name, StringComparer.OrdinalIgnoreCase) && key.GetValueKind(name) == RegistryValueKind.String && key.GetValue(name) is "0" or "1";
+            bool v4 = Has("*LsoV2IPv4"), v6 = Has("*LsoV2IPv6");
+            if (!v4 && !v6) continue;
+            using var connection = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Network\{4D36E972-E325-11CE-BFC1-08002BE10318}\" + guid + @"\Connection", false);
+            if (connection?.GetValue("Name") is not string connectionName || connectionName.Length == 0) continue;
+            var description = key.GetValue("DriverDesc") as string ?? "";
+            var label = new string((description.Length == 0 ? connectionName : $"{connectionName} - {description}").Where(c => !char.IsControl(c)).Take(100).ToArray());
+            result.Add(new(slot, label, v4, v6));
+        }
+        return result;
+    }
+    public bool NvidiaProfiles() { try { return new NvApiProfile().Available(); } catch (Exception error) when (error is InvalidOperationException or DllNotFoundException) { return false; } }
     public string? ServiceBlocker(string name)
     {
         var info = new WindowsServiceStore().Query(name);

@@ -18,6 +18,7 @@ public class OptimizationCatalogTests
         public int Build() => build;
         public bool MachineKeyExists(string path) => nvidia;
         public bool TamperProtectionOn() => tamper;
+        public bool NvidiaProfiles() => nvidia;
     }
     private sealed class Tools : IToolRunner
     {
@@ -537,5 +538,168 @@ public class OptimizationCatalogTests
         engine.Restore(snapshot);
         Assert.Equal(new ValueState(true, "SomethingElse", "String"), store.Values[Memory.Key(existing)]);
         Assert.Single(store.Values);
+    }
+    // ---- Large Send Offload: settings found on this PC ------------------------------------------------------
+
+    private sealed class AdapterFacts(params LsoAdapter[] adapters) : IFacts
+    {
+        public int Build() => 26100;
+        public bool MachineKeyExists(string path) => true;
+        public bool TamperProtectionOn() => false;
+        public IReadOnlyList<LsoAdapter> NetworkAdapters() => adapters;
+    }
+    private static string LsoKey(string slot, string name) => OptimizationTable.NetClass + @"\" + slot + "|" + name;
+    /// <summary>Memory store that also says which adapter keys exist, as the real one does.</summary>
+    private sealed class AdapterMemory : IRegistryStore, IKeyDepth
+    {
+        public Dictionary<string, ValueState> Values { get; } = new();
+        public HashSet<string> Gone { get; } = new();
+        public int Writes;
+        public ValueState Read(Setting s) => Values.GetValueOrDefault(s.Path + "|" + s.Name, new(false, null, s.Kind));
+        public void Write(Setting s, ValueState state)
+        {
+            Writes++;
+            if (Gone.Contains(s.Path)) throw new InvalidOperationException("The network adapter is no longer present.");
+            if (!state.Existed) throw new InvalidOperationException("never creates or deletes a value");
+            Values[s.Path + "|" + s.Name] = state;
+        }
+        public int MissingKeys(Setting s) => Gone.Contains(s.Path) ? 1 : 0;
+    }
+
+    [Fact]
+    public void LsoTurnsOffEveryAdapterValueTheDriverHasAndRestoresEachExactly()
+    {
+        var store = new AdapterMemory();
+        store.Values[LsoKey("0000", "*LsoV2IPv4")] = new(true, "1", "String");
+        store.Values[LsoKey("0000", "*LsoV2IPv6")] = new(true, "1", "String");
+        store.Values[LsoKey("0003", "*LsoV2IPv4")] = new(true, "0", "String");
+        var facts = new AdapterFacts(new LsoAdapter("0000", "Ethernet - Realtek", true, true), new LsoAdapter("0003", "USB LAN", true, false));
+        var engine = new RegistryOperations(store, facts);
+        var snapshot = engine.Capture(["lso-off"]);
+        Assert.Equal(3, snapshot.Values.Length);
+        Assert.All(snapshot.Values, v => { Assert.True(v.Existed); Assert.Equal("0", v.Target); Assert.Contains(v.Name, v.Label); });
+        Assert.Contains("Ethernet - Realtek", snapshot.Values[0].Label);
+        var before = store.Values.ToDictionary(p => p.Key, p => p.Value);
+        engine.Apply(["lso-off"], snapshot);
+        Assert.True(engine.Verify(["lso-off"]));
+        Assert.All(store.Values.Values, v => Assert.Equal("0", v.Value));
+        Assert.Empty(engine.Drifted(["lso-off"]));
+        engine.Restore(snapshot);
+        Assert.Equal(before, store.Values);
+    }
+
+    [Fact]
+    public void LsoRefusesAPcWithNoSuitableAdapterAndNeverCreatesAValue()
+    {
+        var engine = new RegistryOperations(new AdapterMemory(), new AdapterFacts());
+        Assert.Throws<InvalidOperationException>(() => engine.Capture(["lso-off"]));
+        Assert.DoesNotContain("lso-off", OptimizationTable.Applicable(new AdapterFacts()));
+        Assert.Contains("lso-off", OptimizationTable.Applicable(new AdapterFacts(new LsoAdapter("0000", "Ethernet", true, false))));
+    }
+
+    [Fact]
+    public void LsoRollbackSkipsAnAdapterThatWasRemovedAndRestoresTheRest()
+    {
+        var store = new AdapterMemory();
+        store.Values[LsoKey("0000", "*LsoV2IPv4")] = new(true, "1", "String");
+        store.Values[LsoKey("0003", "*LsoV2IPv4")] = new(true, "1", "String");
+        var engine = new RegistryOperations(store, new AdapterFacts(new LsoAdapter("0000", "A", true, false), new LsoAdapter("0003", "B", true, false)));
+        var snapshot = engine.Capture(["lso-off"]); engine.Apply(["lso-off"], snapshot);
+        store.Gone.Add(OptimizationTable.NetClass + @"\0003");
+        engine.Restore(snapshot);
+        Assert.Equal("1", store.Values[LsoKey("0000", "*LsoV2IPv4")].Value);
+        Assert.Equal("0", store.Values[LsoKey("0003", "*LsoV2IPv4")].Value);
+    }
+
+    [Fact]
+    public void LsoRollbackAndApplyRejectSnapshotsOutsideTheAdapterShapeOrTheLivePc()
+    {
+        var store = new AdapterMemory();
+        store.Values[LsoKey("0000", "*LsoV2IPv4")] = new(true, "1", "String");
+        var facts = new AdapterFacts(new LsoAdapter("0000", "A", true, false));
+        var engine = new RegistryOperations(store, facts);
+        var snapshot = engine.Capture(["lso-off"]);
+        var v = snapshot.Values[0];
+        CapturedValue[] bad = [
+            v with { Path = @"HKLM\SOFTWARE\Evil\0000" }, v with { Path = OptimizationTable.NetClass + @"\0000\Sub" }, v with { Path = OptimizationTable.NetClass + @"\00" },
+            v with { Name = "*SpeedDuplex" }, v with { Kind = "DWord", Value = 1 }, v with { Operation = "uac-off" },
+        ];
+        foreach (var item in bad) Assert.Throws<InvalidOperationException>(() => engine.Restore(new Snapshot([item])));
+        Assert.Throws<InvalidOperationException>(() => engine.Restore(new Snapshot([v, v])));
+        Assert.Equal(0, store.Writes);
+        // The administrator step resolves the adapters itself: a snapshot naming an adapter this PC does not offer is refused.
+        var other = new RegistryOperations(store, new AdapterFacts(new LsoAdapter("0007", "B", true, false)));
+        Assert.Throws<InvalidOperationException>(() => other.Apply(["lso-off"], snapshot));
+        Assert.Equal(0, store.Writes);
+    }
+
+    [Fact]
+    public void LsoIsAnAdministratorOperationWithoutFixedRows()
+    {
+        Assert.True(OptimizationTable.IsAdmin("lso-off"));
+        Assert.False(OptimizationTable.ReadNeedsAdmin("lso-off"));
+        Assert.DoesNotContain(OptimizationTable.Settings, s => s.Operation == "lso-off");
+    }
+    // ---- NVIDIA global driver profile -------------------------------------------------------------------
+
+    private sealed class FakeNvidia : INvidiaProfile
+    {
+        public Dictionary<uint, uint> Values = new(); public List<string> Log = new();
+        public bool Available() => true;
+        public uint? Get(uint id) => Values.TryGetValue(id, out var v) ? v : null;
+        public void Set(uint id, uint value) { Log.Add($"set {id:X8} {value}"); Values[id] = value; }
+        public void Delete(uint id) { Log.Add($"delete {id:X8}"); Values.Remove(id); }
+    }
+    private sealed class NvidiaWorld(FakeNvidia gpu) : IRegistryStore
+    {
+        private readonly WindowsRegistryStore real = new(null, null, null, gpu);
+        public ValueState Read(Setting s) => real.Read(s);
+        public void Write(Setting s, ValueState state) => real.Write(s, state);
+    }
+
+    [Fact]
+    public void NvidiaProfileRoundTripsAbsentAndPresentSettingsExactly()
+    {
+        var gpu = new FakeNvidia(); gpu.Values[NvidiaSettings.PrerenderLimit] = 3;   // present before, absent for the other one
+        var engine = new RegistryOperations(new NvidiaWorld(gpu), new Facts());
+        var snapshot = engine.Capture(["nvidia-performance"]);
+        Assert.Equal([false, true], snapshot.Values.Select(v => v.Existed).ToArray());
+        Assert.All(snapshot.Values, v => Assert.Contains("NVIDIA global profile", v.Label));
+        engine.Apply(["nvidia-performance"], snapshot);
+        Assert.True(engine.Verify(["nvidia-performance"]));
+        Assert.Equal(1u, gpu.Values[NvidiaSettings.PreferredPstate]); Assert.Equal(1u, gpu.Values[NvidiaSettings.PrerenderLimit]);
+        gpu.Log.Clear();
+        engine.Restore(snapshot);
+        Assert.Equal(3u, gpu.Values[NvidiaSettings.PrerenderLimit]);
+        Assert.False(gpu.Values.ContainsKey(NvidiaSettings.PreferredPstate));
+        Assert.Contains($"delete {NvidiaSettings.PreferredPstate:X8}", gpu.Log);
+    }
+
+    [Fact]
+    public void NvidiaProfileNeedsTheDriverInterfaceAndOnlyTouchesItsTwoSettings()
+    {
+        Assert.Throws<InvalidOperationException>(() => new RegistryOperations(new Memory(), new Facts(nvidia: false)).Capture(["nvidia-performance"]));
+        Assert.False(OptimizationTable.IsAdmin("nvidia-performance"));
+        var store = new WindowsRegistryStore(null, null, null, new FakeNvidia());
+        var other = new Setting("nvidia-performance", OptimizationTable.NvidiaPath, "0x00000001", "DWord", 1, Via: "nvapi-drs");
+        Assert.Throws<InvalidOperationException>(() => store.Read(other));
+        Assert.Throws<InvalidOperationException>(() => store.Write(other, new(true, 1, "DWord")));
+        Assert.False(NvidiaSettings.TryParse("0x1057EB7", out _)); Assert.False(NvidiaSettings.TryParse("1057EB71", out _));
+        Assert.True(NvidiaSettings.TryParse("0x1057EB71", out var id)); Assert.Equal(NvidiaSettings.PreferredPstate, id);
+    }
+
+    // Skipped unless FRAMEFORGE_LIVE_NVAPI=1: one real set -> read -> delete -> read round trip on this PC's NVIDIA driver profile.
+    [Fact]
+    public void LiveNvidiaProfileRoundTrip()
+    {
+        if (Environment.GetEnvironmentVariable("FRAMEFORGE_LIVE_NVAPI") != "1") return;
+        var gpu = new NvApiProfile(); Assert.True(gpu.Available());
+        var engine = new RegistryOperations(new WindowsRegistryStore(null, null, null, gpu), new WindowsFacts());
+        var before = new[] { gpu.Get(NvidiaSettings.PreferredPstate), gpu.Get(NvidiaSettings.PrerenderLimit) };
+        var snapshot = engine.Capture(["nvidia-performance"]);
+        engine.Apply(["nvidia-performance"], snapshot);
+        Assert.True(engine.Verify(["nvidia-performance"]));
+        engine.Restore(snapshot);
+        Assert.Equal(before, new[] { gpu.Get(NvidiaSettings.PreferredPstate), gpu.Get(NvidiaSettings.PrerenderLimit) });
     }
 }

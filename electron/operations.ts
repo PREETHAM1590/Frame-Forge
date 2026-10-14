@@ -132,7 +132,7 @@ export class OperationEngine {
       changes: [
         ...snapshot.values.map((value) => ({
           id: value.operation,
-          setting: `${value.path} / ${value.name}`,
+          setting: value.label ?? `${value.path} / ${value.name}`,
           before: value.existed ? String(value.value) : "Not set",
           after: afterText(value),
           alreadySet: sameAsTarget(value),

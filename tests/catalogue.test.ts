@@ -21,7 +21,7 @@ const table = readFileSync(
 );
 const rows = table
   .split("\n")
-  .filter((l) => /^\s+(D|S|B|Sv|Ss|new)\("[a-z0-9-]+"/.test(l))
+  .filter((l) => /^\s+(D|S|B|Sv|Ss|Nv|new)\("[a-z0-9-]+"/.test(l))
   .map((l) => ({
     id: /\("([a-z0-9-]+)"/.exec(l)![1]!,
     // Constants in the table that hold machine paths count as machine settings.
@@ -32,7 +32,13 @@ const rows = table
     boot: /\bB\(/.test(l),
   }))
   .filter((r) => r.id !== "game-mode");
-const csIds = [...new Set(rows.map((r) => r.id))];
+// Operations whose settings are found on this PC at capture time have no fixed rows; the table names them.
+const dynamicIds = [
+  ...(/Dynamic = \[(.*?)\];/s.exec(table)?.[1] ?? "").matchAll(
+    /"([a-z0-9-]+)"/g,
+  ),
+].map((m) => m[1]!);
+const csIds = [...new Set([...rows.map((r) => r.id), ...dynamicIds])];
 
 describe("optimization catalogue", () => {
   it("has exactly one complete entry for every operation id", () => {
@@ -55,7 +61,12 @@ describe("optimization catalogue", () => {
       applicableIds.filter((id) => id !== "power-plan").sort(),
     );
     expect(
-      [...new Set(rows.filter((r) => r.machine).map((r) => r.id))].sort(),
+      [
+        ...new Set([
+          ...rows.filter((r) => r.machine).map((r) => r.id),
+          ...dynamicIds,
+        ]),
+      ].sort(),
     ).toEqual([...adminIds].sort());
     expect(
       [...new Set(rows.filter((r) => r.boot).map((r) => r.id))].sort(),

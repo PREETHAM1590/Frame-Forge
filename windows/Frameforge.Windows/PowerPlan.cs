@@ -57,7 +57,10 @@ public sealed class Optimizations(RegistryOperations registry, IPowerStore power
         if (direct.Length > 0) values.AddRange(registry.Capture(direct).Values);
         if (remote.Length > 0) values.AddRange(admin!.Run(new("capture", remote, null)).Values ?? throw new InvalidOperationException("The administrator step returned no snapshot."));
         // Table order keeps the snapshot stable whichever way each part was read.
-        return RegistryOperations.Settings.Select(s => values.FirstOrDefault(v => v.Operation == s.Operation && v.Path == s.Path && v.Name == s.Name)).Where(v => v is not null).ToArray()!;
+        var ordered = RegistryOperations.Settings.Select(s => values.FirstOrDefault(v => v.Operation == s.Operation && v.Path == s.Path && v.Name == s.Name)).Where(v => v is not null).ToList();
+        // Operations that depend on this PC (network adapters) follow, in the order they were found.
+        ordered.AddRange(values.Where(v => OptimizationTable.IsDynamic(v.Operation)));
+        return ordered.ToArray()!;
     }
     public OptimizationSnapshot Capture(string[] ids)
     {

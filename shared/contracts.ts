@@ -62,6 +62,9 @@ export const OperationId = z.enum([
   "svc-linktracking-off",
   "svc-retaildemo-off",
   "photo-viewer",
+  "lso-off",
+  "nvidia-performance",
+  "mobility-center-off",
 ]);
 export type OperationId = z.infer<typeof OperationId>;
 const Id = z.string().uuid();
@@ -1059,6 +1062,8 @@ export const RegistryValueSchema = z
     target: z
       .union([z.string().max(520), z.number().int(), z.null()])
       .optional(),
+    /** Adapter name for items that act on network adapters found on this PC; shown instead of the registry path. */
+    label: z.string().max(160).nullable().optional(),
     /** Key levels that were missing at capture; rollback removes exactly these. */
     created: z.number().int().min(0).max(16).nullable().optional(),
   })
