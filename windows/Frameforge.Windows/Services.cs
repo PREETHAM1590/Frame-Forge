@@ -356,7 +356,7 @@ public sealed class WindowsControllerProbe : IControllerProbe
 }
 
 // Service control manager access; the query side needs no administrator rights.
-public sealed class WindowsServiceStore : IServiceStore
+public sealed class WindowsServiceStore : IServiceStore, IServiceConfig
 {
     private const uint Connect = 1, QueryStatus = 4, EnumerateDependents = 8, StartRight = 0x10, StopRight = 0x20;
     private const uint Stopped = 1, StopPendingState = 3, Running = 4;
@@ -454,6 +454,20 @@ public sealed class WindowsServiceStore : IServiceStore
     {
         if (!StartServiceW(service, 0, IntPtr.Zero) && Marshal.GetLastWin32Error() != 1056) throw new Win32Exception(Marshal.GetLastWin32Error());
     }, Running, timeout);
+    // SERVICE_CHANGE_CONFIG (2); every other field stays SERVICE_NO_CHANGE, and the delayed-start flag is a separate setting this never touches.
+    public void SetStartType(string name, int start)
+    {
+        if (start is not (2 or 3 or 4)) throw new InvalidOperationException("Invalid service start type.");
+        var manager = Manager();
+        try
+        {
+            var service = Open(manager, name, 2);
+            if (service == IntPtr.Zero) throw new InvalidOperationException($"{name} is not installed.");
+            try { if (!ChangeServiceConfigW(service, 0xFFFFFFFF, (uint)start, 0xFFFFFFFF, null, null, IntPtr.Zero, null, null, null, null)) throw new Win32Exception(Marshal.GetLastWin32Error()); }
+            finally { CloseServiceHandle(service); }
+        }
+        finally { CloseServiceHandle(manager); }
+    }
     private static bool Change(string name, uint right, Action<IntPtr> act, uint wanted, TimeSpan timeout)
     {
         var manager = Manager();
@@ -478,6 +492,7 @@ public sealed class WindowsServiceStore : IServiceStore
     }
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr OpenSCManagerW(string? machine, string? database, uint access);
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr OpenServiceW(IntPtr manager, string name, uint access);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool ChangeServiceConfigW(IntPtr service, uint serviceType, uint startType, uint errorControl, string? path, string? group, IntPtr tagId, string? dependencies, string? account, string? password, string? displayName);
     [DllImport("advapi32.dll", SetLastError = true)] private static extern bool CloseServiceHandle(IntPtr handle);
     [DllImport("advapi32.dll", SetLastError = true)] private static extern bool QueryServiceStatusEx(IntPtr service, int level, IntPtr buffer, uint size, out uint needed);
     [DllImport("advapi32.dll", SetLastError = true)] private static extern bool EnumDependentServicesW(IntPtr service, uint state, IntPtr buffer, uint size, out uint needed, out uint count);

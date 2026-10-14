@@ -55,9 +55,17 @@ public sealed class BcdStore(IToolRunner tools)
     public void Delete(string entry, string element) { Check(entry, element); tools.Run("bcdedit", ["/deletevalue", entry, element]); }
 }
 
-public sealed class WindowsRegistryStore(IToolRunner? tools = null) : IRegistryStore, IKeyDepth
+/// <summary>Changes only a service's start type (2 automatic, 3 manual, 4 disabled) through the service manager, so the running Windows honours it at once.</summary>
+public interface IServiceConfig { void SetStartType(string name, int start); }
+
+public sealed class WindowsRegistryStore(IToolRunner? tools = null, IServiceStore? services = null, IServiceConfig? config = null) : IRegistryStore, IKeyDepth
 {
     private readonly IToolRunner runner = tools ?? new SystemTools();
+    private readonly WindowsServiceStore real = new();
+    private IServiceStore Services => services ?? real;
+    private IServiceConfig Config => config ?? real;
+    private static readonly TimeSpan ServiceWait = TimeSpan.FromSeconds(20);
+    private static string ServiceName(Setting setting) => setting.Path[(setting.Path.LastIndexOf('\\') + 1)..];
     private static (RegistryKey Root, string Sub) Split(Setting setting) =>
         setting.IsMachine ? (Registry.LocalMachine, setting.Path[Setting.Machine.Length..]) : (Registry.CurrentUser, setting.Path);
     private static string Entry(Setting setting) => setting.Path[Setting.BcdPrefix.Length..];
@@ -65,6 +73,11 @@ public sealed class WindowsRegistryStore(IToolRunner? tools = null) : IRegistryS
     public ValueState Read(Setting setting)
     {
         if (setting.IsBcd) { var text = new BcdStore(runner).Get(Entry(setting), setting.Name); return new(text is not null, text, "String"); }
+        if (setting.Via == "service-stop")
+        {
+            var info = Services.Query(ServiceName(setting));
+            return new(info.Exists, info.Exists ? info.Running ? 1 : 0 : null, "DWord");
+        }
         var (root, sub) = Split(setting);
         using var key = root.OpenSubKey(sub, false);
         if (key is null || !key.GetValueNames().Contains(setting.Name, StringComparer.OrdinalIgnoreCase))
@@ -98,6 +111,23 @@ public sealed class WindowsRegistryStore(IToolRunner? tools = null) : IRegistryS
             if (state.Existed) bcd.Set(Entry(setting), setting.Name, (string)state.Value!); else bcd.Delete(Entry(setting), setting.Name);
             return;
         }
+        if (setting.Via == "service-config")
+        {
+            if (!state.Existed || state.Value is not int start || start is not (2 or 3 or 4)) throw new InvalidOperationException("Invalid service start type.");
+            try { Config.SetStartType(ServiceName(setting), start); } catch (System.ComponentModel.Win32Exception error) { throw new InvalidOperationException($"Windows refused to change the {ServiceName(setting)} service (error {error.NativeErrorCode}).", error); }
+            return;
+        }
+        if (setting.Via == "service-stop")
+        {
+            var name = ServiceName(setting);
+            if (!state.Existed || state.Value is not int run || run is not (0 or 1)) throw new InvalidOperationException("Invalid service state.");
+            try
+            {
+                if (!(run == 0 ? Services.Stop(name, ServiceWait) : Services.Start(name, ServiceWait))) throw new InvalidOperationException($"The {name} service did not {(run == 0 ? "stop" : "start")} in time.");
+            }
+            catch (System.ComponentModel.Win32Exception error) { throw new InvalidOperationException($"Windows refused to {(run == 0 ? "stop" : "start")} the {name} service (error {error.NativeErrorCode}).", error); }
+            return;
+        }
         if (setting.Via == "hibernate")
         {
             if (!state.Existed || state.Value is not int on || on is not (0 or 1)) throw new InvalidOperationException("Invalid hibernation state.");
@@ -128,6 +158,13 @@ public sealed class WindowsFacts : IFacts
     public int Build() => Environment.OSVersion.Version.Build;
     public bool MachineKeyExists(string path) { using var key = Registry.LocalMachine.OpenSubKey(path, false); return key is not null; }
     // Tamper Protection is only read. 4 means off; any other present value is treated as on so Frameforge never tries around it.
+    public string? ServiceBlocker(string name)
+    {
+        var info = new WindowsServiceStore().Query(name);
+        if (!info.Exists || !info.Running) return null;
+        if (!info.CanStop) return $"Windows does not allow stopping the {name} service right now.";
+        return info.ActiveDependents.Length > 0 ? $"The running service {info.ActiveDependents[0]} depends on {name}." : null;
+    }
     public bool TamperProtectionOn()
     {
         using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows Defender\Features", false);

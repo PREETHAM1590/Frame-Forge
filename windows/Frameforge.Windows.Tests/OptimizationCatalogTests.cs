@@ -34,7 +34,8 @@ public class OptimizationCatalogTests
     {
         var store = new Memory(); var engine = new RegistryOperations(store, new Facts());
         // hibernate-off reads an always-present value; when Windows does not report it, capture refuses (M2).
-        if (id == "hibernate-off") { Assert.Throws<InvalidOperationException>(() => engine.Capture([id])); return; }
+        // Service run state is read from the service manager the same way: a service that is not reported cannot be restored later.
+        if (id == "hibernate-off" || OptimizationTable.ServiceOps.ContainsKey(id)) { Assert.Throws<InvalidOperationException>(() => engine.Capture([id])); return; }
         var snapshot = engine.Capture([id]);
         Assert.All(snapshot.Values, v => Assert.False(v.Existed));
         engine.Apply([id], snapshot);
@@ -402,5 +403,139 @@ public class OptimizationCatalogTests
         var engine = new Optimizations(new RegistryOperations(new Memory(), new Facts()), new NoPower(), null, gateway, false);
         var snapshot = engine.Capture(["uac-off"]);
         Assert.False(engine.Apply(["uac-off"], snapshot));
+    }
+    // ---- Windows services and Photo Viewer -------------------------------------------------------------
+
+    /// <summary>Models the service manager: Start in the registry (written through ChangeServiceConfig) and a run state.</summary>
+    private sealed class ServiceWorld : IRegistryStore
+    {
+        public readonly Dictionary<string, (int Start, bool Running)> Services = new();
+        public readonly List<string> Calls = new();
+        private static string Name(Setting s) => s.Path[(s.Path.LastIndexOf('\\') + 1)..];
+        public ValueState Read(Setting s)
+        {
+            if (!Services.TryGetValue(Name(s), out var svc)) return new(false, null, "DWord");
+            return new(true, s.Via == "service-stop" ? (svc.Running ? 1 : 0) : svc.Start, "DWord");
+        }
+        public void Write(Setting s, ValueState state)
+        {
+            var svc = Services[Name(s)]; var v = (int)state.Value!;
+            if (s.Via == "service-config") { Calls.Add($"config {Name(s)} {v}"); Services[Name(s)] = svc with { Start = v }; }
+            else { Calls.Add($"{(v == 0 ? "stop" : "start")} {Name(s)}"); Services[Name(s)] = svc with { Running = v == 1 }; }
+        }
+    }
+
+    [Theory]
+    [InlineData(2, true)]
+    [InlineData(3, true)]
+    [InlineData(3, false)]
+    [InlineData(4, false)]
+    public void ServiceOptimizationDisablesStopsThenRestoresExactStartTypeAndState(int start, bool running)
+    {
+        var world = new ServiceWorld(); world.Services["SysMain"] = (start, running);
+        var engine = new RegistryOperations(world, new Facts());
+        var snapshot = engine.Capture(["sysmain-off"]);
+        Assert.Equal(2, snapshot.Values.Length);
+        engine.Apply(["sysmain-off"], snapshot);
+        Assert.True(engine.Verify(["sysmain-off"]));
+        Assert.Equal((4, false), world.Services["SysMain"]);
+        // The start type is disabled before the stop, so the manager never restarts it in between.
+        Assert.Equal("config SysMain 4", world.Calls[0]);
+        world.Calls.Clear();
+        engine.Restore(snapshot);
+        Assert.Equal((start, running), world.Services["SysMain"]);
+        // Start type first, then the run state; a service that was not running is never started.
+        Assert.Equal("config SysMain " + start, world.Calls[0]);
+        Assert.Equal(running, world.Calls.Contains("start SysMain"));
+    }
+
+    [Fact]
+    public void ServiceOptimizationRefusesAnUnreportedServiceAndABlockedStop()
+    {
+        var engine = new RegistryOperations(new ServiceWorld(), new Facts());
+        Assert.Throws<InvalidOperationException>(() => engine.Capture(["print-off"]));
+        var blocked = new RegistryOperations(new ServiceWorld(), new BlockedFacts());
+        var error = Assert.Throws<InvalidOperationException>(() => blocked.Capture(["print-off"]));
+        Assert.Contains("depends on", error.Message);
+        Assert.Contains("No change was made", error.Message);
+    }
+
+    private sealed class BlockedFacts : IFacts
+    {
+        public int Build() => 26100;
+        public bool MachineKeyExists(string path) => true;
+        public bool TamperProtectionOn() => false;
+        public string? ServiceBlocker(string name) => $"The running service Fax depends on {name}.";
+    }
+
+    [Fact]
+    public void ServiceRollbackRefusesAStartTypeChangedBySomeoneElse()
+    {
+        var world = new ServiceWorld(); world.Services["DiagTrack"] = (2, true);
+        var engine = new RegistryOperations(world, new Facts());
+        var snapshot = engine.Capture(["svc-diagtrack-off"]); engine.Apply(["svc-diagtrack-off"], snapshot);
+        world.Services["DiagTrack"] = (3, false);
+        world.Calls.Clear();
+        Assert.Throws<InvalidOperationException>(() => engine.Restore(snapshot));
+        Assert.Empty(world.Calls);
+    }
+
+    [Fact]
+    public void EveryServiceItemIsOnTheGameModeAllowlistAndNotOnTheNeverTouchList()
+    {
+        foreach (var (op, service) in OptimizationTable.ServiceOps)
+        {
+            Assert.False(ServicePolicy.Denied(service), $"{service} is on the never-touch list");
+            Assert.True(ServicePolicy.Allowed(service), $"{service} is not on the allowlist");
+            Assert.Equal(2, OptimizationTable.Settings.Count(s => s.Operation == op));
+            Assert.All(OptimizationTable.Settings.Where(s => s.Operation == op), s => Assert.EndsWith(@"\Services\" + service, s.Path));
+            Assert.True(OptimizationTable.IsAdmin(op));
+        }
+    }
+
+    [Fact]
+    public void ServiceWritesGoOnlyThroughTheServiceManagerAndRejectOddValues()
+    {
+        var services = new FakeServices(); var config = new FakeConfig();
+        var store = new WindowsRegistryStore(new Tools(), services, config);
+        var start = OptimizationTable.Settings.First(s => s.Operation == "sysmain-off" && s.Via == "service-config");
+        var state = OptimizationTable.Settings.First(s => s.Operation == "sysmain-off" && s.Via == "service-stop");
+        store.Write(start, new(true, 4, "DWord")); store.Write(state, new(true, 0, "DWord")); store.Write(state, new(true, 1, "DWord"));
+        Assert.Equal(["config SysMain 4"], config.Log.ToArray()); Assert.Equal(["stop SysMain", "start SysMain"], services.Log.ToArray());
+        Assert.Throws<InvalidOperationException>(() => store.Write(start, new(true, 1, "DWord")));
+        Assert.Throws<InvalidOperationException>(() => store.Write(start, new(false, null, "DWord")));
+        Assert.Throws<InvalidOperationException>(() => store.Write(state, new(true, 2, "DWord")));
+        Assert.Equal(new ValueState(true, 1, "DWord"), store.Read(state));
+        services.Running = false; Assert.Equal(new ValueState(true, 0, "DWord"), store.Read(state));
+        services.Exists = false; Assert.False(store.Read(state).Existed);
+        services.Exists = true; services.StopWorks = false;
+        Assert.Throws<InvalidOperationException>(() => store.Write(state, new(true, 0, "DWord")));
+    }
+
+    private sealed class FakeConfig : IServiceConfig { public List<string> Log = new(); public void SetStartType(string name, int start) => Log.Add($"config {name} {start}"); }
+    private sealed class FakeServices : IServiceStore
+    {
+        public List<string> Log = new(); public bool Running = true, Exists = true, StopWorks = true;
+        public ServiceInfo Query(string name) => new(Exists, Running, true, []);
+        public bool Stop(string name, TimeSpan timeout) { Log.Add("stop " + name); return StopWorks; }
+        public bool Start(string name, TimeSpan timeout) { Log.Add("start " + name); return true; }
+    }
+
+    [Fact]
+    public void PhotoViewerNeedsItsRegistrationAndLeavesTheTiffEntriesAlone()
+    {
+        Assert.Throws<InvalidOperationException>(() => new RegistryOperations(new Memory(), new Facts(nvidia: false)).Capture(["photo-viewer"]));
+        var settings = OptimizationTable.Settings.Where(s => s.Operation == "photo-viewer").ToArray();
+        Assert.DoesNotContain(settings, s => s.Name is ".tif" or ".tiff");
+        Assert.All(settings, s => Assert.Equal("PhotoViewer.FileAssoc.Tiff", s.Text));
+        // The dotted extension is the registry value name; an existing user entry for one type is restored exactly.
+        var store = new Memory(); var existing = settings.First(s => s.Name == ".jpg");
+        store.Values[Memory.Key(existing)] = new(true, "SomethingElse", "String");
+        var engine = new RegistryOperations(store, new Facts());
+        var snapshot = engine.Capture(["photo-viewer"]); engine.Apply(["photo-viewer"], snapshot);
+        Assert.Equal("PhotoViewer.FileAssoc.Tiff", store.Values[Memory.Key(existing)].Value);
+        engine.Restore(snapshot);
+        Assert.Equal(new ValueState(true, "SomethingElse", "String"), store.Values[Memory.Key(existing)]);
+        Assert.Single(store.Values);
     }
 }

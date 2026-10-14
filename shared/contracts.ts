@@ -8,7 +8,6 @@ export const OperationId = z.enum([
   "startup-review",
   "driver-review",
   "dns-tuning",
-  "service-tuning",
   "transparency-off",
   "shortcut-suffix-off",
   "classic-context-menu",
@@ -52,6 +51,17 @@ export const OperationId = z.enum([
   "security-questions-off",
   "ucpd-off",
   "win11-checks-bypass",
+  "sysmain-off",
+  "print-off",
+  "svc-diagtrack-off",
+  "svc-wsearch-off",
+  "svc-maps-off",
+  "svc-geolocation-off",
+  "svc-errorreporting-off",
+  "svc-phone-off",
+  "svc-linktracking-off",
+  "svc-retaildemo-off",
+  "photo-viewer",
 ]);
 export type OperationId = z.infer<typeof OperationId>;
 const Id = z.string().uuid();

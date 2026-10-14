@@ -7,7 +7,6 @@ import {
   catalogue,
   presets,
   securityIds,
-  unavailable,
   upsertPreset,
 } from "../shared/catalogue";
 import { OperationId } from "../shared/contracts";
@@ -22,12 +21,12 @@ const table = readFileSync(
 );
 const rows = table
   .split("\n")
-  .filter((l) => /^\s+(D|S|B|new)\("[a-z0-9-]+"/.test(l))
+  .filter((l) => /^\s+(D|S|B|Sv|Ss|new)\("[a-z0-9-]+"/.test(l))
   .map((l) => ({
     id: /\("([a-z0-9-]+)"/.exec(l)![1]!,
     // Constants in the table that hold machine paths count as machine settings.
     machine:
-      /HKLM|WinPolicy|WuPolicy|ExplorerPolicy|\bEdge\b|\bChrome\b|\bMm\b|\bDg\b|Defender|\bB\(/.test(
+      /HKLM|WinPolicy|WuPolicy|ExplorerPolicy|\bEdge\b|\bChrome\b|\bMm\b|\bDg\b|Defender|\bB\(|\bSv\(|\bSs\(|PvCap/.test(
         l,
       ),
     boot: /\bB\(/.test(l),
@@ -100,12 +99,15 @@ describe("optimization catalogue", () => {
       ),
     ).toThrow(/never part of a preset/);
   });
-  it("lists what is not offered with a reason", () => {
-    expect(unavailable.length).toBeGreaterThan(20);
-    for (const u of unavailable) expect(u.reason.length).toBeGreaterThan(10);
-    expect(unavailable.map((u) => u.name)).toContain(
-      "Install Process Explorer / Enhanced Registry Editor",
-    );
+  it("has no information-only entries: every offered item can be applied", () => {
+    for (const o of catalogue.filter((x) => !x.supported))
+      expect([
+        "hardware-scheduling",
+        "startup-review",
+        "driver-review",
+        "dns-tuning",
+      ]).toContain(o.id);
+    expect(catalogue.some((o) => o.name.startsWith("Not offered"))).toBe(false);
   });
 });
 

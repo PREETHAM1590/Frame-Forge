@@ -17,9 +17,14 @@ public record Setting(string Operation, string Path, string Name, string Kind, i
 }
 
 /// <summary>Per-optimization prerequisites checked at capture and apply (never at rollback). Tamper blocks Defender changes.</summary>
-public record OpRule(int MinBuild = 0, string? RequiresKey = null, bool Tamper = false, string Why = "");
+public record OpRule(int MinBuild = 0, string? RequiresKey = null, bool Tamper = false, string Why = "", string[]? AlsoKeys = null, string? Service = null);
 
-public interface IFacts { int Build(); bool MachineKeyExists(string path); bool TamperProtectionOn(); }
+public interface IFacts
+{
+    int Build(); bool MachineKeyExists(string path); bool TamperProtectionOn();
+    /// <summary>Why this service cannot be stopped right now (running dependents, Windows refuses), or null when it can or is not running.</summary>
+    string? ServiceBlocker(string name) => null;
+}
 
 public static class OptimizationTable
 {
@@ -28,6 +33,16 @@ public static class OptimizationTable
     private const string WinPolicy = @"HKLM\SOFTWARE\Policies\Microsoft\Windows", WuPolicy = WinPolicy + @"\WindowsUpdate";
     private const string Mm = @"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management", Dg = @"HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard";
     private const string Defender = @"HKLM\SOFTWARE\Policies\Microsoft\Windows Defender";
+    private const string Svcs = @"HKLM\SYSTEM\CurrentControlSet\Services", PvCap = @"HKLM\SOFTWARE\Microsoft\Windows Photo Viewer\Capabilities\FileAssociations", PvProgId = "PhotoViewer.FileAssoc.Tiff";
+    // Start type through the service manager (ChangeServiceConfig), read back from the registry value; State is the run state (stop on apply, start again on rollback only when it ran).
+    private static Setting Sv(string op, string service) => new(op, Svcs + @"\" + service, "Start", "DWord", 4, Via: "service-config");
+    private static Setting Ss(string op, string service) => new(op, Svcs + @"\" + service, "State", "DWord", 0, Via: "service-stop");
+    /// <summary>Operation id to the Windows service it turns off. Every service here is on the Game Mode allowlist and not on the never-touch list (a test checks it).</summary>
+    public static readonly Dictionary<string, string> ServiceOps = new()
+    {
+        ["sysmain-off"] = "SysMain", ["print-off"] = "Spooler", ["svc-diagtrack-off"] = "DiagTrack", ["svc-wsearch-off"] = "WSearch", ["svc-maps-off"] = "MapsBroker",
+        ["svc-geolocation-off"] = "lfsvc", ["svc-errorreporting-off"] = "WerSvc", ["svc-phone-off"] = "PhoneSvc", ["svc-linktracking-off"] = "TrkWks", ["svc-retaildemo-off"] = "RetailDemo",
+    };
     private static Setting D(string op, string path, string name, int target, int own = 0) => new(op, path, name, "DWord", target, OwnKey: own);
     private static Setting S(string op, string path, string name, string text, int own = 0) => new(op, path, name, "String", Text: text, OwnKey: own);
     private static Setting B(string op, string entry, string element, string value) => new(op, BcdPrefix + entry, element, "String", Text: value);
@@ -96,6 +111,21 @@ public static class OptimizationTable
         B("boot-timeout-short", "{bootmgr}", "timeout", "2"),
         B("boot-menu-legacy", "{current}", "bootmenupolicy", "legacy"),
         B("boot-logo-off", "{current}", "quietboot", "on"),
+        // Windows services: start type disabled through the service manager, then stopped. Rollback restores the exact start type, then starts it again if it was running.
+        Sv("sysmain-off", "SysMain"), Ss("sysmain-off", "SysMain"),
+        Sv("print-off", "Spooler"), Ss("print-off", "Spooler"),
+        Sv("svc-diagtrack-off", "DiagTrack"), Ss("svc-diagtrack-off", "DiagTrack"),
+        Sv("svc-wsearch-off", "WSearch"), Ss("svc-wsearch-off", "WSearch"),
+        Sv("svc-maps-off", "MapsBroker"), Ss("svc-maps-off", "MapsBroker"),
+        Sv("svc-geolocation-off", "lfsvc"), Ss("svc-geolocation-off", "lfsvc"),
+        Sv("svc-errorreporting-off", "WerSvc"), Ss("svc-errorreporting-off", "WerSvc"),
+        Sv("svc-phone-off", "PhoneSvc"), Ss("svc-phone-off", "PhoneSvc"),
+        Sv("svc-linktracking-off", "TrkWks"), Ss("svc-linktracking-off", "TrkWks"),
+        Sv("svc-retaildemo-off", "RetailDemo"), Ss("svc-retaildemo-off", "RetailDemo"),
+        // Windows Photo Viewer: registers the built-in viewer for more image types (Default Programs capabilities); no default app is changed.
+        S("photo-viewer", PvCap, ".bmp", PvProgId), S("photo-viewer", PvCap, ".dib", PvProgId), S("photo-viewer", PvCap, ".gif", PvProgId),
+        S("photo-viewer", PvCap, ".jfif", PvProgId), S("photo-viewer", PvCap, ".jpe", PvProgId), S("photo-viewer", PvCap, ".jpeg", PvProgId),
+        S("photo-viewer", PvCap, ".jpg", PvProgId), S("photo-viewer", PvCap, ".jxr", PvProgId), S("photo-viewer", PvCap, ".png", PvProgId),
         // Security trade-offs: same engine, extra guardrails in the app.
         D("defender-off", Defender, "DisableAntiSpyware", 1, 1),
         D("defender-off", Defender + @"\Real-Time Protection", "DisableRealtimeMonitoring", 1, 2),
@@ -118,8 +148,9 @@ public static class OptimizationTable
     /// <summary>Optimizations that lower security. The app asks for an explicit acknowledgement before applying them.</summary>
     public static readonly string[] Security = ["defender-off", "mitigations-off", "vbs-hyperv-off", "uac-off", "smartscreen-off", "windows-updates-off", "driver-updates-off", "browser-updates-off", "security-questions-off", "ucpd-off", "win11-checks-bypass"];
 
-    public static readonly Dictionary<string, OpRule> Rules = new()
+    public static readonly Dictionary<string, OpRule> Rules = new(ServiceOps.ToDictionary(p => p.Key, p => new OpRule(RequiresKey: @"SYSTEM\CurrentControlSet\Services\" + p.Value, Why: $"The {p.Value} service is not installed on this PC.", Service: p.Value)))
     {
+        ["photo-viewer"] = new(RequiresKey: @"SOFTWARE\Microsoft\Windows Photo Viewer\Capabilities\FileAssociations", AlsoKeys: [@"SOFTWARE\Classes\" + PvProgId], Why: "Windows Photo Viewer is not registered on this PC (its capabilities or file association entry is missing)."),
         ["classic-context-menu"] = new(MinBuild: 22000, Why: "The classic menu switch only exists on Windows 11."),
         ["explorer-compact-mode"] = new(MinBuild: 22000, Why: "Compact mode is a Windows 11 File Explorer option."),
         ["dlss-indicator"] = new(RequiresKey: @"SOFTWARE\NVIDIA Corporation\Global\NGXCore", Why: "The NVIDIA DLSS registry key is not present; an NVIDIA GPU and driver are required."),
@@ -136,11 +167,13 @@ public static class OptimizationTable
         if (rule.MinBuild > 0 && facts.Build() < rule.MinBuild) throw new InvalidOperationException(rule.Why + " No change was made.");
         if (rule.RequiresKey is not null && !facts.MachineKeyExists(rule.RequiresKey)) throw new InvalidOperationException(rule.Why + " No change was made.");
         if (rule.Tamper && facts.TamperProtectionOn()) throw new InvalidOperationException(rule.Why + " No change was made.");
+        if (rule.AlsoKeys is not null && rule.AlsoKeys.Any(k => !facts.MachineKeyExists(k))) throw new InvalidOperationException(rule.Why + " No change was made.");
+        if (rule.Service is not null && facts.ServiceBlocker(rule.Service) is { } blocker) throw new InvalidOperationException($"{blocker} No change was made.");
     }
     /// <summary>Ids whose static prerequisites hold here (Tamper Protection is a runtime state, shown at preview instead).</summary>
     public static string[] Applicable(IFacts facts) => Settings.Select(s => s.Operation).Distinct().Where(id =>
     {
         if (!Rules.TryGetValue(id, out var rule)) return true;
-        return (rule.MinBuild == 0 || facts.Build() >= rule.MinBuild) && (rule.RequiresKey is null || facts.MachineKeyExists(rule.RequiresKey));
+        return (rule.MinBuild == 0 || facts.Build() >= rule.MinBuild) && (rule.RequiresKey is null || facts.MachineKeyExists(rule.RequiresKey)) && (rule.AlsoKeys is null || rule.AlsoKeys.All(facts.MachineKeyExists));
     }).ToArray();
 }
