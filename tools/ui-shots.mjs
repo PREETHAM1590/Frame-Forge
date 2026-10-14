@@ -4,6 +4,19 @@ import { _electron as electron } from "@playwright/test";
 import path from "node:path";
 import { mkdir, mkdtemp } from "node:fs/promises";
 
+// Usage: node tools/ui-shots.mjs <outDir> [light]
+const theme = process.argv[3] === "light" ? "-light" : "";
+const pages = [
+  "Dashboard",
+  "Game Mode",
+  "Game library",
+  "Optimizations",
+  "Presets",
+  "Restore & backups",
+  "Activity",
+  "System",
+  "Settings",
+];
 const out = path.resolve(process.argv[2] ?? "ui-shots");
 await mkdir(out, { recursive: true });
 const userData = await mkdtemp(path.join(out, "profile-"));
@@ -20,6 +33,11 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow();
   await page.getByText("Your setup, in focus.").waitFor();
+  if (theme) {
+    await page.evaluate(() =>
+      document.documentElement.setAttribute("data-theme", "light"),
+    );
+  }
   for (const [w, h] of [
     [1280, 800],
     [1600, 900],
@@ -32,18 +50,17 @@ try {
       [w, h],
     );
     await page.waitForTimeout(600);
-    await page.getByRole("button", { name: "Dashboard", exact: true }).click();
-    await page.waitForTimeout(900);
-    await page.screenshot({
-      path: path.join(out, `dashboard-${w}.png`),
-      fullPage: true,
-    });
-    await page.getByRole("button", { name: "Game Mode", exact: true }).click();
-    await page.waitForTimeout(1200);
-    await page.screenshot({
-      path: path.join(out, `gamemode-${w}.png`),
-      fullPage: true,
-    });
+    for (const name of pages) {
+      await page.getByRole("button", { name, exact: true }).click();
+      await page.waitForTimeout(1000);
+      await page.screenshot({
+        path: path.join(
+          out,
+          `${name.toLowerCase().replace(/\W+/g, "-")}-${w}${theme}.png`,
+        ),
+        fullPage: true,
+      });
+    }
   }
   console.log("saved to", out);
 } finally {

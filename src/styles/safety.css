@@ -96,3 +96,8 @@ tbody tr:hover {
 .setting-row:last-child {
   border-bottom: 0;
 }
+@media (max-width: 760px) {
+  .restore-strip {
+    grid-template-columns: 1fr !important;
+  }
+}

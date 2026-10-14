@@ -109,3 +109,12 @@
 .drawer .dialog-actions {
   margin-top: var(--sp-4);
 }
+.search input {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  min-height: 0;
+}
+.search:focus-within {
+  border-color: var(--c-primary);
+}
