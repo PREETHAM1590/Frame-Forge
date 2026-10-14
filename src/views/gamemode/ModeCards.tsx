@@ -34,7 +34,7 @@ export function ModeCards({
           const plans = list.map((entry) => ({
             entry,
             plan: onThisPc(entry, cap(entry.id), config.background, {
-              preset: m.id !== "custom",
+              preset: m.id !== "custom" && config.overrides.smartCores !== true,
               threadDirector: !!caps?.topology?.threadDirector,
               timer,
             }),

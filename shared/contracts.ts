@@ -252,6 +252,7 @@ export const modeMechanisms: Record<
     smartCores: true,
     coreParking: true,
     pauseServices: true,
+    gpuPriority: true,
   },
 };
 /** The set a mode really applies: Custom is its own toggles; presets get the saved enhancer overrides on top. */

@@ -1,6 +1,6 @@
 import * as Switch from "@radix-ui/react-switch";
 import { ArrowRight, Info, Search } from "lucide-react";
-import { useId } from "react";
+import { useId, useState } from "react";
 import type { ReactNode, ButtonHTMLAttributes, CSSProperties } from "react";
 export type Tone = "neutral" | "lime" | "cyan" | "amber" | "red";
 export function Button({
@@ -95,8 +95,17 @@ export function InfoTip({
   children: ReactNode;
 }) {
   const id = useId();
+  // Escape hides the text until the pointer or focus comes back.
+  const [hidden, setHidden] = useState(false);
   return (
-    <span className="infotip">
+    <span
+      className="infotip"
+      data-hidden={hidden || undefined}
+      onKeyDown={(e) => e.key === "Escape" && setHidden(true)}
+      onMouseEnter={() => setHidden(false)}
+      onMouseLeave={() => setHidden(false)}
+      onBlur={() => setHidden(false)}
+    >
       <button
         type="button"
         className="infotip-btn"

@@ -308,7 +308,10 @@ describe("second-pass booster contracts", () => {
     expect(eff.gpuPriority).toBe(true);
     expect(eff.powerThrottling).toBe(false);
     expect(eff.gameBarCapture).toBe(true);
-    expect(modeMechanisms.competitive.gpuPriority).toBe(false);
+    // GPU priority is on by default in Competitive only.
+    expect(modeMechanisms.competitive.gpuPriority).toBe(true);
+    expect(modeMechanisms.performance.gpuPriority).toBe(false);
+    expect(modeMechanisms.balanced.gpuPriority).toBe(false);
     expect(effectiveMechanisms(over, "off").gpuPriority).toBe(false);
     const custom = { ...over, mode: "custom" as const };
     expect(effectiveMechanisms(custom).gpuPriority).toBe(false);

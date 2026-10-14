@@ -70,15 +70,26 @@ export function Enhancers({
   const cpus = Math.min(caps?.logicalCpus ?? 0, 64);
   const overridden = Object.keys(config.overrides).length;
   const locked = pending || !!unavailable || off;
+  // A sub-control of a row follows that mechanism's capability: it cannot be turned on where this PC can't do it.
+  const blocked = (id: MechanismId, on: boolean) =>
+    locked || (!!caps && cap(id)?.available === false && !on);
+  // Windows 11 Thread Director builds leave smart cores off in presets; only an explicit choice turns it on there.
+  const gated =
+    !custom &&
+    !!caps?.topology?.threadDirector &&
+    config.overrides.smartCores !== true;
+  const smartOn = eff.smartCores && !gated;
   // Presets keep only what differs from the mode; Custom edits its own set.
   const change = (patch: Partial<CustomMechanisms>) => {
     if (custom) return save({ custom: { ...config.custom, ...patch } });
     const base = modeMechanisms[config.mode as Exclude<BoostMode, "custom">];
     const next: Record<string, unknown> = { ...config.overrides, ...patch };
+    // smartCores stays explicit: on Windows 11 the preset default does not apply, so "on" must be remembered as a choice.
     for (const key of Object.keys(next))
       if (
+        key !== "smartCores" &&
         JSON.stringify(next[key]) ===
-        JSON.stringify(base[key as keyof CustomMechanisms])
+          JSON.stringify(base[key as keyof CustomMechanisms])
       )
         delete next[key];
     return save({ overrides: next as BoosterConfig["overrides"] });
@@ -108,7 +119,7 @@ export function Enhancers({
           Priority level
           <select
             value={eff.priority}
-            disabled={locked}
+            disabled={blocked("priority", false)}
             onChange={(e) =>
               void change({
                 priority: e.target.value as CustomMechanisms["priority"],
@@ -125,7 +136,7 @@ export function Enhancers({
       id: "smartCores",
       name: "CPU Affinity",
       info: "Smart core targeting steers the game to the performance cores of a hybrid CPU with CPU sets. Windows 11 already does this in the presets, so there it is only on when you turn it on. Manual affinity limits the game to the CPUs you tick; some games run worse with fewer cores.",
-      on: eff.smartCores,
+      on: smartOn,
       set: (on) => ({ smartCores: on }),
       extra: (
         <Disclosure title="Manual affinity" hint="Advanced">
@@ -137,7 +148,7 @@ export function Enhancers({
                 : "The CPU count is unknown until the desktop helper responds."
             }
             checked={eff.affinity !== null}
-            disabled={locked || !cpus}
+            disabled={blocked("affinity", eff.affinity !== null) || !cpus}
             onChange={(v) =>
               void change({
                 affinity: v ? Array.from({ length: cpus }, (_, i) => i) : null,
@@ -152,7 +163,7 @@ export function Enhancers({
                   <input
                     type="checkbox"
                     checked={eff.affinity!.includes(i)}
-                    disabled={locked}
+                    disabled={blocked("affinity", false)}
                     onChange={(e) =>
                       void change({
                         affinity: e.target.checked
@@ -217,7 +228,7 @@ export function Enhancers({
               <input
                 type="checkbox"
                 checked={eff.suspendBackground}
-                disabled={locked}
+                disabled={blocked("suspendBackground", eff.suspendBackground)}
                 onChange={(e) =>
                   void change({ suspendBackground: e.target.checked })
                 }
@@ -228,7 +239,7 @@ export function Enhancers({
               <input
                 type="checkbox"
                 checked={eff.closeBackground}
-                disabled={locked}
+                disabled={blocked("closeBackground", eff.closeBackground)}
                 onChange={(e) =>
                   void change({ closeBackground: e.target.checked })
                 }

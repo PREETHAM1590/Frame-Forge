@@ -402,3 +402,10 @@
 .infotip:focus-within .infotip-body {
   display: block;
 }
+.infotip[data-hidden] .infotip-body {
+  display: none;
+}
+.infotip-btn:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}

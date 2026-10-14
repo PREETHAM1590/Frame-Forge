@@ -117,6 +117,7 @@ public sealed class WindowsGpuPriority : IGpuPriority
     private const uint PrivilegeNotHeld = 0xC0000061;
     public int? Get(ProcessTarget identity)
     {
+        // Live-checked: Windows denies this read (0xC0000022) with PROCESS_QUERY_LIMITED_INFORMATION alone, so it needs SetInformation access too.
         using var handle = WindowsProcessControl.Verified(identity, WindowsProcesses.SetInformation);
         return D3DKMTGetProcessSchedulingPriorityClass(handle.DangerousGetHandle(), out var value) == 0 ? value : null;
     }

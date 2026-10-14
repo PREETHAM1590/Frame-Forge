@@ -743,8 +743,8 @@ export class BoostEngine {
         // Xbox and Microsoft Store games need the Xbox services; auto-boost must never open an administrator prompt.
         storeGame: game.source === "xbox" || game.source === "msstore",
         unattended: reason === "auto",
-        // Presets leave smart core targeting off on Windows 11 hybrid CPUs; Custom can force it.
-        preset: mode !== "custom",
+        // Presets leave smart core targeting off on Windows 11 hybrid CPUs; Custom, or an explicit enhancer override, forces it.
+        preset: mode !== "custom" && config.overrides.smartCores !== true,
         // Turned on by Frameforge but Windows has not restarted since: a timer request cannot reach the game yet.
         timerRestartPending: this.timerRestartPending(),
       });

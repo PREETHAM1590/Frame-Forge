@@ -301,7 +301,7 @@ describe("new mechanisms on the mode cards", () => {
       "leaves your game's cores and core parking alone",
     );
     expect(
-      within(competitive).getByText(/Changes \d+ of 11 on this PC/),
+      within(competitive).getByText(/Changes \d+ of 12 on this PC/),
     ).toBeVisible();
   });
 });
@@ -495,6 +495,46 @@ describe("game enhancers as overrides on top of the mode", () => {
     expect(
       within(row).getByRole("switch", { name: "GPU Priority" }),
     ).toBeDisabled();
+  });
+  it("on a Windows 11 Thread Director PC smart cores shows off in a preset and an explicit on is saved and kept", async () => {
+    const { calls } = install(
+      "performance",
+      {},
+      {
+        hybrid: true,
+        performanceCores: 4,
+        performanceThreads: 8,
+        efficiencyCores: 4,
+        efficiencyThreads: 4,
+        dualCcdX3d: false,
+        threadDirector: true,
+        summary:
+          "4 performance cores (8 threads) + 4 efficiency cores (4 threads).",
+      },
+    );
+    await openGameMode();
+    const list = await screen.findByLabelText("Game enhancers");
+    const sw = within(list).getByRole("switch", { name: "CPU Affinity" });
+    await waitFor(() => expect(sw).toBeEnabled());
+    expect(sw).not.toBeChecked();
+    fireEvent.click(sw);
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0]!.overrides).toEqual({ smartCores: true });
+  });
+  it("Escape closes an info tooltip and the sub-controls follow the capability", async () => {
+    install("performance", { priority: bad("Not on this PC.") });
+    await openGameMode();
+    const list = await screen.findByLabelText("Game enhancers");
+    const button = within(list).getByRole("button", {
+      name: "About GPU Priority",
+    });
+    const tip = button.closest(".infotip")!;
+    expect(tip).not.toHaveAttribute("data-hidden");
+    fireEvent.keyDown(button, { key: "Escape" });
+    expect(tip).toHaveAttribute("data-hidden");
+    await waitFor(() =>
+      expect(within(list).getByLabelText("Priority level")).toBeDisabled(),
+    );
   });
   it("Custom starts from all off and edits its own set, not the overrides", async () => {
     const { calls } = install("custom");

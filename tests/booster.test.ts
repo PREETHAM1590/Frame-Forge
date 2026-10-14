@@ -259,6 +259,21 @@ describe("game booster sessions", () => {
     });
     repo.close();
   });
+  it("an explicit smart cores override reaches the helper as a non-preset start, so Windows 11 applies it", async () => {
+    const a = setup("performance");
+    await a.engine.start(a.game.id, "manual");
+    expect(a.platform.sessions[0]!.sent[0]).toMatchObject({ preset: true });
+    a.repo.close();
+    const b = setup("performance");
+    const state = b.repo.state();
+    b.repo.updateState({
+      ...state,
+      booster: { ...state.booster, overrides: { smartCores: true } },
+    });
+    await b.engine.start(b.game.id, "manual");
+    expect(b.platform.sessions[0]!.sent[0]).toMatchObject({ preset: false });
+    b.repo.close();
+  });
   it("without skipAdmin a competitive start still asks for the services step", async () => {
     const { repo, game, platform, engine } = setup("competitive");
     await engine.start(game.id, "manual");
