@@ -1,6 +1,6 @@
 {
   "name": "frameforge",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "type": "module",
   "main": "dist-electron/electron/main.js",
@@ -19,7 +19,7 @@
     "windows:build": "dotnet build windows/Frameforge.Windows/Frameforge.Windows.csproj",
     "windows:test": "dotnet test windows/Frameforge.Windows.Tests/Frameforge.Windows.Tests.csproj",
     "windows:publish": "dotnet publish windows/Frameforge.Windows/Frameforge.Windows.csproj -c Release -r win-x64 --self-contained true -o windows/publish",
-    "package:win": "npm run windows:publish && npm run build && electron-builder --win nsis",
+    "package:win": "npm run windows:publish && npm run build && electron-builder --win nsis --publish never",
     "start": "npm run windows:ensure && electron .",
     "test:e2e": "playwright test",
     "test:desktop": "npm run windows:ensure && node tools/desktop-smoke.mjs",

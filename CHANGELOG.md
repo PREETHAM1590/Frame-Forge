@@ -1,6 +1,8 @@
 # Changelog
 
-## 1.2.1
+## 1.2.2
+
+First public release built by GitHub Actions (1.2.1 was never published: its release build failed before shipping, so its changes ship here).
 
 - **MIT license.** Frameforge is now open source under the MIT license, with `THIRD_PARTY_NOTICES.md` listing bundled components (including the OFL-licensed fonts).
 - **Per-user installer, no administrator needed.** The installer installs to `%LOCALAPPDATA%\Programs\Frameforge` with Start menu and desktop shortcuts and a proper uninstaller, and never asks for elevation. Administrator prompts still appear only for the optional actions that need them.
