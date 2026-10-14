@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Frameforge.Windows;
 using Xunit;
 
@@ -337,8 +338,60 @@ public class OptimizationCatalogTests
         Assert.Throws<InvalidOperationException>(() => AdminCommands.Execute(new("capture", [], null), engine));
         Assert.Throws<InvalidOperationException>(() => AdminCommands.Execute(new("run", ["uac-off"], null), engine));
         Assert.Throws<InvalidOperationException>(() => AdminCommands.Execute(new("apply", ["uac-off"], null), engine));
-        Assert.Equal(2, WindowsAdminGateway.RunChild(["C:\\not-a-result-file.json", "{}"], _ => ""));
+        Assert.Equal(2, WindowsAdminGateway.RunChild(["run", "C:\\not-a-result-file.json", "{}"], _ => ""));
         Assert.Equal(2, WindowsAdminGateway.RunChild(["only-one"], _ => ""));
+    }
+
+    [Fact]
+    public void TheOptimizeChildRejectsAMissingOrOldRequestBeforeChangingAnything()
+    {
+        var path = WindowsServiceElevator.NewResultPath();
+        var json = JsonSerializer.Serialize(new AdminRequest("capture", ["uac-off"], null), HelperJson.Options);
+        try
+        {
+            var registry = new RegistryOperations(new Memory(), new Facts());
+            // No request file, then one issued five minutes ago for thirty seconds: the child must not even open the result file.
+            Assert.Equal(3, WindowsAdminGateway.RunChild(["run", path, json], _ => "x", registry));
+            ElevationRequest.Create(path, TimeSpan.FromSeconds(30), DateTime.UtcNow.AddMinutes(-5));
+            Assert.Equal(3, WindowsAdminGateway.RunChild(["run", path, json], _ => "x", registry));
+            Assert.Equal(0, new FileInfo(path).Length);
+            // A fresh request is honoured.
+            ElevationRequest.Withdraw(path);
+            ElevationRequest.Create(path, TimeSpan.FromSeconds(30));
+            Assert.Equal(0, WindowsAdminGateway.RunChild(["run", path, json], _ => "{\"ok\":true}", registry));
+            Assert.NotEqual(0, new FileInfo(path).Length);
+        }
+        finally { ElevationRequest.Withdraw(path); File.Delete(path); }
+    }
+
+    // A prompt that is answered after the parent gave up runs the real child against a fake machine; the withdrawn request makes it change nothing.
+    private sealed class LateLauncher(Memory machine) : IElevatedLauncher
+    {
+        public ManualResetEventSlim Answer { get; } = new(false);
+        public int ChildExit { get; private set; } = -1;
+        private sealed class Child(int exit) : IElevatedChild { public bool WaitForExit(TimeSpan t) => true; public int? ExitCode => exit; public void Dispose() { } }
+        public IElevatedChild? Start(IReadOnlyList<string> arguments)
+        {
+            Answer.Wait();
+            ChildExit = WindowsAdminGateway.RunChild([.. arguments.Skip(1)], v => JsonSerializer.Serialize(v, HelperJson.Options), new RegistryOperations(machine, new Facts()));
+            return new Child(ChildExit);
+        }
+    }
+
+    [Fact]
+    public void ALateApprovalAfterTheBudgetChangesNothing()
+    {
+        Assert.False(RestoreCommands.IsElevated(), "test must run unelevated");
+        var machine = new Memory();
+        var launcher = new LateLauncher(machine);
+        var gateway = new WindowsAdminGateway(TimeSpan.FromSeconds(5), launcher, TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(100));
+        var snapshot = new RegistryOperations(machine, new Facts()).Capture(["uac-off"]);
+        var error = Assert.Throws<InvalidOperationException>(() => gateway.Run(new("apply", ["uac-off"], snapshot.Values)));
+        Assert.Contains("not given in time", error.Message);
+        launcher.Answer.Set(); // the stale prompt is approved now
+        SpinWait.SpinUntil(() => launcher.ChildExit != -1, TimeSpan.FromSeconds(5));
+        Assert.InRange(launcher.ChildExit, 2, 3); // the result file is already gone (2) or the request is (3)
+        Assert.Empty(machine.Values);
     }
 
     [Fact]

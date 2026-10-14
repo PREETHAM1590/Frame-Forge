@@ -11,9 +11,10 @@ public record AdminReply(bool Ok, string Message, CapturedValue[]? Values = null
 /// GC-7 for machine optimizations: the helper starts itself with the runas verb and reads a validated result file. The request travels as
 /// one JSON argument (no string is built by hand), and the child accepts only allowlisted machine settings through RegistryOperations.
 /// </summary>
-public sealed class WindowsAdminGateway(TimeSpan? childWait = null) : IAdminGateway
+public sealed class WindowsAdminGateway(TimeSpan? childWait = null, IElevatedLauncher? launcher = null, TimeSpan? approvalBudget = null, TimeSpan? grace = null) : IAdminGateway
 {
     private readonly TimeSpan wait = childWait ?? TimeSpan.FromSeconds(150);
+    private readonly TimeSpan approval = approvalBudget ?? TimeSpan.FromSeconds(120);
     private const int MaxArgument = 24000;
 
     public AdminResult Run(AdminRequest request)
@@ -24,43 +25,38 @@ public sealed class WindowsAdminGateway(TimeSpan? childWait = null) : IAdminGate
         if (request.Ids is null || request.Ids.Length is 0 or > 24 || !request.Ids.All(OptimizationTable.IsAdmin)) throw new InvalidOperationException("Unsupported administrator request.");
         var json = JsonSerializer.Serialize(request, HelperJson.Options);
         if (json.Length > MaxArgument) throw new InvalidOperationException("The administrator request is too large.");
-        var resultPath = WindowsServiceElevator.NewResultPath();
-        var keep = false;
-        try
+        // The request-file freshness guard (ElevatedCall) makes a late or stale approval change nothing.
+        var outcome = ElevatedCall.Run(launcher ?? new WindowsElevatedLauncher(), "--elevated-optimize", "run", [json], approval, wait, default, grace);
+        var unchanged = "Nothing was changed.";
+        switch (outcome.Status)
         {
-            var info = new ProcessStartInfo { FileName = Environment.ProcessPath!, UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
-            foreach (var argument in new[] { "--elevated-optimize", resultPath, json }) info.ArgumentList.Add(argument);
-            Process? child;
-            try { child = Process.Start(info); }
-            catch (Win32Exception error) when (error.NativeErrorCode == 1223) { throw new InvalidOperationException("Administrator approval was declined. Nothing was changed."); }
-            using (child)
-            {
-                if (child is null) throw new InvalidOperationException("The administrator request could not start.");
-                if (!child.WaitForExit(wait)) { keep = true; throw new InvalidOperationException("The administrator step did not finish in time. Check the setting before retrying."); }
-                if (RestoreCommands.ExitCode(child) == 2) throw new InvalidOperationException("The administrator step rejected its result file. Nothing was changed.");
-            }
-            var text = File.ReadAllText(resultPath);
-            if (text.Length is 0 or > 1024 * 1024) throw new InvalidOperationException("The administrator step returned no result.");
-            AdminReply? reply;
-            try { reply = JsonSerializer.Deserialize<AdminReply>(text, HelperJson.Options); } catch (JsonException) { reply = null; }
-            if (reply is null) throw new InvalidOperationException("Unreadable administrator result.");
-            if (!reply.Ok) throw new InvalidOperationException(reply.Message);
-            return new(reply.Values, reply.Verified, reply.Note);
+            case ElevationStatus.Declined: throw new InvalidOperationException($"Administrator approval was declined. {unchanged}");
+            case ElevationStatus.NotApproved or ElevationStatus.Cancelled: throw new InvalidOperationException($"Administrator approval was not given in time. {unchanged} A prompt that is still open does nothing now.");
+            case ElevationStatus.Expired: throw new InvalidOperationException($"The administrator request expired before it was approved. {unchanged}");
+            case ElevationStatus.Rejected: throw new InvalidOperationException($"The administrator step rejected its result file. {unchanged}");
+            case ElevationStatus.NoChild: throw new InvalidOperationException("The administrator request could not start.");
+            case ElevationStatus.ChildTimeout: throw new InvalidOperationException("The administrator step did not finish in time. Check the setting before retrying.");
         }
-        finally { if (!keep) { try { File.Delete(resultPath); } catch (IOException) { } catch (UnauthorizedAccessException) { } } }
+        var text = outcome.Text;
+        if (text is null || text.Length is 0 or > 1024 * 1024) throw new InvalidOperationException("The administrator step returned no result.");
+        AdminReply? reply;
+        try { reply = JsonSerializer.Deserialize<AdminReply>(text, HelperJson.Options); } catch (JsonException) { reply = null; }
+        if (reply is null) throw new InvalidOperationException("Unreadable administrator result.");
+        if (!reply.Ok) throw new InvalidOperationException(reply.Message);
+        return new(reply.Values, reply.Verified, reply.Note);
     }
 
-    // Entry point for `--elevated-optimize <resultPath> <json>`. Writes exactly one JSON object to the result file.
-    public static int RunChild(string[] argv, Func<object, string> serialize)
+    // Entry point for `--elevated-optimize run <resultPath> <json>`. Writes exactly one JSON object to the result file.
+    public static int RunChild(string[] argv, Func<object, string> serialize, RegistryOperations? registry = null)
     {
-        if (argv.Length != 2 || argv[1].Length > MaxArgument || !RestoreCommands.ValidResultPath(argv[0])) return 2;
-        using var file = new FileStream(argv[0], FileMode.Open, FileAccess.Write, FileShare.None);
-        if (file.Length != 0 || !string.Equals(RestoreCommands.FinalPath(file.SafeFileHandle), argv[0], StringComparison.OrdinalIgnoreCase)) return 2;
+        if (argv.Length != 3 || argv[2].Length > MaxArgument) return 2;
+        using var file = ElevatedCall.OpenResult(argv[1], out var rejected);
+        if (file is null) return rejected;
         AdminReply reply;
         try
         {
-            var request = JsonSerializer.Deserialize<AdminRequest>(argv[1], HelperJson.Options) ?? throw new InvalidOperationException("Missing request.");
-            var result = AdminCommands.Execute(request, new RegistryOperations(new WindowsRegistryStore(), new WindowsFacts()));
+            var request = JsonSerializer.Deserialize<AdminRequest>(argv[2], HelperJson.Options) ?? throw new InvalidOperationException("Missing request.");
+            var result = AdminCommands.Execute(request, registry ?? new RegistryOperations(new WindowsRegistryStore(), new WindowsFacts()));
             reply = new(true, "Done.", result.Values, result.Verified, result.Note);
         }
         catch (Exception error) when (error is InvalidOperationException or JsonException) { reply = new(false, error is JsonException ? "Invalid administrator request." : error.Message); }
