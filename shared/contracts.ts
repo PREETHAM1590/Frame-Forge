@@ -879,7 +879,14 @@ export const MonitorSampleSchema = z
   .object({
     at: z.string().max(40),
     counters: z.boolean(),
-    cpu: z.object({ total: Gauge, cores: z.array(Gauge).max(256) }).strict(),
+    cpu: z
+      .object({
+        total: Gauge,
+        cores: z.array(Gauge).max(256),
+        /** Windows' % Processor Performance: the current clock as a percent of base (above 100 while boosting). */
+        performance: z.number().min(0).max(1000).nullable().optional(),
+      })
+      .strict(),
     memory: z.object({ totalBytes: Count, availableBytes: Count }).strict(),
     gpu: z
       .object({

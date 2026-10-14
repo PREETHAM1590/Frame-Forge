@@ -54,6 +54,13 @@ export class FpsService {
   get active() {
     return this.state === "starting" || this.state === "capturing";
   }
+  /** Frame statistics of the capture that is running now, for Smart mode; null without one (or before enough frames). */
+  liveStats(): { avg: number; low1: number | null } | null {
+    const avg = this.acc.avgFps;
+    return this.state === "capturing" && avg !== null && this.acc.frames >= 300
+      ? { avg, low1: this.acc.low1Fps }
+      : null;
+  }
   private now() {
     return (this.deps.now ?? Date.now)();
   }

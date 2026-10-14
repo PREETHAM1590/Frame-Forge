@@ -104,6 +104,10 @@ const inputs: { [M in Method]: () => Request<M> } = {
   fpsStart: () => ({ gameId: id(), confirmed: true }),
   fpsStop: () => ({ confirmed: true }),
   fpsHistory: () => ({ gameId: id() }),
+  healthCheck: () => ({}),
+  smartStatus: () => ({}),
+  smartCandidate: () => ({ action: "dismiss" }),
+  smartForget: () => ({ gameId: id() }),
 };
 describe("IPC surface", () => {
   it("has identical request, response and handler sets", () => {
@@ -149,6 +153,9 @@ describe("IPC surface", () => {
       "fpsStart",
       "fpsStop",
       "fpsHistory",
+      "healthCheck",
+      "smartCandidate",
+      "smartForget",
       "updateCheck",
       "updateDownload",
       "updateInstall",
