@@ -10,3 +10,4 @@ artifacts
 tests/fixtures
 .claude
 .serena
+.claude-flow
