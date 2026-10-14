@@ -29,6 +29,7 @@ import {
 } from "../../shared/contracts";
 import { GameIcon } from "../components/GameIcon";
 import { FpsHistory } from "./monitor/GameMonitor";
+import { RecommendedSettings } from "./games/RecommendedSettings";
 import type { ViewProps } from "../types";
 export { GameMode } from "./GameBooster";
 const modeNames: Record<Game["boostMode"], string> = {
@@ -48,6 +49,7 @@ export function Games({
 }: ViewProps) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Game | null>(null);
+  const [tab, setTab] = useState<"details" | "recommended">("details");
   const [boostMode, setBoostMode] = useState<Game["boostMode"]>("global");
   const [notes, setNotes] = useState("");
   const [autoBoost, setAutoBoost] = useState(true);
@@ -242,6 +244,7 @@ export function Games({
                   <Button
                     onClick={() => {
                       setSelected(g);
+                      setTab("details");
                       setBoostMode(g.boostMode);
                       setAutoBoost(g.autoBoost !== false);
                       setNotes(g.notes);
@@ -316,8 +319,30 @@ export function Games({
               : "Matched by folder"}
           </p>
           <p className="muted">Source: {sourceLabels[selected.source]}</p>
-          <FpsHistory gameId={selected.id} />
+          <div className="tabs" role="group" aria-label="Game drawer sections">
+            {(
+              [
+                ["details", "Details"],
+                ["recommended", "Recommended settings"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                type="button"
+                key={id}
+                aria-pressed={tab === id}
+                className={tab === id ? "active" : ""}
+                onClick={() => setTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {tab === "recommended" && (
+            <RecommendedSettings game={selected} hardware={data.hardware} />
+          )}
+          {tab === "details" && <FpsHistory gameId={selected.id} />}
           <form
+            hidden={tab !== "details"}
             onSubmit={async (e) => {
               e.preventDefault();
               if (

@@ -1062,3 +1062,17 @@ progress::-webkit-progress-value {
 .chip-count {
   opacity: 0.8;
 }
+.rec-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.rec-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.recommended h3 {
+  margin: 16px 0 4px;
+}
