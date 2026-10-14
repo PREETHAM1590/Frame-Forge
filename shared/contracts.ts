@@ -160,7 +160,7 @@ export const BackgroundListSchema = z
       .object({
         image: z
           .string()
-          .regex(/^[w .()-]{1,64}.exe$/i)
+          .regex(/^[\w .()-]{1,64}\.exe$/i)
           .refine(
             (image) => !isProtectedImage(image),
             "Protected system, security and anti-cheat processes cannot be changed.",

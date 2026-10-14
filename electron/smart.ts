@@ -390,6 +390,8 @@ export class SmartEngine {
     return true;
   }
   private clear(obs: Observation) {
+    // First, so the channel's exit handler (fired by kill) sees a finished observation.
+    if (this.obs === obs) this.obs = null;
     for (const t of obs.timers) {
       clearInterval(t);
       clearTimeout(t);
@@ -401,7 +403,6 @@ export class SmartEngine {
     } catch {
       /* The helper is already gone. */
     }
-    if (this.obs === obs) this.obs = null;
   }
 
   private async finish(obs: Observation, config: BoosterConfig) {
