@@ -123,9 +123,11 @@ describe("catalogue browsing", () => {
     fireEvent.change(screen.getByLabelText("Search optimizations"), {
       target: { value: "" },
     });
-    fireEvent.change(screen.getByLabelText("Risk"), {
-      target: { value: "High" },
-    });
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Risk" })).getByRole("button", {
+        name: "High",
+      }),
+    );
     expect(screen.getByText("Turn off User Account Control")).toBeVisible();
     expect(screen.queryByText("Turn off transparency effects")).toBeNull();
     expect(

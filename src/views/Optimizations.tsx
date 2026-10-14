@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  Search,
   ArrowUpRight,
   SlidersHorizontal,
   ShieldAlert,
@@ -21,7 +20,17 @@ import {
   type Optimization,
 } from "../../shared/catalogue";
 import type { OperationId } from "../../shared/contracts";
-import { PageTitle, Badge, Button, Modal, Empty } from "../components/ui";
+import {
+  PageTitle,
+  Badge,
+  Button,
+  Modal,
+  Empty,
+  Panel,
+  Chips,
+  SearchField,
+  Disclosure,
+} from "../components/ui";
 import { PowerPlanDialog } from "../components/PowerPlanDialog";
 import type { ViewProps } from "../types";
 // The helper runs but a per-PC prerequisite (e.g. the High performance plan) is missing.
@@ -71,37 +80,38 @@ export function Optimizations({
   );
   const shown = categories.filter((c) => list.some((o) => o.category === c));
   const card = (o: Optimization) => (
-    <article className="optimization" key={o.id}>
-      <div className="card-top">
-        <span className={`action-icon ${o.supported ? "lime" : "neutral"}`}>
-          <SlidersHorizontal size={21} />
+    <article className="optimization opt-row" key={o.id}>
+      <span className={`action-icon ${o.supported ? "lime" : "neutral"}`}>
+        <SlidersHorizontal size={21} />
+      </span>
+      <div className="opt-main">
+        <span className="muted category">
+          {o.category} / {o.impact}
         </span>
+        <h2>{o.name}</h2>
+        <p className="muted">{o.description}</p>
+      </div>
+      <span className="badge-row opt-tags">
         <Badge
           tone={o.risk === "Low" ? "lime" : o.risk === "High" ? "red" : "amber"}
         >
           {o.risk} risk
         </Badge>
-      </div>
-      <span className="muted category">
-        {o.category} / {o.impact}
+        <Badge tone={data.capabilities.includes(o.id) ? "cyan" : "neutral"}>
+          {data.capabilities.includes(o.id)
+            ? "Available"
+            : o.supported
+              ? missingHere(data)
+                ? "Not available on this PC"
+                : "Desktop helper required"
+              : "Review only"}
+        </Badge>
+        {o.restart !== "none" && <Badge tone="amber">Restart needed</Badge>}
+        {o.tier === "advanced" && <Badge tone="amber">Advanced</Badge>}
+        {o.tier === "security" && <Badge tone="red">Lowers security</Badge>}
+        {o.admin && <Badge tone="neutral">Administrator</Badge>}
       </span>
-      <h2>{o.name}</h2>
-      <p className="muted">{o.description}</p>
-      <div className="card-bottom">
-        <span className="badge-row">
-          <Badge tone={data.capabilities.includes(o.id) ? "cyan" : "neutral"}>
-            {data.capabilities.includes(o.id)
-              ? "Available"
-              : o.supported
-                ? missingHere(data)
-                  ? "Not available on this PC"
-                  : "Desktop helper required"
-                : "Review only"}
-          </Badge>
-          {o.tier === "advanced" && <Badge tone="amber">Advanced</Badge>}
-          {o.tier === "security" && <Badge tone="red">Lowers security</Badge>}
-          {o.admin && <Badge tone="neutral">Administrator</Badge>}
-        </span>
+      <span className="opt-actions">
         {planMissing(o.id) && (
           <Button
             disabled={pending}
@@ -119,7 +129,7 @@ export function Optimizations({
         >
           <ArrowUpRight size={21} />
         </button>
-      </div>
+      </span>
     </article>
   );
   return (
@@ -142,16 +152,24 @@ export function Optimizations({
           </Button>
         }
       />
-      <div className="toolbar">
-        <div className="search">
-          <Search size={18} />
-          <input
-            aria-label="Search optimizations"
-            placeholder="Search optimizations"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+      <div className="lib-toolbar">
+        <SearchField
+          label="Search optimizations"
+          placeholder="Search optimizations"
+          value={search}
+          onChange={setSearch}
+        />
+        <Chips
+          label="Risk"
+          value={risk}
+          onChange={setRisk}
+          options={[
+            { id: "All", label: "All risks" },
+            { id: "Low", label: "Low" },
+            { id: "Moderate", label: "Moderate" },
+            { id: "High", label: "High" },
+          ]}
+        />
         <select
           aria-label="Availability"
           value={availability}
@@ -160,16 +178,6 @@ export function Optimizations({
           <option>All</option>
           <option>Available</option>
           <option>Unavailable</option>
-        </select>
-        <select
-          aria-label="Risk"
-          value={risk}
-          onChange={(e) => setRisk(e.target.value)}
-        >
-          <option value="All">All risks</option>
-          <option value="Low">Low risk</option>
-          <option value="Moderate">Moderate risk</option>
-          <option value="High">High risk</option>
         </select>
         <select
           aria-label="Level"
@@ -194,21 +202,33 @@ export function Optimizations({
           </button>
         ))}
       </div>
-      {shown.map((c) => (
-        <section key={c} aria-label={c}>
-          {category === "All" && <h2 className="group-title">{c}</h2>}
-          {c === "Security trade-offs" && (
-            <p className="notice">
-              <ShieldAlert size={18} />
-              These lower your PC&apos;s security. They are off by default, are
-              never part of a preset, and each one needs a typed confirmation.
-            </p>
-          )}
-          <div className="catalogue-grid">
-            {list.filter((o) => o.category === c).map(card)}
-          </div>
-        </section>
-      ))}
+      {shown.map((c) => {
+        const body = (
+          <>
+            {category === "All" && <h2 className="group-title">{c}</h2>}
+            {c === "Security trade-offs" && (
+              <p className="notice">
+                <ShieldAlert size={18} />
+                These lower your PC&apos;s security. They are off by default,
+                are never part of a preset, and each one needs a typed
+                confirmation.
+              </p>
+            )}
+            <div className="catalogue-grid">
+              {list.filter((o) => o.category === c).map(card)}
+            </div>
+          </>
+        );
+        return c === "Security trade-offs" ? (
+          <Panel tone="danger" key={c} aria-label={c} className="opt-security">
+            {body}
+          </Panel>
+        ) : (
+          <section key={c} aria-label={c}>
+            {body}
+          </section>
+        );
+      })}
       {!list.length && (
         <Empty
           title="No matching optimizations"
@@ -223,24 +243,25 @@ export function Optimizations({
         />
       )}
       {notOffered.length > 0 && (
-        <details className="not-offered">
-          <summary>
-            Not offered or information only ({notOffered.length})
-          </summary>
-          <ul>
-            {notOffered.map((u) => (
-              <li key={u.name}>
-                <strong>{u.name}</strong>{" "}
-                <Badge tone="neutral">
-                  {u.status === "info-only"
-                    ? "Information only"
-                    : "Not offered"}
-                </Badge>
-                <span className="muted"> {u.reason}</span>
-              </li>
-            ))}
-          </ul>
-        </details>
+        <div className="not-offered">
+          <Disclosure
+            title={`Not offered or information only (${notOffered.length})`}
+          >
+            <ul>
+              {notOffered.map((u) => (
+                <li key={u.name}>
+                  <strong>{u.name}</strong>{" "}
+                  <Badge tone="neutral">
+                    {u.status === "info-only"
+                      ? "Information only"
+                      : "Not offered"}
+                  </Badge>
+                  <span className="muted"> {u.reason}</span>
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
+        </div>
       )}
       {restarting && (
         <Modal
@@ -274,6 +295,7 @@ export function Optimizations({
           title={detail.name}
           description={detail.description}
           onClose={() => setDetail(null)}
+          variant="drawer"
         >
           <div className="dialog-section">
             <Badge
@@ -442,7 +464,7 @@ export function Presets({ data, preview, run, pending }: ViewProps) {
           </Button>
         }
       />
-      <div className="preset-list">
+      <div className="preset-list stagger">
         {all.map((p) => (
           <article key={p.id}>
             <div className="preset-mark">
