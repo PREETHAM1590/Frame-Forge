@@ -2,9 +2,10 @@ import {
   app,
   BrowserWindow,
   dialog,
-  Menu,
   ipcMain,
+  Menu,
   nativeImage,
+  Notification,
   shell,
   Tray,
   type NativeImage,
@@ -27,12 +28,22 @@ import {
   detectInstalledGames,
   scanGameFolder,
 } from "./games.js";
-import { EventSchema } from "../shared/contracts.js";
+import { EventSchema, type BoostSession } from "../shared/contracts.js";
 import { settingsTarget } from "./settingsPages.js";
 import { userDataOverride } from "./userData.js";
 import { GameIcons, maxIconBytes } from "./icons.js";
 import { UpdateManager } from "./updater.js";
 import { Analytics, validAppKey } from "./analytics.js";
+import {
+  BoostNotices,
+  closeToTray,
+  hiddenArg,
+  migrateLoginItem,
+  testHooksEnabled,
+  startsHidden,
+  trayModel,
+  trayNotice,
+} from "./background.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dev = !app.isPackaged && process.argv.includes("--dev");
 const rendererFile = path.join(here, "../../dist/index.html");
@@ -65,11 +76,19 @@ const analyticsOn = !testMode && validAppKey(appKey);
 // Must run before the app is ready. It only registers local handlers; nothing is sent until an allowlisted event passes the opt-in check.
 if (analyticsOn) void aptabaseInit(appKey!).catch(() => {});
 let window: BrowserWindow | null = null;
-let tray: Tray | null = null;
 let updates: UpdateManager | undefined;
 let updater: { autoInstallOnAppQuit: boolean } | undefined;
 let repo: Repository;
 let activeService: AppService | undefined;
+// Set from inside whenReady; the second-instance handler and the tray both open the window through it.
+let showWindow = () => {};
+let leaving = false;
+let onBoost: (session: BoostSession) => void = () => {};
+let refreshTray = () => {};
+// Memory: the renderer heap is capped modestly, and Chromium features Frameforge never uses stay off.
+app.commandLine.appendSwitch("js-flags", "--max-old-space-size=256");
+// The GPU process is what wakes an idle tray app; this dashboard renders fine in software (idle CPU ~0.7% -> ~0.05%).
+app.commandLine.appendSwitch("disable-gpu");
 // Isolated profile for tests and smoke runs; must be set before the single-instance lock.
 try {
   const userData = userDataOverride(process.env, app.isPackaged);
@@ -81,10 +100,7 @@ try {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    window?.restore();
-    window?.focus();
-  });
+  app.on("second-instance", () => showWindow());
   app.whenReady().then(async () => {
     try {
       mkdirSync(app.getPath("userData"), { recursive: true });
@@ -165,11 +181,14 @@ if (!app.requestSingleInstanceLock()) {
               );
             return;
           }
-          app.setLoginItemSettings({ openAtLogin: enabled });
+          // --hidden: the sign-in launch goes straight to the tray.
+          app.setLoginItemSettings({ openAtLogin: enabled, args: [hiddenArg] });
         },
-        // Read back so the toggle follows changes made in Task Manager > Startup.
+        // Read back so the toggle follows changes made in Task Manager > Startup (also entries from before --hidden).
         startupEnabled: () =>
-          app.isPackaged && app.getLoginItemSettings().openAtLogin,
+          app.isPackaged &&
+          (app.getLoginItemSettings({ args: [hiddenArg] }).openAtLogin ||
+            app.getLoginItemSettings().openAtLogin),
         // Fixed path, no renderer input; ShellExecute handles rstrui's own elevation.
         openSystemRestore: async () =>
           process.platform === "win32" &&
@@ -210,7 +229,11 @@ if (!app.requestSingleInstanceLock()) {
           if (result.canceled || !result.filePaths[0]) return null;
           return scanGameFolder(result.filePaths[0]);
         },
-        notify: (event) => window?.webContents.send("frameforge:event", event),
+        notify: (event) => {
+          if (window && !window.isDestroyed())
+            window.webContents.send("frameforge:event", event);
+          if (event.type === "boost") onBoost(event.session);
+        },
         pickExecutable: async (game) => {
           if (!window) return null;
           const result = await dialog.showOpenDialog(window, {
@@ -318,7 +341,9 @@ if (!app.requestSingleInstanceLock()) {
               !trustedUrl(event.senderFrame.url)
             )
               throw new Error("Untrusted renderer");
-            return { ok: true, data: await service.dispatch(method, input) };
+            const data = await service.dispatch(method, input);
+            refreshTray();
+            return { ok: true, data };
           } catch (error) {
             return {
               ok: false,
@@ -366,6 +391,9 @@ if (!app.requestSingleInstanceLock()) {
               type: "info",
               message: "Wait for the operation or cancel it before closing.",
             });
+          } else if (closeToTray(keepRunning(), leaving)) {
+            // The window is destroyed (not hidden) so only the main process stays in memory.
+            noticeOnce();
           }
         });
         window.on("closed", () => {
@@ -378,40 +406,118 @@ if (!app.requestSingleInstanceLock()) {
         if (dev) void window.loadURL(allowedUrl);
         else void window.loadFile(rendererFile);
       }
-      createWindow();
-      if (!testMode) {
-        try {
-          tray = new Tray(
-            nativeImage
-              .createFromPath(path.join(here, "../../dist/icon.png"))
-              .resize({ width: 16, height: 16 }),
-          );
-          tray.setToolTip("Frameforge");
-          const show = () => {
-            if (!window) createWindow();
-            window?.show();
-            window?.focus();
-          };
-          tray.on("click", show);
-          tray.setContextMenu(
-            Menu.buildFromTemplate([
-              { label: "Open Frameforge", click: show },
-              {
-                label: "Check for updates",
-                enabled: !!updates,
-                click: () => {
-                  show();
-                  void updates?.check();
+      const keepRunning = () => repo.state().settings.keepRunning;
+      const noticeOnce = () => {
+        if (repo.meta("background.noticed") || !Notification.isSupported())
+          return;
+        repo.setMeta("background.noticed", true);
+        new Notification({ title: "Frameforge", body: trayNotice }).show();
+      };
+      showWindow = () => {
+        if (!window) return createWindow();
+        if (window.isMinimized()) window.restore();
+        window.show();
+        window.focus();
+      };
+      // Tray: always present (a few MB); the menu is rebuilt from saved state whenever something changes.
+      const icon = nativeImage
+        .createFromPath(path.join(here, "../../dist/icon.png"))
+        .resize({ width: 16, height: 16 });
+      const tray = new Tray(icon);
+      tray.on("click", showWindow);
+      const gameName = (id: string) =>
+        repo.state().games.find((g) => g.id === id)?.name;
+      refreshTray = () => {
+        const state = repo.state();
+        const session = service.booster.active
+          ? service.booster.liveSession
+          : null;
+        const model = trayModel(
+          {
+            autoBoost: state.booster.autoBoost,
+            mode: state.booster.mode,
+            session,
+            gameName: session ? gameName(session.gameId) : undefined,
+          },
+          {
+            open: showWindow,
+            toggleAutoBoost: () => {
+              // Pushes the new state to an open window right away.
+              const current = repo.state();
+              repo.updateState({
+                ...current,
+                booster: {
+                  ...current.booster,
+                  autoBoost: !current.booster.autoBoost,
                 },
-              },
-              { type: "separator" },
-              { label: "Quit", click: () => app.quit() },
-            ]),
-          );
-        } catch {
-          /* the tray is a convenience */
-        }
-      }
+              });
+              service.booster.configure();
+              refreshTray();
+              pushState();
+            },
+            stopBoost: () =>
+              void service.booster
+                .stop()
+                .catch(() => null)
+                .finally(pushState),
+            quit: () => app.quit(),
+          },
+        );
+        tray.setToolTip(model.tooltip);
+        tray.setContextMenu(
+          Menu.buildFromTemplate(
+            model.items.map((i) =>
+              i.type === "separator"
+                ? { type: "separator" as const }
+                : {
+                    label: i.label,
+                    enabled: i.enabled,
+                    ...(i.checked !== undefined && {
+                      type: "checkbox" as const,
+                      checked: i.checked,
+                    }),
+                    click: i.click,
+                  },
+            ),
+          ),
+        );
+      };
+      const pushState = () => {
+        if (window && !window.isDestroyed())
+          window.webContents.send("frameforge:event", { type: "state" });
+      };
+      const notices = new BoostNotices();
+      onBoost = (session) => {
+        refreshTray();
+        const notice = notices.next(
+          session,
+          gameName(session.gameId) ?? "game",
+        );
+        if (
+          notice &&
+          repo.state().settings.notifications &&
+          Notification.isSupported() &&
+          !(window?.isVisible() && window.isFocused())
+        )
+          new Notification(notice).show();
+      };
+      service.booster.configure();
+      refreshTray();
+      if (app.isPackaged)
+        migrateLoginItem({
+          enabled: (hidden) =>
+            app.getLoginItemSettings(hidden ? { args: [hiddenArg] } : {})
+              .openAtLogin,
+          register: () =>
+            app.setLoginItemSettings({
+              openAtLogin: true,
+              args: [hiddenArg],
+            }),
+        });
+      if (testHooksEnabled(process.env, app.isPackaged))
+        exposeTestHooks(tray, service, repo);
+      // Signed in at boot (--hidden): no window until the tray asks for one.
+      if (!startsHidden(process.argv, keepRunning())) createWindow();
       app.on("activate", () => {
         if (!window) createWindow();
       });
@@ -423,7 +529,10 @@ if (!app.requestSingleInstanceLock()) {
       app.quit();
     }
   });
-  app.on("window-all-closed", () => app.quit());
+  // Closing the last window quits only when "Keep running in the background" is off.
+  app.on("window-all-closed", () => {
+    if (!repo || !repo.state().settings.keepRunning) app.quit();
+  });
   let quitting = false;
   app.on("before-quit", (event) => {
     // "Install when I quit" (this update or the setting); electron-updater reads the flag at quit time.
@@ -433,11 +542,56 @@ if (!app.requestSingleInstanceLock()) {
         updates?.status.installOnQuit === true;
     if (activeService?.isBusy) event.preventDefault();
     else if (activeService?.booster.active && !quitting) {
+      leaving = true;
       // Revert the live boost session before exiting; app.quit() re-enters once it has ended.
       event.preventDefault();
       quitting = true;
       void activeService.shutdown().finally(() => app.quit());
-    } else activeService?.booster.dispose();
+    } else {
+      leaving = true;
+      activeService?.booster.dispose();
+    }
   });
   app.on("will-quit", () => repo?.close());
+}
+// Only with FRAMEFORGE_TEST_MODE: lets the desktop smoke test (Playwright app.evaluate) look at the tray and add a dummy library game.
+function exposeTestHooks(tray: Tray, service: AppService, store: Repository) {
+  Object.assign(globalThis, {
+    __frameforgeTest: {
+      tray: () => !tray.isDestroyed(),
+      windows: () => BrowserWindow.getAllWindows().length,
+      active: () => service.booster.active,
+      session: () => service.booster.liveSession,
+      watching: () => service.booster.watching,
+      closeWindow: () => BrowserWindow.getAllWindows()[0]?.close(),
+      openWindow: () => showWindow(),
+      stop: () => service.booster.stop(),
+      // A custom mode with only a High priority, so the test changes nothing else on the PC.
+      addGame: (exe: string) => {
+        const state = store.state();
+        store.updateState({
+          ...state,
+          booster: {
+            ...state.booster,
+            autoBoost: true,
+            custom: { ...state.booster.custom, priority: "High" },
+          },
+          games: [
+            ...state.games,
+            {
+              id: randomUUID(),
+              name: path.basename(exe, ".exe"),
+              path: path.dirname(exe),
+              executablePath: exe,
+              source: "custom",
+              profile: "balanced",
+              boostMode: "custom",
+              notes: "",
+            },
+          ],
+        });
+        service.booster.configure();
+      },
+    },
+  });
 }

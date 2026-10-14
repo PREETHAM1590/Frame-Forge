@@ -504,7 +504,7 @@ export class AppService {
         const game = this.repo.state().games.find((g) => g.id === id);
         return (game && (await this.desktop.gameIcon?.(game))) || null;
       },
-      profile: async ({ id, profile, boostMode, notes }) => {
+      profile: async ({ id, profile, boostMode, autoBoost, notes }) => {
         guard();
         const state = this.repo.state();
         if (!state.games.some((g) => g.id === id))
@@ -513,7 +513,13 @@ export class AppService {
           ...state,
           games: state.games.map((g) =>
             g.id === id
-              ? { ...g, profile: profile ?? g.profile, boostMode, notes }
+              ? {
+                  ...g,
+                  profile: profile ?? g.profile,
+                  boostMode,
+                  autoBoost: autoBoost ?? g.autoBoost,
+                  notes,
+                }
               : g,
           ),
         });
@@ -687,6 +693,7 @@ export class AppService {
     const combined = [...library, ...added].slice(0, 500);
     const dropped = library.length + added.length - combined.length;
     this.repo.updateState({ ...state, games: combined });
+    this.booster.configure();
     if (options.bypassDismissed)
       this.undismiss(added.map((g) => g.path).filter(Boolean), "both");
     if (options.full) {
@@ -830,6 +837,8 @@ export class AppService {
     const start = performance.now();
     try {
       const result = responses[key].parse(await handler(parsed));
+      // Games, the global switch and the per-game switches all feed the background watcher.
+      this.booster.configure();
       const labels: Partial<Record<Method, string>> = {
         removeGame: "Game removed",
         profile: "Game profile saved",

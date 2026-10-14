@@ -156,6 +156,14 @@ function install(capabilities: OperationId[]) {
   } as unknown as FrameforgeApi;
   return {
     calls,
+    // The tray changed saved state while the window was open: the main process only sends {type: "state"}.
+    trayToggledAutoBoost: (autoBoost: boolean) => {
+      bootstrap.state = {
+        ...bootstrap.state,
+        booster: { ...bootstrap.state.booster, autoBoost },
+      };
+      act(() => listeners.forEach((l) => l({ type: "state" })));
+    },
     // The event is mirrored in the next bootstrap, as the real service does.
     send: (s: BoostSession) => {
       bootstrap.boost.session = s.status === "ended" ? null : s;
@@ -171,6 +179,17 @@ afterEach(() => {
   delete window.frameforge;
 });
 describe("booster state across the app", () => {
+  it("reloads saved state when the tray changes it", async () => {
+    const { trayToggledAutoBoost } = install(["mouse-precision"]);
+    render(<App />);
+    expect(
+      await screen.findByText(/auto-boost off; no active session/),
+    ).toBeVisible();
+    trayToggledAutoBoost(true);
+    expect(
+      await screen.findByText(/auto-boost on; no active session/),
+    ).toBeVisible();
+  });
   it("shows mode and session on the Dashboard and refreshes without a request", async () => {
     const { send } = install(["mouse-precision"]);
     render(<App />);

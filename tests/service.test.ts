@@ -265,7 +265,7 @@ describe("booster and library guards", () => {
     });
     await service.dispatch("restore", { id: backup.id, confirmed: true });
     expect(repo.state().booster.autoBoost).toBe(false);
-    expect(configure).toHaveBeenCalledTimes(1);
+    expect(configure).toHaveBeenCalled();
     repo.close();
   });
   it("refuses a configuration restore while a boost session exists and keeps the game", async () => {

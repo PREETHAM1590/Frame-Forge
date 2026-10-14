@@ -180,6 +180,20 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           onChange={(startup) => update({ startup })}
         />
         <Toggle
+          label="Keep running in the background"
+          description="Closing the window leaves Frameforge in the tray so auto-boost keeps watching for your games. The window is closed completely, so the tray uses very little memory. Launch at sign-in starts it there."
+          checked={settings.keepRunning}
+          disabled={pending}
+          onChange={(keepRunning) => update({ keepRunning })}
+        />
+        <Toggle
+          label="Allow admin prompts during auto-boost"
+          description="Off: auto-boost skips the steps that need administrator approval (services, standby list) so Windows never asks while you play. On: it may open the Windows prompt."
+          checked={settings.autoBoostAdmin}
+          disabled={pending}
+          onChange={(autoBoostAdmin) => update({ autoBoostAdmin })}
+        />
+        <Toggle
           label="In-app notifications"
           description="Show success notifications for completed app actions. Errors are always shown."
           checked={settings.notifications}

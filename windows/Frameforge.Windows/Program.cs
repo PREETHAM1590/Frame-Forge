@@ -10,6 +10,7 @@ if (OperatingSystem.IsWindows() && args is ["--elevated-services", ..]) Environm
 if (OperatingSystem.IsWindows() && args is ["--elevated-timer", ..]) Environment.Exit(TimerGlobalSetting.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--elevated-optimize", ..]) Environment.Exit(WindowsAdminGateway.RunChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--session"]) { SessionRunner.Host(); return; }
+if (OperatingSystem.IsWindows() && args is ["--watch"]) { GameWatcher.Host(Console.OpenStandardInput(), Console.Out, WindowsProcesses.RunningGames, GameWatcher.MatchingPids, Task.Delay); return; }
 object response;
 try
 {

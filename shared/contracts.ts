@@ -70,6 +70,10 @@ export const SettingsSchema = z
     updateAutoInstall: z.boolean().optional(),
     analytics: z.boolean().optional(),
     privacyAsked: z.boolean().optional(),
+    /** Closing the window keeps Frameforge in the tray (window destroyed) so auto-boost keeps working. */
+    keepRunning: z.boolean().default(true),
+    /** Let auto-boost open a Windows administrator prompt in the background. Off: those steps are skipped. */
+    autoBoostAdmin: z.boolean().default(false),
   })
   .strict();
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -108,6 +112,8 @@ export const GameSchema = z
         "custom",
       ])
       .default("global"),
+    /** Auto-boost starts this game's mode when it launches (the global Auto-boost switch must be on too). Missing means on. */
+    autoBoost: z.boolean().optional(),
   })
   .strict();
 export type Game = z.infer<typeof GameSchema>;
@@ -336,6 +342,8 @@ export const defaultState: AppState = {
     diagnostics: false,
     autoScan: true,
     autoScanHours: 24,
+    keepRunning: true,
+    autoBoostAdmin: false,
   },
   games: [],
   presets: [],
@@ -855,6 +863,9 @@ export const GameIconSchema = z
   .startsWith("data:image/png;base64,")
   .max(300_000)
   .nullable();
+export const RunningGamesSchema = z.array(
+  z.object({ gameId: Id, target: ProcessTargetSchema }).strict(),
+);
 export const requests = {
   bootstrap: Empty,
   refresh: Empty,
@@ -963,6 +974,7 @@ export const requests = {
       id: Id,
       profile: GameSchema.shape.profile.optional(),
       boostMode: GameSchema.shape.boostMode,
+      autoBoost: z.boolean().optional(),
       notes: GameSchema.shape.notes,
     })
     .strict(),
@@ -1048,6 +1060,8 @@ export const EventSchema = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("boost"), session: BoostSessionSchema }).strict(),
   z.object({ type: z.literal("update"), status: UpdateStatusSchema }).strict(),
+  // Saved state changed outside the window (tray menu): reload it.
+  z.object({ type: z.literal("state") }).strict(),
   // A whole-PC game scan began or ended; `added` is the number of new library games.
   z
     .object({
@@ -1169,9 +1183,7 @@ export const HelperResult = z
     lastPoint: RestorePointSchema.optional(),
     frequencyRestored: z.boolean().optional(),
     resultPath: z.string().max(2048).optional(),
-    runningGames: z
-      .array(z.object({ gameId: Id, target: ProcessTargetSchema }).strict())
-      .optional(),
+    runningGames: RunningGamesSchema.optional(),
     backgroundProcesses: z.array(RunningProcessSchema).optional(),
     capabilities: BoostCapabilitiesSchema.optional(),
     network: NetworkCheckSchema.optional(),

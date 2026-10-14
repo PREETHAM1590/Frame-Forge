@@ -1,6 +1,7 @@
 import { _electron as electron } from "@playwright/test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 const executable = process.env.FRAMEFORGE_EXECUTABLE;
@@ -15,6 +16,7 @@ const app = await electron.launch({
     ...process.env,
     FRAMEFORGE_USER_DATA: userData,
     FRAMEFORGE_TEST_MODE: "1",
+    FRAMEFORGE_TEST_HOOKS: "1",
   },
   timeout: 30000,
 });
@@ -107,7 +109,112 @@ try {
   console.log(
     "Electron smoke passed: real Windows discovery, sandboxed preload, no renderer Node, invalid request rejected.",
   );
+  // Closing the window destroys it (renderer freed) and keeps the app in the tray; the tray can bring it back.
+  const hooks = (fn, arg) =>
+    app.evaluate((_e, { fn, arg }) => globalThis.__frameforgeTest[fn](arg), {
+      fn,
+      arg,
+    });
+  await hooks("closeWindow");
+  await until(async () => (await hooks("windows")) === 0, "window destroyed");
+  assert.equal(await hooks("tray"), true, "tray survives the closed window");
+  await hooks("openWindow");
+  await until(async () => (await hooks("windows")) === 1, "window reopened");
+  console.log(
+    "Electron smoke passed: close destroys the window, tray keeps running, reopen works.",
+  );
 } finally {
   await app.close();
   await rm(userData, { recursive: true, force: true });
+}
+
+// Background mode: --hidden starts with no window, and auto-boost works live on a dummy "game".
+const backgroundData = await mkdtemp(path.join(os.tmpdir(), "frameforge-bg-"));
+const hidden = await electron.launch({
+  executablePath:
+    executable ?? path.resolve("node_modules/electron/dist/electron.exe"),
+  args: executable ? ["--hidden"] : [".", "--hidden"],
+  env: {
+    ...process.env,
+    FRAMEFORGE_USER_DATA: backgroundData,
+    FRAMEFORGE_TEST_MODE: "1",
+    FRAMEFORGE_TEST_HOOKS: "1",
+  },
+  timeout: 30000,
+});
+const ping = path.join(process.env.SystemRoot, "System32", "PING.EXE");
+const dummies = [];
+const priority = (pid) =>
+  execFileSync(
+    "powershell",
+    ["-NoProfile", "-Command", `(Get-Process -Id ${pid}).PriorityClass`],
+    { encoding: "utf8" },
+  ).trim();
+try {
+  const call = (fn, arg) =>
+    hidden.evaluate((_e, { fn, arg }) => globalThis.__frameforgeTest[fn](arg), {
+      fn,
+      arg,
+    });
+  await until(
+    () => hidden.evaluate(() => !!globalThis.__frameforgeTest),
+    "app ready",
+  );
+  assert.equal(await call("windows"), 0, "--hidden opens no window");
+  assert.equal(await call("tray"), true, "tray icon exists");
+  assert.equal(
+    await call("watching"),
+    false,
+    "no watcher without library games",
+  );
+  const launch = () => {
+    const child = spawn(ping, ["-t", "127.0.0.1"], { stdio: "ignore" });
+    dummies.push(child);
+    return child;
+  };
+  // PING.EXE stands in for a game: add it to the library; auto-boost is on, and the window is gone.
+  const first = launch();
+  await call("addGame", ping);
+  assert.equal(await call("watching"), true, "watcher runs once a game exists");
+  await until(
+    async () => (await call("active")) === true,
+    "auto-boost started with no window",
+    30000,
+  );
+  assert.equal(priority(first.pid), "High", "boost raised the game priority");
+  assert.equal(await call("windows"), 0, "still no window while boosting");
+  // Stop restores the live process.
+  await call("stop");
+  await until(async () => (await call("active")) === false, "boost stopped");
+  assert.equal(priority(first.pid), "Normal", "stop restored the priority");
+  // A new launch starts a new session; the game exiting ends it by itself.
+  first.kill();
+  const second = launch();
+  await until(
+    async () => (await call("active")) === true,
+    "auto-boost started for a second launch",
+    30000,
+  );
+  assert.equal(priority(second.pid), "High");
+  second.kill();
+  await until(
+    async () => (await call("active")) === false,
+    "boost ended when the game exited",
+    30000,
+  );
+  console.log(
+    "Electron smoke passed: --hidden has no window and a tray; auto-boost started, restored and ended live without a window.",
+  );
+} finally {
+  for (const d of dummies) d.kill();
+  await hidden.close();
+  await rm(backgroundData, { recursive: true, force: true });
+}
+async function until(check, what, ms = 15000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (await check()) return;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  throw new Error(`Timed out waiting for: ${what}`);
 }

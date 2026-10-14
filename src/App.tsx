@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, lazy, useState, useEffect, useCallback } from "react";
 import {
   LayoutDashboard,
   SlidersHorizontal,
@@ -31,12 +31,28 @@ import {
 import type { RailItem } from "./components/ui";
 import { clearGameIcons } from "./components/GameIcon";
 import { Dashboard } from "./views/Dashboard";
-import { Optimizations, Presets } from "./views/Optimizations";
 import { ApplyFlowDialog } from "./views/optimizations/ApplyFlowDialog";
 import { useApplyFlow } from "./views/optimizations/useApplyFlow";
-import { Games, GameMode } from "./views/Games";
 import { Backups, ActivityLog, restoreRecoveryRow } from "./views/Recovery";
-import { System, Settings } from "./views/System";
+// Heavy pages load on first visit, so the renderer only holds what is on screen (Dashboard is the landing page).
+const Optimizations = lazy(() =>
+  import("./views/Optimizations").then((m) => ({ default: m.Optimizations })),
+);
+const Presets = lazy(() =>
+  import("./views/Optimizations").then((m) => ({ default: m.Presets })),
+);
+const Games = lazy(() =>
+  import("./views/Games").then((m) => ({ default: m.Games })),
+);
+const GameMode = lazy(() =>
+  import("./views/Games").then((m) => ({ default: m.GameMode })),
+);
+const System = lazy(() =>
+  import("./views/System").then((m) => ({ default: m.System })),
+);
+const Settings = lazy(() =>
+  import("./views/System").then((m) => ({ default: m.Settings })),
+);
 // These can sit behind a Windows administrator prompt for minutes, so they must not lock the rest of the app.
 const elevatedMethods: ReadonlySet<Method> = new Set([
   "createRestorePoint",
@@ -127,6 +143,12 @@ export default function App() {
               .then(setData)
               .catch(() => undefined);
           }
+          return;
+        }
+        if (event.type === "state") {
+          void request("bootstrap", {})
+            .then(setData)
+            .catch(() => undefined);
           return;
         }
         if (event.type !== "boost") return;
@@ -371,7 +393,11 @@ export default function App() {
         )}
         <UpdateCard />
         <main id="main-content" tabIndex={-1}>
-          <PageTransition pageKey={page}>{views[page]}</PageTransition>
+          <PageTransition pageKey={page}>
+            <Suspense fallback={<Busy label="Loading" />}>
+              {views[page]}
+            </Suspense>
+          </PageTransition>
         </main>
         <footer>
           <span>FRAMEFORGE</span>

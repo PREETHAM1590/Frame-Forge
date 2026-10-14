@@ -171,6 +171,7 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
                 ...g,
                 profile: data.profile ?? g.profile,
                 boostMode: data.boostMode,
+                autoBoost: data.autoBoost ?? g.autoBoost,
                 notes: data.notes,
               }
             : g,
