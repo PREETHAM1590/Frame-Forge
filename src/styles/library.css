@@ -34,12 +34,11 @@
 .game-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 1px;
-  background: var(--c-border);
-  border: var(--bw) solid var(--c-border);
+  gap: var(--sp-3);
 }
 .game-tile {
   background: var(--c-cell);
+  border: var(--bw) solid var(--c-border);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -117,4 +116,30 @@
 }
 .search:focus-within {
   border-color: var(--c-primary);
+}
+.removed-games li > div {
+  min-width: 0;
+}
+.removed-games li .setting-path {
+  padding: 0;
+  border: 0;
+  background: none;
+  margin: var(--sp-1) 0 0;
+  font-family: var(--font-mono);
+  color: var(--c-dim);
+}
+.removed-games li:last-child {
+  border-bottom: 0;
+}
+.drawer .game-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin: var(--sp-4) 0 var(--sp-3);
+}
+.drawer .game-heading .setting-path {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
 }
