@@ -41,6 +41,7 @@ export interface TrayActions {
   toggleAutoBoost(): void;
   stopBoost(): void;
   checkUpdates?(): void;
+  toggleOverlay?(): void;
   quit(): void;
 }
 const live = (s: BoostSession | null) =>
@@ -51,6 +52,8 @@ export function trayModel(
     mode: BoostMode;
     session: BoostSession | null;
     gameName?: string;
+    /** Is the in-game overlay on screen right now? */
+    overlay?: boolean;
   },
   actions: TrayActions,
 ): { tooltip: string; items: TrayItem[] } {
@@ -75,6 +78,12 @@ export function trayModel(
         label: "Stop boost",
         enabled: running?.status === "active",
         click: actions.stopBoost,
+      },
+      {
+        label: "Toggle overlay",
+        enabled: !!actions.toggleOverlay,
+        checked: input.overlay === true,
+        click: actions.toggleOverlay,
       },
       { type: "separator" },
       {

@@ -6,6 +6,7 @@ import {
   Menu,
   nativeImage,
   Notification,
+  screen,
   shell,
   Tray,
   type NativeImage,
@@ -28,7 +29,16 @@ import {
   detectInstalledGames,
   scanGameFolder,
 } from "./games.js";
-import { EventSchema, type BoostSession } from "../shared/contracts.js";
+import {
+  EventSchema,
+  type AppEvent,
+  type BoostSession,
+  type FpsStatus,
+  type MonitorSample,
+} from "../shared/contracts.js";
+import { OverlayManager } from "./overlay.js";
+import { createOverlayWindow, overlayInfo } from "./overlayWindow.js";
+import { MonitorService } from "./monitor.js";
 import { settingsTarget } from "./settingsPages.js";
 import { userDataOverride } from "./userData.js";
 import { GameIcons, maxIconBytes } from "./icons.js";
@@ -85,6 +95,12 @@ let showWindow = () => {};
 let leaving = false;
 let onBoost: (session: BoostSession) => void = () => {};
 let refreshTray = () => {};
+// In-game overlay: re-evaluated after every request, boost change and FPS update.
+let syncOverlay = () => {};
+let disposeOverlay = () => {};
+/** Toggle the in-game overlay by hand (tray item; a hotkey can call it too). */
+export let toggleOverlay = () => {};
+let lastFps: FpsStatus | null = null;
 // Memory: the renderer heap is capped modestly, and Chromium features Frameforge never uses stay off.
 app.commandLine.appendSwitch("js-flags", "--max-old-space-size=256");
 // The GPU process is what wakes an idle tray app; this dashboard renders fine in software (idle CPU ~0.7% -> ~0.05%).
@@ -233,6 +249,10 @@ if (!app.requestSingleInstanceLock()) {
           if (window && !window.isDestroyed())
             window.webContents.send("frameforge:event", event);
           if (event.type === "boost") onBoost(event.session);
+          if (event.type === "fps") {
+            lastFps = event.status;
+            syncOverlay();
+          }
         },
         pickExecutable: async (game) => {
           if (!window) return null;
@@ -343,6 +363,7 @@ if (!app.requestSingleInstanceLock()) {
               throw new Error("Untrusted renderer");
             const data = await service.dispatch(method, input);
             refreshTray();
+            syncOverlay();
             return { ok: true, data };
           } catch (error) {
             return {
@@ -405,6 +426,8 @@ if (!app.requestSingleInstanceLock()) {
           // No window, no live counters.
           service.monitor.stop();
           void service.fps.stop().catch(() => null);
+          // The overlay must not keep a quit-on-close app alive.
+          if (!keepRunning()) disposeOverlay();
           window = null;
         });
         // Background scan once the UI is up; due-ness (first launch / interval / setting) is decided in the service.
@@ -435,6 +458,46 @@ if (!app.requestSingleInstanceLock()) {
       tray.on("click", showWindow);
       const gameName = (id: string) =>
         repo.state().games.find((g) => g.id === id)?.name;
+      // Overlay counters are their own helper process, separate from the Monitor page's, and run only while the overlay is on screen.
+      let sample: MonitorSample | null = null;
+      const counters = new MonitorService(platform, (event: AppEvent) => {
+        if (event.type === "monitor") sample = event.sample;
+      });
+      const overlayPage = dev
+        ? { url: `${allowedUrl}overlay.html` }
+        : { file: path.join(here, "../../dist/overlay.html") };
+      const overlay = new OverlayManager({
+        createWindow: (rect, scale) =>
+          createOverlayWindow(
+            { preload: path.join(here, "overlayPreload.cjs"), ...overlayPage },
+            rect,
+            scale,
+          ),
+        // The game owns the cursor while playing, so the display under it is the game's.
+        gameDisplay: () =>
+          screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds,
+        settings: () => repo.state().settings,
+        boostLive: () => service.booster.active,
+        fps: () => lastFps,
+        startCapture: () => {
+          const id = service.booster.liveSession?.gameId;
+          if (id) void service.fps.start(id).catch(() => null);
+        },
+        counters: {
+          start: () => void counters.start(),
+          stop: () => {
+            counters.stop();
+            sample = null;
+          },
+          last: () => sample,
+        },
+      });
+      syncOverlay = () => overlay.sync();
+      disposeOverlay = () => overlay.dispose();
+      toggleOverlay = () => {
+        overlay.toggle();
+        refreshTray();
+      };
       refreshTray = () => {
         const state = repo.state();
         const session = service.booster.active
@@ -446,9 +509,11 @@ if (!app.requestSingleInstanceLock()) {
             mode: state.booster.mode,
             session,
             gameName: session ? gameName(session.gameId) : undefined,
+            overlay: overlay.shown,
           },
           {
             open: showWindow,
+            toggleOverlay: () => toggleOverlay(),
             toggleAutoBoost: () => {
               // Pushes the new state to an open window right away.
               const current = repo.state();
@@ -503,6 +568,7 @@ if (!app.requestSingleInstanceLock()) {
       const notices = new BoostNotices();
       onBoost = (session) => {
         refreshTray();
+        syncOverlay();
         const notice = notices.next(
           session,
           gameName(session.gameId) ?? "game",
@@ -529,7 +595,7 @@ if (!app.requestSingleInstanceLock()) {
             }),
         });
       if (testHooksEnabled(process.env, app.isPackaged))
-        exposeTestHooks(tray, service, repo);
+        exposeTestHooks(tray, service, repo, overlay);
       // Signed in at boot (--hidden): no window until the tray asks for one.
       if (!startsHidden(process.argv, keepRunning())) createWindow();
       app.on("activate", () => {
@@ -568,16 +634,65 @@ if (!app.requestSingleInstanceLock()) {
   app.on("will-quit", () => repo?.close());
 }
 // Only with FRAMEFORGE_TEST_MODE: lets the desktop smoke test (Playwright app.evaluate) look at the tray and add a dummy library game.
-function exposeTestHooks(tray: Tray, service: AppService, store: Repository) {
+function exposeTestHooks(
+  tray: Tray,
+  service: AppService,
+  store: Repository,
+  overlay: OverlayManager,
+) {
   Object.assign(globalThis, {
     __frameforgeTest: {
+      overlayOn: (enabled: boolean) => {
+        const state = store.state();
+        store.updateState({
+          ...state,
+          settings: {
+            ...state.settings,
+            overlay: { ...state.settings.overlay, enabled } as never,
+          },
+        });
+        overlay.sync();
+      },
+      toggleOverlay: () => overlay.toggle(),
+      // Feeds the overlay a capture-like status so a screenshot can show the FPS layout.
+      fakeFps: (fps: number) => {
+        lastFps = {
+          state: "capturing",
+          fps,
+          low1Fps: Math.round(fps * 0.62),
+          frameTimes: Array.from(
+            { length: 60 },
+            (_, i) => 1000 / fps + (i % 9 === 0 ? 6 : Math.sin(i) * 1.5),
+          ),
+        } as FpsStatus;
+        overlay.sync();
+      },
+      overlay: () => {
+        const win = BrowserWindow.getAllWindows().find((w) =>
+          overlayInfo.has(w),
+        );
+        return win
+          ? {
+              alwaysOnTop: win.isAlwaysOnTop(),
+              focusable: win.isFocusable(),
+              ignoreMouse: overlayInfo.get(win)!.ignoreMouse,
+              level: overlayInfo.get(win)!.alwaysOnTopLevel,
+              visible: win.isVisible(),
+              bounds: win.getBounds(),
+            }
+          : null;
+      },
       tray: () => !tray.isDestroyed(),
-      windows: () => BrowserWindow.getAllWindows().length,
+      windows: () =>
+        BrowserWindow.getAllWindows().filter((w) => !overlayInfo.has(w)).length,
       active: () => service.booster.active,
       session: () => service.booster.liveSession,
       watching: () => service.booster.watching,
       monitoring: () => service.monitor.active,
-      closeWindow: () => BrowserWindow.getAllWindows()[0]?.close(),
+      closeWindow: () =>
+        BrowserWindow.getAllWindows()
+          .find((w) => !overlayInfo.has(w))
+          ?.close(),
       openWindow: () => showWindow(),
       stop: () => service.booster.stop(),
       // A custom mode with only a High priority, so the test changes nothing else on the PC.

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OverlayConfigSchema } from "./overlay.js";
 
 export const OperationId = z.enum([
   "mouse-precision",
@@ -84,6 +85,8 @@ export const SettingsSchema = z
     keepRunning: z.boolean().default(true),
     /** Let auto-boost open a Windows administrator prompt in the background. Off: those steps are skipped. */
     autoBoostAdmin: z.boolean().default(false),
+    /** In-game overlay (Settings > Overlay). Missing means defaults, off. */
+    overlay: OverlayConfigSchema.optional(),
   })
   .strict();
 export type Settings = z.infer<typeof SettingsSchema>;
