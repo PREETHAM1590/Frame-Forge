@@ -1,11 +1,11 @@
 {
   "name": "frameforge",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
   "main": "dist-electron/electron/main.js",
   "description": "Local, reversible Windows gaming configuration utility",
-  "author": "Frameforge contributors",
+  "author": "PREETHAM1590",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "dev:desktop": "npm run windows:ensure && npm run build:electron && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
@@ -69,7 +69,7 @@
   },
   "build": {
     "electronDist": "node_modules/electron/dist",
-    "appId": "local.frameforge.desktop",
+    "appId": "io.github.preetham1590.frameforge",
     "productName": "Frameforge",
     "directories": {
       "output": "release"
@@ -86,13 +86,48 @@
       }
     ],
     "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": false
-    }
+      "createStartMenuShortcut": true,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "Frameforge",
+      "uninstallDisplayName": "Frameforge"
+    },
+    "copyright": "Copyright (c) 2026 PREETHAM1590",
+    "artifactName": "Frameforge-Setup-${version}.exe",
+    "extraFiles": [
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      }
+    ]
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/PREETHAM1590/Frame-Forge",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PREETHAM1590/Frame-Forge.git"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }

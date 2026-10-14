@@ -58,6 +58,10 @@ try {
     "desktop",
   );
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
+  assert.equal(
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu() === null),
+    true,
+  );
   const security = await app.evaluate(({ BrowserWindow }) => {
     const p =
       BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();

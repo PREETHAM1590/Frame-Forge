@@ -4,10 +4,10 @@ Date: 2026-10-13. Scope: what game boosters and gamer communities do to speed up
 
 ## Method and honesty notes
 
-- Fetched or searched this session (full list under Sources): Hone's Game Mode research page, Microsoft's Quality of Service doc, the PresentMon repo, the LagoFast homepage, and web searches on AMD X3D/Game Bar, VBS cost, and windowed-game optimizations.
+- Fetched or searched this session (full list under Sources): a public Game Mode research article, Microsoft's Quality of Service doc, the PresentMon repo, the LagoFast homepage, and web searches on AMD X3D/Game Bar, VBS cost, and windowed-game optimizations.
 - Everything else (registry value names, powercfg GUIDs, API names, service names) comes from the author's prior knowledge of Windows internals. Those items are marked `[verify]` where a typo would be costly. Before shipping, check each one on a real Win10 and Win11 machine. The `[verify]` marker is a to-do for the implementer, not a claim that the thing is doubtful.
 - Reddit, Blur Busters and guru3d were not fetched. Statements about community consensus are summaries of well-known threads, labelled "anecdotal". No text was copied from any source.
-- Hone's published numbers (+24 to +28% average FPS in VALORANT on a 9800X3D) came from a tuned, debloated machine with every option enabled at once. That test shows no per-setting attribution and has no repeat-run variance. Treat it as vendor marketing, not as proof of effect size. Our own PresentMon A/B feature (section 3.5) exists to avoid this problem.
+- One vendor's published numbers (+24 to +28% average FPS in one title on a 9800X3D) came from a tuned, debloated machine with every option enabled at once. That test shows no per-setting attribution and has no repeat-run variance. Treat it as vendor marketing, not as proof of effect size. Our own PresentMon A/B feature (section 3.5) exists to avoid this problem.
 
 ## 1. Candidate feature table
 
@@ -211,7 +211,7 @@ Guidance:
 - Typical invocation (v2 console; verify flags against the version you bundle): `PresentMon.exe --process_name game.exe --output_file run1.csv --timed 60 --terminate_after_timed --stop_existing_session --no_console_stats`. `[verify]` on `--delay`, `--stop_existing_session` and column names; v1 used `msBetweenPresents`, v2 uses `FrameTime`.
 - From the CSV compute: average FPS = 1000 / mean(frame time ms); 1% low and 0.1% low = FPS at the 99th and 99.9th percentile of frame time (pick one definition and say which); also show frame-time standard deviation and stutter count (frames above 2x median).
 - Method for credible A/B: same save-game or scripted scene, 30 s warm-up, at least 3 runs per condition, interleave (A B A B), report mean and run-to-run spread. If the difference is smaller than the spread, say "no measurable change". Also record CPU temp and background load; thermal throttling after repeated runs ruins A/B.
-- Hone's own results (+24 to +28% average) mixed all options at once. The product should instead let users benchmark each toggle, which turns the research table's "anecdotal" entries into a per-machine "measured" verdict.
+- Vendor results (+24 to +28% average) mixed all options at once. The product should instead let users benchmark each toggle, which turns the research table's "anecdotal" entries into a per-machine "measured" verdict.
 
 ## 4. Game icon extraction
 
@@ -236,7 +236,7 @@ Priority order per game, each falling back to the next:
 
 Fetched or searched in this session:
 
-- Hone Game Mode research: https://hone.gg/research/how-game-mode-improves-performance
+- Public Game Mode research article (vendor marketing; numbers not reused)
 - Microsoft Win32 Quality of Service / EcoQoS: https://learn.microsoft.com/en-us/windows/win32/procthread/quality-of-service
 - PresentMon repo (MIT, access rules): https://github.com/GameTechDev/PresentMon
 - LagoFast homepage (marketing claims only): https://www.lagofast.com/en/
@@ -244,4 +244,4 @@ Fetched or searched in this session:
 - VBS/HVCI cost: https://www.tomshardware.com/news/windows-11-gaming-benchmarks-performance-vbs-hvci-security , https://www.pcworld.com/article/541137/tested-does-windows-11-nuke-gaming-performance.html , https://landian.news/article/3401.html
 - Windowed-game optimizations: https://support.microsoft.com/en-us/topic/3f006843-2c7e-4ed0-9a5e-f9389e535952 , https://devblogs.microsoft.com/directx/updates-in-graphics-and-gaming/ , registry detail from third party https://winhance.net/docs/features/optimizations/gaming-performance.html
 
-Not fetched, to consult when verifying `[verify]` items: https://hone.gg/comparison/gearup, https://hone.gg/comparison/lagofast, https://www.gearupbooster.com/, Microsoft docs for `SetProcessInformation`, `GetLogicalProcessorInformationEx`, `SetProcessDefaultCpuSets`, power-setting GUIDs (https://learn.microsoft.com/en-us/windows-hardware/customize/power-settings/configure-processor-power-management-options), Intel Thread Director guidance, Blur Busters and guru3d threads, and r/OptimizedGaming.
+Not fetched, to consult when verifying `[verify]` items: https://www.gearupbooster.com/, Microsoft docs for `SetProcessInformation`, `GetLogicalProcessorInformationEx`, `SetProcessDefaultCpuSets`, power-setting GUIDs (https://learn.microsoft.com/en-us/windows-hardware/customize/power-settings/configure-processor-power-management-options), Intel Thread Director guidance, Blur Busters and guru3d threads, and r/OptimizedGaming.

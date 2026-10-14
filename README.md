@@ -1,13 +1,24 @@
 # Frameforge
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![CI](https://github.com/PREETHAM1590/Frame-Forge/actions/workflows/ci.yml/badge.svg)](https://github.com/PREETHAM1590/Frame-Forge/actions/workflows/ci.yml)
+
 An original, local Windows gaming configuration application built with React, TypeScript, Vite, Tailwind, Radix, Electron and a C#/.NET Windows helper. Core desktop features work offline. Frameforge makes no FPS, latency or performance-gain claims.
 
 ## Download
 
-Get the Windows installer (and the SHA-256 checksums) from the [Releases page](https://github.com/PREETHAM1590/Frame-Forge/releases). Requires Windows 10 or 11, x64.
+Get `Frameforge-Setup-<version>.exe` and `SHA256SUMS.txt` from the [Releases page](https://github.com/PREETHAM1590/Frame-Forge/releases). Requires Windows 10 or 11, x64. Releases are built by GitHub Actions from the tagged source.
 
-- The installer and `Frameforge.Windows.exe` helper are **not code-signed**, so Windows SmartScreen may warn on first run. Choose "More info", then "Run anyway", or compare the file against `SHA256SUMS.txt` first.
+- **Per-user install, no administrator needed.** The installer puts Frameforge in `%LOCALAPPDATA%\Programs\Frameforge`, adds Start menu and desktop shortcuts, and registers an uninstaller under Settings, Apps.
+- **SmartScreen.** Until the installer is code-signed, Windows SmartScreen may warn on first run. Choose "More info", then "Run anyway".
+- **Verify the download** (compare with the line in `SHA256SUMS.txt`):
+
+  ```powershell
+  Get-FileHash .\Frameforge-Setup-1.2.1.exe -Algorithm SHA256
+  ```
+
 - Pausing background services during a boost, and creating or listing Windows restore points, need administrator approval. Windows shows a UAC prompt for each of those actions. Declining the prompt changes nothing.
+
+Code signing policy: [docs/CODE_SIGNING_POLICY.md](docs/CODE_SIGNING_POLICY.md). License: [MIT](LICENSE). Third-party components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Known limitations
 
@@ -38,8 +49,8 @@ For development, `npm run dev:desktop` opens Electron against Vite on `http://12
 The npm scripts call `dotnet` from PATH. In this workspace the SDK is in `.tools\dotnet` (SDK 8.0.425). Either put it on PATH for the session, or call it directly:
 
 ```powershell
-$env:PATH = "D:\Hone\.tools\dotnet;$env:PATH"
-$env:DOTNET_ROOT = "D:\Hone\.tools\dotnet"
+$env:PATH = "<repo>\.tools\dotnet;$env:PATH"
+$env:DOTNET_ROOT = "<repo>\.tools\dotnet"
 npm run windows:test
 
 .\.tools\dotnet\dotnet.exe publish windows/Frameforge.Windows/Frameforge.Windows.csproj -c Release -r win-x64 --self-contained true -o windows/publish

@@ -9,7 +9,7 @@ Each task stands alone. Read **Global Constraints** first, then only your task. 
 
 ## Research notes (game-mode mechanisms, own summary)
 
-Source: hone.gg research article on game mode. These notes are paraphrased; nothing is copied.
+Source: a public game-mode research article. These notes are paraphrased; nothing is copied.
 
 - Uses selectable profiles: a mild one, an aggressive one, and a custom one where each action is chosen separately.
 - Raises the game's CPU priority and lowers the priority of background apps. This only helps when there is CPU contention.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.1
+
+- **MIT license.** Frameforge is now open source under the MIT license, with `THIRD_PARTY_NOTICES.md` listing bundled components (including the OFL-licensed fonts).
+- **Per-user installer, no administrator needed.** The installer installs to `%LOCALAPPDATA%\Programs\Frameforge` with Start menu and desktop shortcuts and a proper uninstaller, and never asks for elevation. Administrator prompts still appear only for the optional actions that need them.
+- **Releases are built by GitHub Actions** with a published `SHA256SUMS.txt`, so every download can be verified.
+- **Signing-ready.** The release workflow can sign the installer through SignPath Foundation once the project is approved; see `docs/CODE_SIGNING_POLICY.md`. Until then the installer is unsigned.
+- **Removed the default menu bar** (File, Edit, View, Window) from the app window.
+- **Docs.** Removed third-party reference material from the repository and reworded research notes neutrally.
+
 ## 1.2.0
 
 - **Game Enhancers on Game Mode.** A toggle list of enhancers (Power Plan, CPU priority, CPU affinity / smart cores, GPU Priority, core parking, power throttling, Game Bar capture, timer resolution, background apps, pause services, standby purge) that works on every mode, with per-enhancer overrides and a reset to the mode's defaults.

@@ -16,3 +16,7 @@ out/
 .serena/
 
 .claude/
+
+# third-party material kept locally only
+docs/research/hone-game-mode-reference.png
+docs/research/hone-feature-catalog.txt

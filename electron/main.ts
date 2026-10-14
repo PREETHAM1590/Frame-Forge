@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  Menu,
   ipcMain,
   nativeImage,
   shell,
@@ -226,7 +227,9 @@ if (!app.requestSingleInstanceLock()) {
         },
       );
       function createWindow() {
+        Menu.setApplicationMenu(null);
         window = new BrowserWindow({
+          autoHideMenuBar: true,
           width: 1360,
           height: 920,
           minWidth: 720,

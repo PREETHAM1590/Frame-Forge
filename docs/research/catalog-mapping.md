@@ -1,6 +1,6 @@
-# Hone feature catalog -> Frameforge mapping
+# Game-booster feature catalog -> Frameforge mapping
 
-Source list: `hone-feature-catalog.txt` (87 items). Evidence grades: **A** documented by Microsoft (or NVIDIA for the DLSS key), **B** value present on the reference PC (Windows 11 Pro 26100, RTX 4050 laptop) and it is the setting the Windows UI itself writes, **C** community only.
+Source list: a local, untracked list of 87 commonly offered game-booster features. Evidence grades: **A** documented by Microsoft (or NVIDIA for the DLSS key), **B** value present on the reference PC (Windows 11 Pro 26100, RTX 4050 laptop) and it is the setting the Windows UI itself writes, **C** community only.
 Anything graded C or not confirmable is `[unverified]` and is **not applyable**.
 
 Classes: `have` = already exists, `impl` = implement now (HKCU, no admin), `adv` = implement as Advanced opt-in (admin: HKLM / bcdedit / powercfg), `sec` = implement in the separate "Security trade-offs" category (user override of H4, extra guardrails below), `info` = information only, `no` = not offered, `dup` = duplicate of another row.
