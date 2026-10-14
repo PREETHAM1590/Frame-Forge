@@ -7,7 +7,6 @@ import {
   catalogue,
   presets,
   securityIds,
-  unavailable,
   upsertPreset,
 } from "../shared/catalogue";
 import { OperationId } from "../shared/contracts";
@@ -22,18 +21,24 @@ const table = readFileSync(
 );
 const rows = table
   .split("\n")
-  .filter((l) => /^\s+(D|S|B|new)\("[a-z0-9-]+"/.test(l))
+  .filter((l) => /^\s+(D|S|B|Sv|Ss|Nv|new)\("[a-z0-9-]+"/.test(l))
   .map((l) => ({
     id: /\("([a-z0-9-]+)"/.exec(l)![1]!,
     // Constants in the table that hold machine paths count as machine settings.
     machine:
-      /HKLM|WinPolicy|WuPolicy|ExplorerPolicy|\bEdge\b|\bChrome\b|\bMm\b|\bDg\b|Defender|\bB\(/.test(
+      /HKLM|WinPolicy|WuPolicy|ExplorerPolicy|\bEdge\b|\bChrome\b|\bMm\b|\bDg\b|Defender|\bB\(|\bSv\(|\bSs\(|PvCap/.test(
         l,
       ),
     boot: /\bB\(/.test(l),
   }))
   .filter((r) => r.id !== "game-mode");
-const csIds = [...new Set(rows.map((r) => r.id))];
+// Operations whose settings are found on this PC at capture time have no fixed rows; the table names them.
+const dynamicIds = [
+  ...(/Dynamic = \[(.*?)\];/s.exec(table)?.[1] ?? "").matchAll(
+    /"([a-z0-9-]+)"/g,
+  ),
+].map((m) => m[1]!);
+const csIds = [...new Set([...rows.map((r) => r.id), ...dynamicIds])];
 
 describe("optimization catalogue", () => {
   it("has exactly one complete entry for every operation id", () => {
@@ -56,7 +61,12 @@ describe("optimization catalogue", () => {
       applicableIds.filter((id) => id !== "power-plan").sort(),
     );
     expect(
-      [...new Set(rows.filter((r) => r.machine).map((r) => r.id))].sort(),
+      [
+        ...new Set([
+          ...rows.filter((r) => r.machine).map((r) => r.id),
+          ...dynamicIds,
+        ]),
+      ].sort(),
     ).toEqual([...adminIds].sort());
     expect(
       [...new Set(rows.filter((r) => r.boot).map((r) => r.id))].sort(),
@@ -100,12 +110,15 @@ describe("optimization catalogue", () => {
       ),
     ).toThrow(/never part of a preset/);
   });
-  it("lists what is not offered with a reason", () => {
-    expect(unavailable.length).toBeGreaterThan(20);
-    for (const u of unavailable) expect(u.reason.length).toBeGreaterThan(10);
-    expect(unavailable.map((u) => u.name)).toContain(
-      "Install Process Explorer / Enhanced Registry Editor",
-    );
+  it("has no information-only entries: every offered item can be applied", () => {
+    for (const o of catalogue.filter((x) => !x.supported))
+      expect([
+        "hardware-scheduling",
+        "startup-review",
+        "driver-review",
+        "dns-tuning",
+      ]).toContain(o.id);
+    expect(catalogue.some((o) => o.name.startsWith("Not offered"))).toBe(false);
   });
 });
 

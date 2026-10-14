@@ -18,6 +18,7 @@ public class OptimizationCatalogTests
         public int Build() => build;
         public bool MachineKeyExists(string path) => nvidia;
         public bool TamperProtectionOn() => tamper;
+        public bool NvidiaProfiles() => nvidia;
     }
     private sealed class Tools : IToolRunner
     {
@@ -34,7 +35,8 @@ public class OptimizationCatalogTests
     {
         var store = new Memory(); var engine = new RegistryOperations(store, new Facts());
         // hibernate-off reads an always-present value; when Windows does not report it, capture refuses (M2).
-        if (id == "hibernate-off") { Assert.Throws<InvalidOperationException>(() => engine.Capture([id])); return; }
+        // Service run state is read from the service manager the same way: a service that is not reported cannot be restored later.
+        if (id == "hibernate-off" || OptimizationTable.ServiceOps.ContainsKey(id)) { Assert.Throws<InvalidOperationException>(() => engine.Capture([id])); return; }
         var snapshot = engine.Capture([id]);
         Assert.All(snapshot.Values, v => Assert.False(v.Existed));
         engine.Apply([id], snapshot);
@@ -402,5 +404,302 @@ public class OptimizationCatalogTests
         var engine = new Optimizations(new RegistryOperations(new Memory(), new Facts()), new NoPower(), null, gateway, false);
         var snapshot = engine.Capture(["uac-off"]);
         Assert.False(engine.Apply(["uac-off"], snapshot));
+    }
+    // ---- Windows services and Photo Viewer -------------------------------------------------------------
+
+    /// <summary>Models the service manager: Start in the registry (written through ChangeServiceConfig) and a run state.</summary>
+    private sealed class ServiceWorld : IRegistryStore
+    {
+        public readonly Dictionary<string, (int Start, bool Running)> Services = new();
+        public readonly List<string> Calls = new();
+        private static string Name(Setting s) => s.Path[(s.Path.LastIndexOf('\\') + 1)..];
+        public ValueState Read(Setting s)
+        {
+            if (!Services.TryGetValue(Name(s), out var svc)) return new(false, null, "DWord");
+            return new(true, s.Via == "service-stop" ? (svc.Running ? 1 : 0) : svc.Start, "DWord");
+        }
+        public void Write(Setting s, ValueState state)
+        {
+            var svc = Services[Name(s)]; var v = (int)state.Value!;
+            if (s.Via == "service-config") { Calls.Add($"config {Name(s)} {v}"); Services[Name(s)] = svc with { Start = v }; }
+            else { Calls.Add($"{(v == 0 ? "stop" : "start")} {Name(s)}"); Services[Name(s)] = svc with { Running = v == 1 }; }
+        }
+    }
+
+    [Theory]
+    [InlineData(2, true)]
+    [InlineData(3, true)]
+    [InlineData(3, false)]
+    [InlineData(4, false)]
+    public void ServiceOptimizationDisablesStopsThenRestoresExactStartTypeAndState(int start, bool running)
+    {
+        var world = new ServiceWorld(); world.Services["SysMain"] = (start, running);
+        var engine = new RegistryOperations(world, new Facts());
+        var snapshot = engine.Capture(["sysmain-off"]);
+        Assert.Equal(2, snapshot.Values.Length);
+        engine.Apply(["sysmain-off"], snapshot);
+        Assert.True(engine.Verify(["sysmain-off"]));
+        Assert.Equal((4, false), world.Services["SysMain"]);
+        // The start type is disabled before the stop, so the manager never restarts it in between.
+        Assert.Equal("config SysMain 4", world.Calls[0]);
+        world.Calls.Clear();
+        engine.Restore(snapshot);
+        Assert.Equal((start, running), world.Services["SysMain"]);
+        // Start type first, then the run state; a service that was not running is never started.
+        Assert.Equal("config SysMain " + start, world.Calls[0]);
+        Assert.Equal(running, world.Calls.Contains("start SysMain"));
+    }
+
+    [Fact]
+    public void ServiceOptimizationRefusesAnUnreportedServiceAndABlockedStop()
+    {
+        var engine = new RegistryOperations(new ServiceWorld(), new Facts());
+        Assert.Throws<InvalidOperationException>(() => engine.Capture(["print-off"]));
+        var blocked = new RegistryOperations(new ServiceWorld(), new BlockedFacts());
+        var error = Assert.Throws<InvalidOperationException>(() => blocked.Capture(["print-off"]));
+        Assert.Contains("depends on", error.Message);
+        Assert.Contains("No change was made", error.Message);
+    }
+
+    private sealed class BlockedFacts : IFacts
+    {
+        public int Build() => 26100;
+        public bool MachineKeyExists(string path) => true;
+        public bool TamperProtectionOn() => false;
+        public string? ServiceBlocker(string name) => $"The running service Fax depends on {name}.";
+    }
+
+    [Fact]
+    public void ServiceRollbackRefusesAStartTypeChangedBySomeoneElse()
+    {
+        var world = new ServiceWorld(); world.Services["DiagTrack"] = (2, true);
+        var engine = new RegistryOperations(world, new Facts());
+        var snapshot = engine.Capture(["svc-diagtrack-off"]); engine.Apply(["svc-diagtrack-off"], snapshot);
+        world.Services["DiagTrack"] = (3, false);
+        world.Calls.Clear();
+        Assert.Throws<InvalidOperationException>(() => engine.Restore(snapshot));
+        Assert.Empty(world.Calls);
+    }
+
+    [Fact]
+    public void EveryServiceItemIsOnTheGameModeAllowlistAndNotOnTheNeverTouchList()
+    {
+        foreach (var (op, service) in OptimizationTable.ServiceOps)
+        {
+            Assert.False(ServicePolicy.Denied(service), $"{service} is on the never-touch list");
+            Assert.True(ServicePolicy.Allowed(service), $"{service} is not on the allowlist");
+            Assert.Equal(2, OptimizationTable.Settings.Count(s => s.Operation == op));
+            Assert.All(OptimizationTable.Settings.Where(s => s.Operation == op), s => Assert.EndsWith(@"\Services\" + service, s.Path));
+            Assert.True(OptimizationTable.IsAdmin(op));
+        }
+    }
+
+    [Fact]
+    public void ServiceWritesGoOnlyThroughTheServiceManagerAndRejectOddValues()
+    {
+        var services = new FakeServices(); var config = new FakeConfig();
+        var store = new WindowsRegistryStore(new Tools(), services, config);
+        var start = OptimizationTable.Settings.First(s => s.Operation == "sysmain-off" && s.Via == "service-config");
+        var state = OptimizationTable.Settings.First(s => s.Operation == "sysmain-off" && s.Via == "service-stop");
+        store.Write(start, new(true, 4, "DWord")); store.Write(state, new(true, 0, "DWord")); store.Write(state, new(true, 1, "DWord"));
+        Assert.Equal(["config SysMain 4"], config.Log.ToArray()); Assert.Equal(["stop SysMain", "start SysMain"], services.Log.ToArray());
+        Assert.Throws<InvalidOperationException>(() => store.Write(start, new(true, 1, "DWord")));
+        Assert.Throws<InvalidOperationException>(() => store.Write(start, new(false, null, "DWord")));
+        Assert.Throws<InvalidOperationException>(() => store.Write(state, new(true, 2, "DWord")));
+        Assert.Equal(new ValueState(true, 1, "DWord"), store.Read(state));
+        services.Running = false; Assert.Equal(new ValueState(true, 0, "DWord"), store.Read(state));
+        services.Exists = false; Assert.False(store.Read(state).Existed);
+        services.Exists = true; services.StopWorks = false;
+        Assert.Throws<InvalidOperationException>(() => store.Write(state, new(true, 0, "DWord")));
+    }
+
+    private sealed class FakeConfig : IServiceConfig { public List<string> Log = new(); public void SetStartType(string name, int start) => Log.Add($"config {name} {start}"); }
+    private sealed class FakeServices : IServiceStore
+    {
+        public List<string> Log = new(); public bool Running = true, Exists = true, StopWorks = true;
+        public ServiceInfo Query(string name) => new(Exists, Running, true, []);
+        public bool Stop(string name, TimeSpan timeout) { Log.Add("stop " + name); return StopWorks; }
+        public bool Start(string name, TimeSpan timeout) { Log.Add("start " + name); return true; }
+    }
+
+    [Fact]
+    public void PhotoViewerNeedsItsRegistrationAndLeavesTheTiffEntriesAlone()
+    {
+        Assert.Throws<InvalidOperationException>(() => new RegistryOperations(new Memory(), new Facts(nvidia: false)).Capture(["photo-viewer"]));
+        var settings = OptimizationTable.Settings.Where(s => s.Operation == "photo-viewer").ToArray();
+        Assert.DoesNotContain(settings, s => s.Name is ".tif" or ".tiff");
+        Assert.All(settings, s => Assert.Equal("PhotoViewer.FileAssoc.Tiff", s.Text));
+        // The dotted extension is the registry value name; an existing user entry for one type is restored exactly.
+        var store = new Memory(); var existing = settings.First(s => s.Name == ".jpg");
+        store.Values[Memory.Key(existing)] = new(true, "SomethingElse", "String");
+        var engine = new RegistryOperations(store, new Facts());
+        var snapshot = engine.Capture(["photo-viewer"]); engine.Apply(["photo-viewer"], snapshot);
+        Assert.Equal("PhotoViewer.FileAssoc.Tiff", store.Values[Memory.Key(existing)].Value);
+        engine.Restore(snapshot);
+        Assert.Equal(new ValueState(true, "SomethingElse", "String"), store.Values[Memory.Key(existing)]);
+        Assert.Single(store.Values);
+    }
+    // ---- Large Send Offload: settings found on this PC ------------------------------------------------------
+
+    private sealed class AdapterFacts(params LsoAdapter[] adapters) : IFacts
+    {
+        public int Build() => 26100;
+        public bool MachineKeyExists(string path) => true;
+        public bool TamperProtectionOn() => false;
+        public IReadOnlyList<LsoAdapter> NetworkAdapters() => adapters;
+    }
+    private static string LsoKey(string slot, string name) => OptimizationTable.NetClass + @"\" + slot + "|" + name;
+    /// <summary>Memory store that also says which adapter keys exist, as the real one does.</summary>
+    private sealed class AdapterMemory : IRegistryStore, IKeyDepth
+    {
+        public Dictionary<string, ValueState> Values { get; } = new();
+        public HashSet<string> Gone { get; } = new();
+        public int Writes;
+        public ValueState Read(Setting s) => Values.GetValueOrDefault(s.Path + "|" + s.Name, new(false, null, s.Kind));
+        public void Write(Setting s, ValueState state)
+        {
+            Writes++;
+            if (Gone.Contains(s.Path)) throw new InvalidOperationException("The network adapter is no longer present.");
+            if (!state.Existed) throw new InvalidOperationException("never creates or deletes a value");
+            Values[s.Path + "|" + s.Name] = state;
+        }
+        public int MissingKeys(Setting s) => Gone.Contains(s.Path) ? 1 : 0;
+    }
+
+    [Fact]
+    public void LsoTurnsOffEveryAdapterValueTheDriverHasAndRestoresEachExactly()
+    {
+        var store = new AdapterMemory();
+        store.Values[LsoKey("0000", "*LsoV2IPv4")] = new(true, "1", "String");
+        store.Values[LsoKey("0000", "*LsoV2IPv6")] = new(true, "1", "String");
+        store.Values[LsoKey("0003", "*LsoV2IPv4")] = new(true, "0", "String");
+        var facts = new AdapterFacts(new LsoAdapter("0000", "Ethernet - Realtek", true, true), new LsoAdapter("0003", "USB LAN", true, false));
+        var engine = new RegistryOperations(store, facts);
+        var snapshot = engine.Capture(["lso-off"]);
+        Assert.Equal(3, snapshot.Values.Length);
+        Assert.All(snapshot.Values, v => { Assert.True(v.Existed); Assert.Equal("0", v.Target); Assert.Contains(v.Name, v.Label); });
+        Assert.Contains("Ethernet - Realtek", snapshot.Values[0].Label);
+        var before = store.Values.ToDictionary(p => p.Key, p => p.Value);
+        engine.Apply(["lso-off"], snapshot);
+        Assert.True(engine.Verify(["lso-off"]));
+        Assert.All(store.Values.Values, v => Assert.Equal("0", v.Value));
+        Assert.Empty(engine.Drifted(["lso-off"]));
+        engine.Restore(snapshot);
+        Assert.Equal(before, store.Values);
+    }
+
+    [Fact]
+    public void LsoRefusesAPcWithNoSuitableAdapterAndNeverCreatesAValue()
+    {
+        var engine = new RegistryOperations(new AdapterMemory(), new AdapterFacts());
+        Assert.Throws<InvalidOperationException>(() => engine.Capture(["lso-off"]));
+        Assert.DoesNotContain("lso-off", OptimizationTable.Applicable(new AdapterFacts()));
+        Assert.Contains("lso-off", OptimizationTable.Applicable(new AdapterFacts(new LsoAdapter("0000", "Ethernet", true, false))));
+    }
+
+    [Fact]
+    public void LsoRollbackSkipsAnAdapterThatWasRemovedAndRestoresTheRest()
+    {
+        var store = new AdapterMemory();
+        store.Values[LsoKey("0000", "*LsoV2IPv4")] = new(true, "1", "String");
+        store.Values[LsoKey("0003", "*LsoV2IPv4")] = new(true, "1", "String");
+        var engine = new RegistryOperations(store, new AdapterFacts(new LsoAdapter("0000", "A", true, false), new LsoAdapter("0003", "B", true, false)));
+        var snapshot = engine.Capture(["lso-off"]); engine.Apply(["lso-off"], snapshot);
+        store.Gone.Add(OptimizationTable.NetClass + @"\0003");
+        engine.Restore(snapshot);
+        Assert.Equal("1", store.Values[LsoKey("0000", "*LsoV2IPv4")].Value);
+        Assert.Equal("0", store.Values[LsoKey("0003", "*LsoV2IPv4")].Value);
+    }
+
+    [Fact]
+    public void LsoRollbackAndApplyRejectSnapshotsOutsideTheAdapterShapeOrTheLivePc()
+    {
+        var store = new AdapterMemory();
+        store.Values[LsoKey("0000", "*LsoV2IPv4")] = new(true, "1", "String");
+        var facts = new AdapterFacts(new LsoAdapter("0000", "A", true, false));
+        var engine = new RegistryOperations(store, facts);
+        var snapshot = engine.Capture(["lso-off"]);
+        var v = snapshot.Values[0];
+        CapturedValue[] bad = [
+            v with { Path = @"HKLM\SOFTWARE\Evil\0000" }, v with { Path = OptimizationTable.NetClass + @"\0000\Sub" }, v with { Path = OptimizationTable.NetClass + @"\00" },
+            v with { Name = "*SpeedDuplex" }, v with { Kind = "DWord", Value = 1 }, v with { Operation = "uac-off" },
+        ];
+        foreach (var item in bad) Assert.Throws<InvalidOperationException>(() => engine.Restore(new Snapshot([item])));
+        Assert.Throws<InvalidOperationException>(() => engine.Restore(new Snapshot([v, v])));
+        Assert.Equal(0, store.Writes);
+        // The administrator step resolves the adapters itself: a snapshot naming an adapter this PC does not offer is refused.
+        var other = new RegistryOperations(store, new AdapterFacts(new LsoAdapter("0007", "B", true, false)));
+        Assert.Throws<InvalidOperationException>(() => other.Apply(["lso-off"], snapshot));
+        Assert.Equal(0, store.Writes);
+    }
+
+    [Fact]
+    public void LsoIsAnAdministratorOperationWithoutFixedRows()
+    {
+        Assert.True(OptimizationTable.IsAdmin("lso-off"));
+        Assert.False(OptimizationTable.ReadNeedsAdmin("lso-off"));
+        Assert.DoesNotContain(OptimizationTable.Settings, s => s.Operation == "lso-off");
+    }
+    // ---- NVIDIA global driver profile -------------------------------------------------------------------
+
+    private sealed class FakeNvidia : INvidiaProfile
+    {
+        public Dictionary<uint, uint> Values = new(); public List<string> Log = new();
+        public bool Available() => true;
+        public uint? Get(uint id) => Values.TryGetValue(id, out var v) ? v : null;
+        public void Set(uint id, uint value) { Log.Add($"set {id:X8} {value}"); Values[id] = value; }
+        public void Delete(uint id) { Log.Add($"delete {id:X8}"); Values.Remove(id); }
+    }
+    private sealed class NvidiaWorld(FakeNvidia gpu) : IRegistryStore
+    {
+        private readonly WindowsRegistryStore real = new(null, null, null, gpu);
+        public ValueState Read(Setting s) => real.Read(s);
+        public void Write(Setting s, ValueState state) => real.Write(s, state);
+    }
+
+    [Fact]
+    public void NvidiaProfileRoundTripsAbsentAndPresentSettingsExactly()
+    {
+        var gpu = new FakeNvidia(); gpu.Values[NvidiaSettings.PrerenderLimit] = 3;   // present before, absent for the other one
+        var engine = new RegistryOperations(new NvidiaWorld(gpu), new Facts());
+        var snapshot = engine.Capture(["nvidia-performance"]);
+        Assert.Equal([false, true], snapshot.Values.Select(v => v.Existed).ToArray());
+        Assert.All(snapshot.Values, v => Assert.Contains("NVIDIA global profile", v.Label));
+        engine.Apply(["nvidia-performance"], snapshot);
+        Assert.True(engine.Verify(["nvidia-performance"]));
+        Assert.Equal(1u, gpu.Values[NvidiaSettings.PreferredPstate]); Assert.Equal(1u, gpu.Values[NvidiaSettings.PrerenderLimit]);
+        gpu.Log.Clear();
+        engine.Restore(snapshot);
+        Assert.Equal(3u, gpu.Values[NvidiaSettings.PrerenderLimit]);
+        Assert.False(gpu.Values.ContainsKey(NvidiaSettings.PreferredPstate));
+        Assert.Contains($"delete {NvidiaSettings.PreferredPstate:X8}", gpu.Log);
+    }
+
+    [Fact]
+    public void NvidiaProfileNeedsTheDriverInterfaceAndOnlyTouchesItsTwoSettings()
+    {
+        Assert.Throws<InvalidOperationException>(() => new RegistryOperations(new Memory(), new Facts(nvidia: false)).Capture(["nvidia-performance"]));
+        Assert.False(OptimizationTable.IsAdmin("nvidia-performance"));
+        var store = new WindowsRegistryStore(null, null, null, new FakeNvidia());
+        var other = new Setting("nvidia-performance", OptimizationTable.NvidiaPath, "0x00000001", "DWord", 1, Via: "nvapi-drs");
+        Assert.Throws<InvalidOperationException>(() => store.Read(other));
+        Assert.Throws<InvalidOperationException>(() => store.Write(other, new(true, 1, "DWord")));
+        Assert.False(NvidiaSettings.TryParse("0x1057EB7", out _)); Assert.False(NvidiaSettings.TryParse("1057EB71", out _));
+        Assert.True(NvidiaSettings.TryParse("0x1057EB71", out var id)); Assert.Equal(NvidiaSettings.PreferredPstate, id);
+    }
+
+    // Skipped unless FRAMEFORGE_LIVE_NVAPI=1: one real set -> read -> delete -> read round trip on this PC's NVIDIA driver profile.
+    [Fact]
+    public void LiveNvidiaProfileRoundTrip()
+    {
+        if (Environment.GetEnvironmentVariable("FRAMEFORGE_LIVE_NVAPI") != "1") return;
+        var gpu = new NvApiProfile(); Assert.True(gpu.Available());
+        var engine = new RegistryOperations(new WindowsRegistryStore(null, null, null, gpu), new WindowsFacts());
+        var before = new[] { gpu.Get(NvidiaSettings.PreferredPstate), gpu.Get(NvidiaSettings.PrerenderLimit) };
+        var snapshot = engine.Capture(["nvidia-performance"]);
+        engine.Apply(["nvidia-performance"], snapshot);
+        Assert.True(engine.Verify(["nvidia-performance"]));
+        engine.Restore(snapshot);
+        Assert.Equal(before, new[] { gpu.Get(NvidiaSettings.PreferredPstate), gpu.Get(NvidiaSettings.PrerenderLimit) });
     }
 }

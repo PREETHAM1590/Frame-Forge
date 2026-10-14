@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { catalogue, restartText, type Restart } from "../shared/catalogue.js";
+import {
+  catalogue,
+  restartText,
+  serviceOpIds,
+  type Restart,
+} from "../shared/catalogue.js";
 import {
   SnapshotSchema,
   builtInPowerPlans,
@@ -96,6 +101,10 @@ export class OperationEngine {
       throw new Error(
         "Stop Game Mode before changing the power plan; its session restores the plan when it ends.",
       );
+    if (ids.some((id) => serviceOpIds.includes(id)))
+      throw new Error(
+        "Stop Game Mode before changing a Windows service; its session stops and restarts services and would undo or fight the change.",
+      );
     if (ids.includes("capture-off"))
       throw new Error(
         "Stop Game Mode before changing background game capture; the session writes the same Windows value and would undo or overwrite the change.",
@@ -123,7 +132,7 @@ export class OperationEngine {
       changes: [
         ...snapshot.values.map((value) => ({
           id: value.operation,
-          setting: `${value.path} / ${value.name}`,
+          setting: value.label ?? `${value.path} / ${value.name}`,
           before: value.existed ? String(value.value) : "Not set",
           after: afterText(value),
           alreadySet: sameAsTarget(value),
@@ -271,6 +280,7 @@ export class OperationEngine {
     if (!row || !row.activity.rollback)
       throw new Error("No restorable snapshot for this operation.");
     if (row.activity.ids.includes("capture-off")) this.noBoost(["capture-off"]);
+    this.noBoost(row.activity.ids.filter((id) => serviceOpIds.includes(id)));
     // The probe hides power-plan when High performance is missing, but going back to the prior plan needs only the helper.
     if (
       row.activity.ids.some(

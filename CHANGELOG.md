@@ -15,6 +15,7 @@ First public release built by GitHub Actions (1.2.1 was never published: its rel
 - **Signing-ready.** The release workflow can sign the installer through SignPath Foundation once the project is approved; see `docs/CODE_SIGNING_POLICY.md`. Until then the installer is unsigned.
 - **Removed the default menu bar** (File, Edit, View, Window) from the app window.
 - **Docs.** Removed third-party reference material from the repository and reworded research notes neutrally.
+- **Optimizations that were information only now work, or are gone.** New: switches for SysMain, the Print Spooler and eight more Windows services (exact start type and run state restored on rollback, blocked while Game Mode runs), Large Send Offload off for physical network adapters, NVIDIA power management and pre-rendered frames through the driver's own settings interface, Windows Photo Viewer registration and the Windows Mobility Center policy. The "Not offered or information only" list is removed; items with no documented, reversible mechanism were dropped (reasons in `docs/research/catalog-mapping.md`).
 
 ## 1.2.0
 

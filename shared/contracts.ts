@@ -8,7 +8,6 @@ export const OperationId = z.enum([
   "startup-review",
   "driver-review",
   "dns-tuning",
-  "service-tuning",
   "transparency-off",
   "shortcut-suffix-off",
   "classic-context-menu",
@@ -52,6 +51,20 @@ export const OperationId = z.enum([
   "security-questions-off",
   "ucpd-off",
   "win11-checks-bypass",
+  "sysmain-off",
+  "print-off",
+  "svc-diagtrack-off",
+  "svc-wsearch-off",
+  "svc-maps-off",
+  "svc-geolocation-off",
+  "svc-errorreporting-off",
+  "svc-phone-off",
+  "svc-linktracking-off",
+  "svc-retaildemo-off",
+  "photo-viewer",
+  "lso-off",
+  "nvidia-performance",
+  "mobility-center-off",
 ]);
 export type OperationId = z.infer<typeof OperationId>;
 const Id = z.string().uuid();
@@ -1300,6 +1313,8 @@ export const RegistryValueSchema = z
     target: z
       .union([z.string().max(520), z.number().int(), z.null()])
       .optional(),
+    /** Adapter name for items that act on network adapters found on this PC; shown instead of the registry path. */
+    label: z.string().max(160).nullable().optional(),
     /** Key levels that were missing at capture; rollback removes exactly these. */
     created: z.number().int().min(0).max(16).nullable().optional(),
   })

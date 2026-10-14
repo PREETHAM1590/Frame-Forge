@@ -130,9 +130,7 @@ describe("catalogue browsing", () => {
     );
     expect(screen.getByText("Turn off User Account Control")).toBeVisible();
     expect(screen.queryByText("Turn off transparency effects")).toBeNull();
-    expect(
-      screen.getByText(/Not offered or information only/),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/Not offered or information only/)).toBeNull();
   });
   it("asks before restarting Explorer", async () => {
     const calls = install(["transparency-off"]);

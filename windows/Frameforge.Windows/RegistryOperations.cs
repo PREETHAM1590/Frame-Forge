@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace Frameforge.Windows;
 public record ValueState(bool Existed, object? Value, string Kind);
 /// <summary>Created is how many key levels above the value were missing at capture, so rollback removes exactly the keys the change created.</summary>
-public record CapturedValue(string Operation, string Path, string Name, string Kind, bool Existed, object? Value, object? Target = null, int? Created = null);
+public record CapturedValue(string Operation, string Path, string Name, string Kind, bool Existed, object? Value, object? Target = null, int? Created = null, string? Label = null);
 public record Snapshot(CapturedValue[] Values);
 public interface IRegistryStore { ValueState Read(Setting setting); void Write(Setting setting, ValueState state); }
 /// <summary>Optional: stores that can say how many key levels a write would have to create.</summary>
@@ -12,10 +12,18 @@ public interface IKeyDepth { int MissingKeys(Setting setting); }
 public sealed class RegistryOperations(IRegistryStore store, IFacts? facts = null)
 {
     public static Setting[] Settings => OptimizationTable.Settings;
-    private static Setting[] Select(string[] ids)
+    // Table settings in table order, then the settings of dynamic operations found on this PC right now.
+    private Setting[] Select(string[] ids)
     {
-        if (ids.Length < 1 || ids.Length > Settings.Length || ids.Distinct().Count() != ids.Length || ids.Any(id => !Settings.Any(s => s.Operation == id))) throw new InvalidOperationException("Unsupported operation selection.");
-        return Settings.Where(s => ids.Contains(s.Operation)).ToArray();
+        if (ids.Length < 1 || ids.Length > Settings.Length || ids.Distinct().Count() != ids.Length || ids.Any(id => !OptimizationTable.IsDynamic(id) && !Settings.Any(s => s.Operation == id))) throw new InvalidOperationException("Unsupported operation selection.");
+        var selected = Settings.Where(s => ids.Contains(s.Operation)).ToList();
+        foreach (var id in ids.Where(OptimizationTable.IsDynamic))
+        {
+            var live = OptimizationTable.Resolve(id, facts);
+            if (live.Length == 0) throw new InvalidOperationException("This PC has nothing this optimization can change. No change was made.");
+            selected.AddRange(live);
+        }
+        return selected.ToArray();
     }
     internal static ValueState Target(Setting setting) => setting.Delete ? new(false, null, setting.Kind) : new(true, setting.Kind == "String" ? setting.Text ?? setting.Target.ToString(System.Globalization.CultureInfo.InvariantCulture) : setting.Target, setting.Kind);
     private static object? Normalize(object? value, string kind)
@@ -28,10 +36,15 @@ public sealed class RegistryOperations(IRegistryStore store, IFacts? facts = nul
     }
     /// <summary>Throws unless every value in the snapshot is an allowed setting with a well-formed state.</summary>
     public void Validate(Snapshot snapshot) => _ = ValidateCore(snapshot);
-    private static (Setting Setting, ValueState State, int? Created)[] ValidateCore(Snapshot snapshot)
+    private (Setting Setting, ValueState State, int? Created)[] ValidateCore(Snapshot snapshot)
     {
-        if (snapshot is null || snapshot.Values is null || snapshot.Values.Length < 1 || snapshot.Values.Length > Settings.Length || snapshot.Values.Any(value => value is null)) throw new InvalidOperationException("Empty or invalid snapshot.");
-        var required = Select(snapshot.Values.Select(v => v.Operation).Distinct().ToArray());
+        if (snapshot is null || snapshot.Values is null || snapshot.Values.Length < 1 || snapshot.Values.Length > 128 || snapshot.Values.Any(value => value is null)) throw new InvalidOperationException("Empty or invalid snapshot.");
+        var operations = snapshot.Values.Select(v => v.Operation).Distinct().ToArray();
+        // Dynamic operations are checked by shape (their adapter may be gone by rollback time); the rest must match the table exactly.
+        var fixedIds = operations.Where(id => !OptimizationTable.IsDynamic(id)).ToArray();
+        var saved = snapshot.Values.Where(v => OptimizationTable.IsDynamic(v.Operation)).Select(OptimizationTable.FromSaved).ToArray();
+        if (saved.Select(s => (s.Path, s.Name)).Distinct().Count() != saved.Length) throw new InvalidOperationException("Snapshot contains an unauthorized setting.");
+        var required = (fixedIds.Length == 0 ? [] : Select(fixedIds)).Concat(saved).ToArray();
         if (required.Length != snapshot.Values.Length) throw new InvalidOperationException("Incomplete registry snapshot.");
         return required.Select(setting =>
         {
@@ -49,9 +62,9 @@ public sealed class RegistryOperations(IRegistryStore store, IFacts? facts = nul
     {
         var state = store.Read(setting);
         // A value that drives a non-registry writer (hibernation) must be readable now; refuse here rather than fail mid-rollback.
-        if (setting.Via is not null && !state.Existed) throw new InvalidOperationException("Windows does not report this setting on this PC, so it cannot be restored later. No change was made.");
+        if (setting.Via is not null and not "nvapi-drs" && !state.Existed) throw new InvalidOperationException("Windows does not report this setting on this PC, so it cannot be restored later. No change was made.");
         int? created = store is IKeyDepth depth && !state.Existed ? depth.MissingKeys(setting) : null;
-        return new CapturedValue(setting.Operation, setting.Path, setting.Name, setting.Kind, state.Existed, state.Value, Target(setting).Value, created);
+        return new CapturedValue(setting.Operation, setting.Path, setting.Name, setting.Kind, state.Existed, state.Value, Target(setting).Value, created, OptimizationTable.LabelOf(setting, facts));
     }).ToArray());
     public void Apply(string[] ids, Snapshot expected)
     {
@@ -70,7 +83,8 @@ public sealed class RegistryOperations(IRegistryStore store, IFacts? facts = nul
     /// </summary>
     public string[] Restore(Snapshot snapshot)
     {
-        var states = ValidateCore(snapshot);
+        // An adapter that was unplugged or removed since has nothing left to restore; its key is never created again.
+        var states = ValidateCore(snapshot).Where(s => s.Setting.Via != "adapter-prop" || store is not IKeyDepth depth || depth.MissingKeys(s.Setting) == 0).ToArray();
         var third = new List<string>();
         // Check every value before writing so external changes never trigger partial rollback.
         foreach (var s in states)

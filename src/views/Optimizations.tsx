@@ -15,7 +15,6 @@ import {
   presetNameTaken,
   presets,
   restartText,
-  unavailable,
   type Category,
   type Optimization,
 } from "../../shared/catalogue";
@@ -29,7 +28,6 @@ import {
   Panel,
   Chips,
   SearchField,
-  Disclosure,
 } from "../components/ui";
 import { PowerPlanDialog } from "../components/PowerPlanDialog";
 import type { ViewProps } from "../types";
@@ -72,11 +70,6 @@ export function Optimizations({
           ? data.capabilities.includes(o.id)
           : !data.capabilities.includes(o.id))) &&
       `${o.name} ${o.description} ${o.impact}`.toLowerCase().includes(needle),
-  );
-  const notOffered = unavailable.filter(
-    (u) =>
-      (category === "All" || u.group === category) &&
-      `${u.name} ${u.reason}`.toLowerCase().includes(needle),
   );
   const shown = categories.filter((c) => list.some((o) => o.category === c));
   const card = (o: Optimization) => (
@@ -241,27 +234,6 @@ export function Optimizations({
           pending={pending}
           onClose={() => setPlanDialog(false)}
         />
-      )}
-      {notOffered.length > 0 && (
-        <div className="not-offered">
-          <Disclosure
-            title={`Not offered or information only (${notOffered.length})`}
-          >
-            <ul>
-              {notOffered.map((u) => (
-                <li key={u.name}>
-                  <strong>{u.name}</strong>{" "}
-                  <Badge tone="neutral">
-                    {u.status === "info-only"
-                      ? "Information only"
-                      : "Not offered"}
-                  </Badge>
-                  <span className="muted"> {u.reason}</span>
-                </li>
-              ))}
-            </ul>
-          </Disclosure>
-        </div>
       )}
       {restarting && (
         <Modal

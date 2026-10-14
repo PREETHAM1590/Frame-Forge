@@ -55,14 +55,6 @@ export interface Optimization {
   /** Windows page for manual review of unsupported entries. */
   settingsPage?: Request<"openSettings">["page"];
 }
-/** Catalog entries Frameforge deliberately does not toggle, listed so the choice is visible. */
-export interface Unavailable {
-  name: string;
-  group: "FPS & Latency" | "Privacy" | "Quality of Life" | "Storage & Boot";
-  status: "info-only" | "not-offered";
-  reason: string;
-}
-
 const user = [
   "Windows desktop helper available",
   "Current-user registry writable",
@@ -98,6 +90,41 @@ const sec = (d: Omit<Def, "category" | "risk">): Optimization =>
     category: "Security trade-offs",
     prerequisites: machine,
     ...d,
+  });
+
+/** One Windows service switched off through the service manager: start type Disabled, then stopped. Rollback restores the exact start type and starts it again when it was running. */
+const serviceItem = (d: {
+  id: OperationId;
+  name: string;
+  service: string;
+  display: string;
+  category: Category;
+  risk: "Low" | "Moderate";
+  impact: string;
+  description: string;
+  reason: string;
+}): Optimization =>
+  adv({
+    id: d.id,
+    name: d.name,
+    category: d.category,
+    risk: d.risk,
+    impact: d.impact,
+    description: d.description,
+    reason: `${d.reason} Frameforge sets the ${d.display} service (${d.service}) to Disabled and stops it now; nothing else is changed.`,
+    settings: [
+      `HKLM\\SYSTEM\\CurrentControlSet\\Services\\${d.service}: Start = 4 (Disabled), set through the Windows service manager`,
+      `${d.service} service run state = stopped (it is stopped now if it is running)`,
+    ],
+    prerequisites: [
+      ...machine,
+      `The ${d.service} service is installed`,
+      "No running service depends on it, and Windows allows stopping it",
+      "Game Mode is not running",
+    ],
+    rollback:
+      "Restores the exact start type captured before, then starts the service again only if it was running. The delayed-start flag is never touched." +
+      hklmNote,
   });
 
 export const catalogue: Optimization[] = [
@@ -219,24 +246,6 @@ export const catalogue: Optimization[] = [
     restart: "none",
     rollback: "Unavailable; no network changes.",
     settingsPage: "network",
-  },
-  {
-    id: "service-tuning",
-    name: "Service configuration",
-    category: "FPS & Latency",
-    tier: "standard",
-    risk: "High",
-    impact: "System stability",
-    description: "Windows service modifications are not supported.",
-    reason:
-      "Disabling services can break security and system functionality, so Optimizations never change services or their start type. Game Mode can pause a short list of safe services for one session (stop only, restarted afterwards, with your administrator approval).",
-    settings: ["Windows services"],
-    prerequisites: ["Independent service-specific verification"],
-    supported: false,
-    admin: false,
-    restart: "none",
-    rollback: "Unavailable; no service changes.",
-    settingsPage: "services",
   },
 
   // ---- Quality of Life: current user, no administrator -------------------------------------------------
@@ -565,6 +574,21 @@ export const catalogue: Optimization[] = [
 
   // ---- Machine settings: Advanced, administrator approval ----------------------------------------------
   adv({
+    id: "mobility-center-off",
+    name: "Turn off Windows Mobility Center",
+    category: "Quality of Life",
+    risk: "Low",
+    impact: "Laptop settings panel",
+    description:
+      "Stops the Windows Mobility Center panel (brightness, volume, battery, display) from opening, for every user of this PC.",
+    reason:
+      "Windows' own Group Policy 'Turn off Windows Mobility Center' (the machine setting from Windows' MobilePCMobilityCenter policy definitions). The machine policy hive is used because Windows blocks per-user policy writes without administrator rights. The same settings stay available in Windows Settings.",
+    settings: [
+      "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\MobilityCenter: NoMobilityCenter = 1 (DWORD). The key is removed again on rollback when empty.",
+    ],
+    rollback: exact(hklmNote.trim()),
+  }),
+  adv({
     id: "lock-screen-blur-off",
     name: "Clear lock screen background",
     category: "Quality of Life",
@@ -764,6 +788,194 @@ export const catalogue: Optimization[] = [
     ),
   }),
 
+  // ---- Windows services: Advanced, administrator approval, exact start type and run state restored ---------
+  serviceItem({
+    id: "sysmain-off",
+    name: "Turn off SysMain (Superfetch)",
+    service: "SysMain",
+    display: "SysMain",
+    category: "FPS & Latency",
+    risk: "Moderate",
+    impact: "Background memory preloading",
+    description:
+      "Stops Windows preloading frequently used apps into memory and turns the SysMain service off.",
+    reason:
+      "SysMain mostly helps hard drives; on SSDs the benefit is small and the evidence is mixed, so no FPS gain is claimed. Apps may start slightly slower after boot.",
+  }),
+  serviceItem({
+    id: "print-off",
+    name: "Turn off printing (Print Spooler)",
+    service: "Spooler",
+    display: "Print Spooler",
+    category: "Quality of Life",
+    risk: "Moderate",
+    impact: "Printing",
+    description:
+      "Turns the Print Spooler off. The Fax service is not installed on current Windows editions, so this is the whole 'fax and print' stack.",
+    reason:
+      "Printing, PDF and XPS printers and scanning to print queues stop working until you roll this back. Turn it off only if you never print from this PC.",
+  }),
+  serviceItem({
+    id: "svc-diagtrack-off",
+    name: "Turn off Connected User Experiences and Telemetry",
+    service: "DiagTrack",
+    display: "Connected User Experiences and Telemetry",
+    category: "Privacy",
+    risk: "Low",
+    impact: "Diagnostic data upload",
+    description: "Stops the service that collects and uploads diagnostic data.",
+    reason:
+      "Pairs with 'Minimum Windows diagnostic data'. Some Windows feedback and troubleshooting features report less.",
+  }),
+  serviceItem({
+    id: "svc-wsearch-off",
+    name: "Turn off Windows Search indexing",
+    service: "WSearch",
+    display: "Windows Search",
+    category: "FPS & Latency",
+    risk: "Moderate",
+    impact: "Search indexing",
+    description:
+      "Stops background file indexing. Start menu and File Explorer search still work but are slower and find fewer results.",
+    reason:
+      "Indexing uses disk and CPU after file changes. Outlook and other apps that use the index lose fast search.",
+  }),
+  serviceItem({
+    id: "svc-maps-off",
+    name: "Turn off Downloaded Maps Manager",
+    service: "MapsBroker",
+    display: "Downloaded Maps Manager",
+    category: "Privacy",
+    risk: "Low",
+    impact: "Offline maps",
+    description:
+      "Stops the service that updates offline maps for the Maps app.",
+    reason: "Only needed if you use downloaded maps in the Windows Maps app.",
+  }),
+  serviceItem({
+    id: "svc-geolocation-off",
+    name: "Turn off the Geolocation Service",
+    service: "lfsvc",
+    display: "Geolocation Service",
+    category: "Privacy",
+    risk: "Low",
+    impact: "Location services",
+    description: "Stops Windows from working out this PC's location for apps.",
+    reason:
+      "Apps that ask for location, such as Weather and Maps, lose automatic location until you roll this back.",
+  }),
+  serviceItem({
+    id: "svc-errorreporting-off",
+    name: "Turn off Windows Error Reporting",
+    service: "WerSvc",
+    display: "Windows Error Reporting",
+    category: "Privacy",
+    risk: "Low",
+    impact: "Crash reports",
+    description: "Stops Windows sending crash reports to Microsoft.",
+    reason:
+      "Crash dumps are not collected for Microsoft, which can make some app problems harder to diagnose.",
+  }),
+  serviceItem({
+    id: "svc-phone-off",
+    name: "Turn off the Phone Service",
+    service: "PhoneSvc",
+    display: "Phone Service",
+    category: "Quality of Life",
+    risk: "Low",
+    impact: "Phone Link calls",
+    description:
+      "Stops the service that manages telephony state for Phone Link.",
+    reason: "Calls through Phone Link stop working until you roll this back.",
+  }),
+  serviceItem({
+    id: "svc-linktracking-off",
+    name: "Turn off Distributed Link Tracking Client",
+    service: "TrkWks",
+    display: "Distributed Link Tracking Client",
+    category: "Quality of Life",
+    risk: "Low",
+    impact: "Shortcut repair",
+    description:
+      "Stops Windows trying to find files that shortcuts point to after they move.",
+    reason:
+      "Shortcuts to files that moved on an NTFS volume or a network share may no longer repair themselves.",
+  }),
+  serviceItem({
+    id: "svc-retaildemo-off",
+    name: "Turn off the Retail Demo Service",
+    service: "RetailDemo",
+    display: "Retail Demo Service",
+    category: "Quality of Life",
+    risk: "Low",
+    impact: "Store demo mode",
+    description: "Disables the service used only by in-store demo units.",
+    reason: "Has no use on a PC you own.",
+  }),
+  item({
+    id: "nvidia-performance",
+    name: "NVIDIA: prefer maximum performance, one pre-rendered frame",
+    category: "FPS & Latency",
+    tier: "advanced",
+    risk: "Moderate",
+    impact: "NVIDIA driver profile",
+    description:
+      "Sets the NVIDIA driver's global profile to 'Prefer maximum performance' power management and a maximum of one pre-rendered frame.",
+    reason:
+      "Writes two NVIDIA driver profile settings (power management mode, and the maximum pre-rendered frames value) on the global profile, through NVIDIA's own driver settings interface (NVAPI), with no administrator prompt. The GPU stays at higher clocks, so heat, fan noise and power use rise (more on laptops), and one pre-rendered frame can lower frame rate in GPU-bound games. No FPS gain is claimed. Games read it when they start. After a rollback the NVIDIA driver may write its own entries for these settings back into the profile; they do not change behavior you did not choose.",
+    settings: [
+      "NVIDIA global driver profile (NVAPI DRS): PREFERRED_PSTATE_ID 0x1057EB71 = 1 (Prefer maximum performance)",
+      "NVIDIA global driver profile (NVAPI DRS): PRERENDERLIMIT_ID 0x007BA09E = 1",
+    ],
+    prerequisites: [
+      "Windows desktop helper available",
+      "An NVIDIA GPU with its driver installed (the NVIDIA driver settings interface answers)",
+    ],
+    rollback:
+      "Puts each setting back exactly: the captured value, or removes the setting from the profile when it had none (the driver default applies again). Takes effect for games started afterwards.",
+  }),
+  adv({
+    id: "lso-off",
+    name: "Turn off Large Send Offload",
+    category: "FPS & Latency",
+    risk: "Moderate",
+    impact: "Network adapter offload",
+    description:
+      "Turns off Large Send Offload (IPv4 and IPv6) on each physical network adapter whose driver offers it, so Windows builds the packets instead of the adapter.",
+    reason:
+      "Some adapters and drivers add latency or stutter with LSO, others do not, and no FPS gain is claimed. Uses the standardized driver keywords *LsoV2IPv4 and *LsoV2IPv6. The preview lists every adapter it will change. Throughput for large uploads may drop slightly. Network drivers read the value only when the adapter starts again, so restart the PC (or disable and re-enable the adapter) afterwards.",
+    settings: [
+      'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\<adapter>: *LsoV2IPv4 and *LsoV2IPv6 = "0" (String), only for values the driver already has',
+    ],
+    prerequisites: [
+      ...machine,
+      "A physical (PCI or USB) network adapter whose driver already has an LSO setting",
+    ],
+    restart: "reboot",
+    rollback:
+      "Writes each adapter's captured value back exactly (an adapter that was removed since is skipped). Restart the PC or re-enable the adapter for the driver to read it." +
+      hklmNote,
+  }),
+  adv({
+    id: "photo-viewer",
+    name: "Windows Photo Viewer in 'Open with'",
+    category: "Quality of Life",
+    risk: "Low",
+    impact: "Image viewer",
+    description:
+      "Registers the built-in Windows Photo Viewer for BMP, DIB, GIF, JFIF, JPE, JPEG, JPG, JXR and PNG so Windows can offer it. No default app is changed.",
+    reason:
+      "Windows Photo Viewer is still installed but only registered for TIFF. This adds its file types to its Default Programs capabilities, the documented way an app is offered. Windows decides how it lists the app, and you choose it yourself under Open with or Settings > Apps > Default apps.",
+    settings: [
+      "HKLM\\SOFTWARE\\Microsoft\\Windows Photo Viewer\\Capabilities\\FileAssociations: .bmp, .dib, .gif, .jfif, .jpe, .jpeg, .jpg, .jxr, .png = PhotoViewer.FileAssoc.Tiff (String)",
+    ],
+    prerequisites: [
+      ...machine,
+      "Windows Photo Viewer capabilities and its file association entry exist (they do on current Windows)",
+    ],
+    rollback: exact(hklmNote.trim()),
+  }),
+
   // ---- Security trade-offs: every one lowers protection ----------------------------------------------
   sec({
     id: "defender-off",
@@ -939,6 +1151,20 @@ export const catalogue: Optimization[] = [
   }),
 ];
 
+/** Ids that turn a Windows service off. Game Mode stops and restarts services for a session, so these wait for it (apply and rollback). */
+export const serviceOpIds: OperationId[] = [
+  "sysmain-off",
+  "print-off",
+  "svc-diagtrack-off",
+  "svc-wsearch-off",
+  "svc-maps-off",
+  "svc-geolocation-off",
+  "svc-errorreporting-off",
+  "svc-phone-off",
+  "svc-linktracking-off",
+  "svc-retaildemo-off",
+];
+
 /** Ids that lower security: never in a preset, never selectable for a custom preset. */
 export const securityIds: OperationId[] = catalogue
   .filter((o) => o.tier === "security")
@@ -955,218 +1181,6 @@ export const bootStoreIds: OperationId[] = catalogue
 export const applicableIds: OperationId[] = catalogue
   .filter((o) => o.supported)
   .map((o) => o.id);
-
-export const unavailable: Unavailable[] = [
-  {
-    name: "Optimize NVIDIA Performance",
-    group: "FPS & Latency",
-    status: "info-only",
-    reason:
-      "NVIDIA driver profile settings have no documented registry interface.",
-  },
-  {
-    name: "Optimize Device Affinities",
-    group: "FPS & Latency",
-    status: "info-only",
-    reason:
-      "Per-device interrupt affinity can leave a device without interrupts and has no measured benefit.",
-  },
-  {
-    name: "Optimize Integrated Intel GPU",
-    group: "FPS & Latency",
-    status: "info-only",
-    reason: "Vendor driver settings; no documented keys.",
-  },
-  {
-    name: "Optimize Message Signal Interrupts",
-    group: "FPS & Latency",
-    status: "info-only",
-    reason:
-      "MSI changes can make a device unbootable, and no benefit is documented.",
-  },
-  {
-    name: "Optimize Network Performance",
-    group: "FPS & Latency",
-    status: "info-only",
-    reason:
-      "Nagle, throttling and QoS tweaks are placebo or harmful (see research); adapter advanced properties cannot be captured and verified safely without administrator access.",
-  },
-  {
-    name: "Disable Large Send Offloads",
-    group: "FPS & Latency",
-    status: "info-only",
-    reason:
-      "An adapter-driver property that needs an adapter restart; not verifiable here.",
-  },
-  {
-    name: "Optimize Storage & Memory",
-    group: "FPS & Latency",
-    status: "info-only",
-    reason:
-      "Windows already manages these values; no measured benefit on SSDs.",
-  },
-  {
-    name: "Enable Old NVIDIA Sharpening",
-    group: "FPS & Latency",
-    status: "info-only",
-    reason:
-      "No documented registry key; requires an NVIDIA GPU and verification.",
-  },
-  {
-    name: "Enhance NVIDIA Privacy / Disable NVIDIA Telemetry",
-    group: "Privacy",
-    status: "info-only",
-    reason:
-      "No documented keys; the telemetry service is not present on current drivers.",
-  },
-  {
-    name: "Disable Dynamic Interrupt Steering",
-    group: "FPS & Latency",
-    status: "info-only",
-    reason: "The exact kernel value is not documented.",
-  },
-  {
-    name: "Enable Modern Windows Memory Management",
-    group: "FPS & Latency",
-    status: "info-only",
-    reason:
-      "The original description is incomplete, so the change cannot be defined.",
-  },
-  {
-    name: "Disable Windows Services",
-    group: "FPS & Latency",
-    status: "not-offered",
-    reason:
-      "Permanent service disabling can break Windows; Game Mode pauses only an allowlist temporarily.",
-  },
-  {
-    name: "Disable Superfetch (SysMain)",
-    group: "FPS & Latency",
-    status: "not-offered",
-    reason: "Research rejects a permanent disable; evidence is mixed.",
-  },
-  {
-    name: "Optimize SMB",
-    group: "Privacy",
-    status: "info-only",
-    reason:
-      "The exact change is not defined; SMB1 is already absent on current Windows.",
-  },
-  {
-    name: "Disable VPN Support",
-    group: "Privacy",
-    status: "info-only",
-    reason:
-      "No documented switch exists; [unverified] service changes would break other networking.",
-  },
-  {
-    name: "Unlock EU Privacy Mode",
-    group: "Privacy",
-    status: "info-only",
-    reason: "Region spoofing has no documented mechanism. [unverified]",
-  },
-  {
-    name: "Disable Fax And Print",
-    group: "Quality of Life",
-    status: "info-only",
-    reason:
-      "Stopping the print spooler breaks printing; exact components are unclear.",
-  },
-  {
-    name: "Disable Live Tiles",
-    group: "Quality of Life",
-    status: "info-only",
-    reason: "Windows 11 has no live tiles.",
-  },
-  {
-    name: "Optimize Context Menu",
-    group: "Quality of Life",
-    status: "info-only",
-    reason:
-      "Adds shell verbs that run takeown and icacls; not a single reversible value.",
-  },
-  {
-    name: "Disable HomeGroup",
-    group: "Quality of Life",
-    status: "info-only",
-    reason: "HomeGroup was removed from Windows 10 version 1803.",
-  },
-  {
-    name: "Disable Lock Power Option",
-    group: "Quality of Life",
-    status: "info-only",
-    reason:
-      "The setting could not be confirmed in documentation or on this PC. [unverified]",
-  },
-  {
-    name: "Disable Lock Screen",
-    group: "Quality of Life",
-    status: "info-only",
-    reason:
-      "The policy only works on Enterprise and Education editions. [unverified]",
-  },
-  {
-    name: "Disable My People",
-    group: "Quality of Life",
-    status: "info-only",
-    reason: "My People was removed in Windows 11.",
-  },
-  {
-    name: "Disable Touch Settings",
-    group: "Quality of Life",
-    status: "info-only",
-    reason: "No documented switch. [unverified]",
-  },
-  {
-    name: "Disable Windows Focus Assist",
-    group: "Quality of Life",
-    status: "info-only",
-    reason: "Stored in an undocumented binary blob. [unverified]",
-  },
-  {
-    name: "Disable Windows Mobility Center",
-    group: "Quality of Life",
-    status: "info-only",
-    reason: "The policy path could not be confirmed. [unverified]",
-  },
-  {
-    name: "Increase Taskbar Transparency",
-    group: "Quality of Life",
-    status: "info-only",
-    reason: "Undocumented. [unverified]",
-  },
-  {
-    name: "Show All Taskbar Tray Icons",
-    group: "Quality of Life",
-    status: "info-only",
-    reason: "The EnableAutoTray value is ignored by Windows 11. [unverified]",
-  },
-  {
-    name: "Disable Disk Quotas",
-    group: "Storage & Boot",
-    status: "info-only",
-    reason: "Quotas are off by default and are set per volume.",
-  },
-  {
-    name: "Enable Classic Windows Photo Viewer",
-    group: "Quality of Life",
-    status: "info-only",
-    reason: "Needs default-app association changes that Windows protects.",
-  },
-  {
-    name: "Install Process Explorer / Enhanced Registry Editor",
-    group: "Quality of Life",
-    status: "not-offered",
-    reason:
-      "Would download and install software; Frameforge does not install third-party tools.",
-  },
-  {
-    name: "VALOFLANT promotion",
-    group: "Quality of Life",
-    status: "not-offered",
-    reason: "A promotion, not a Windows optimization.",
-  },
-];
 
 export const presets = [
   {
