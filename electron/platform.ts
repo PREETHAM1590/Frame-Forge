@@ -23,6 +23,8 @@ import {
   type RunningProcess,
   type Snapshot,
   type PowerPlanEntry,
+  type StartupHelperList,
+  type StartupWriteResult,
 } from "../shared/contracts.js";
 import { adminIds, applicableIds, bootStoreIds } from "../shared/catalogue.js";
 // A live `Frameforge.Windows.exe --session` process: emits "event" (one parsed JSON line) and "exit".
@@ -38,7 +40,7 @@ export interface GameWatch {
 }
 export type RunningGame = { gameId: string; target: ProcessTarget };
 export type ElevationUse =
-  "restore" | "boost" | "recover" | "timer" | "optimize" | "fps";
+  "restore" | "boost" | "recover" | "timer" | "optimize" | "fps" | "startup";
 const waitingFor: Record<ElevationUse, string> = {
   fps: "FPS capture is waiting for administrator approval.",
   restore: "A System Restore request is waiting for administrator approval.",
@@ -46,6 +48,7 @@ const waitingFor: Record<ElevationUse, string> = {
     "Game Mode is waiting for administrator approval, or is stopping and may ask for it.",
   recover: "Game Mode recovery is waiting for administrator approval.",
   timer: "The timer setting is waiting for administrator approval.",
+  startup: "A startup program change is waiting for administrator approval.",
   optimize:
     "An optimization that needs administrator approval is waiting for it.",
 };
@@ -147,6 +150,18 @@ export type TimerGlobalCall = {
   existed?: boolean;
   value?: number | null;
 };
+export type StartupSetCall = {
+  id: string;
+  /** set: enable or disable like Task Manager; restore: put a saved StartupApproved value back. */
+  op: "set" | "restore";
+  enable?: boolean;
+  /** The StartupApproved hex the caller last saw (null = absent). */
+  expect: string | null;
+  /** restore: the value to put back (null = remove the value). */
+  next?: string | null;
+  /** Machine-wide items open an administrator prompt, so the helper gets more time. */
+  machine: boolean;
+};
 export interface Platform {
   capabilities: OperationId[];
   /** Shared by every path that can open a Windows administrator prompt. */
@@ -198,6 +213,9 @@ export interface Platform {
   ): Promise<BoostCapabilities>;
   // Windows 11's GlobalTimerResolutionRequests: read it, or change it through one administrator prompt.
   timerGlobal(call: TimerGlobalCall): Promise<TimerGlobalResult>;
+  // Startup apps: list every item that starts with Windows (read-only), or change one StartupApproved switch.
+  startupList(): Promise<StartupHelperList>;
+  startupSet(call: StartupSetCall): Promise<StartupWriteResult>;
   // interactive=false (automatic recovery) never opens an administrator prompt; the services step then stays pending.
   boostRecover(
     captured: Captured[],
@@ -573,6 +591,34 @@ export class WindowsPlatform implements Platform {
     if (!result.timerGlobal) throw new Error("Missing timer setting result");
     return result.timerGlobal;
   }
+  async startupList() {
+    const result = await this.call(
+      { command: "startup-list" },
+      undefined,
+      30000,
+    );
+    if (!result.startup) throw new Error("Missing startup list");
+    return result.startup;
+  }
+  async startupSet(call: StartupSetCall) {
+    const result = await this.call(
+      {
+        command: "startup-set",
+        startup: {
+          op: call.op,
+          id: call.id,
+          enable: call.enable ?? false,
+          expect: call.expect ?? "-",
+          new: call.next === undefined ? null : (call.next ?? "-"),
+        },
+      },
+      undefined,
+      // One administrator prompt (2 minutes) plus the child's own work.
+      call.machine ? 180000 : 20000,
+    );
+    if (!result.startupResult) throw new Error("Missing startup result");
+    return result.startupResult;
+  }
   async boostRecover(
     captured: Captured[],
     ownedPlan: string | null,
@@ -872,6 +918,13 @@ export class MockPlatform implements Platform {
   async boostRecover(captured: Captured[]): Promise<MechanismResult[]> {
     void captured;
     throw new Error("Game booster requires the Windows helper.");
+  }
+  async startupList(): Promise<StartupHelperList> {
+    throw new Error("The Startup page requires the Windows helper.");
+  }
+  async startupSet(call: StartupSetCall): Promise<StartupWriteResult> {
+    void call;
+    throw new Error("The Startup page requires the Windows helper.");
   }
   async timerGlobal(call: TimerGlobalCall): Promise<TimerGlobalResult> {
     void call;

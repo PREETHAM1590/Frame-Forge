@@ -270,6 +270,10 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "boostPowerPlan":
     case "boostTimerGlobal":
       throw new Error(desktopOnly);
+    case "startupList":
+    case "startupSet":
+    case "startupUndo":
+      throw new Error("The Startup page requires the desktop app.");
     case "networkCheck":
       throw new Error("The network check requires the desktop app.");
     case "launchSettings":

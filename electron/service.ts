@@ -22,6 +22,7 @@ import { OperationEngine } from "./operations.js";
 import { BoostEngine } from "./booster.js";
 import { RestorePointService } from "./restore.js";
 import { LaunchSettingsService } from "./launchSettings.js";
+import { StartupService } from "./startup.js";
 import { MonitorService } from "./monitor.js";
 import { FpsService } from "./fps.js";
 import { within, type DetectionResult } from "./games.js";
@@ -75,6 +76,7 @@ export class AppService {
   readonly fps: FpsService;
   private restorePoints: RestorePointService;
   private launch: LaunchSettingsService;
+  private startup: StartupService;
   private hardware: Hardware = fallbackHardware();
   private loggingFailed = false;
   // One scan at a time: startup, Rescan and Dashboard "Scan now" all share it.
@@ -119,6 +121,11 @@ export class AppService {
     this.engine = new OperationEngine(repo, platform);
     this.restorePoints = new RestorePointService(repo, platform);
     this.launch = new LaunchSettingsService(repo, platform);
+    this.startup = new StartupService(
+      repo,
+      platform,
+      (label, message, status) => this.log(label, message, status),
+    );
     this.booster = new BoostEngine(repo, platform, (session) =>
       this.desktop.notify?.({ type: "boost", session }),
     );
@@ -453,6 +460,17 @@ export class AppService {
         guard();
         noRestoreInFlight();
         return this.booster.powerPlan(action, guid);
+      },
+      startupList: async () => this.startup.list(),
+      startupSet: async ({ id, enabled, acknowledged }) => {
+        guard();
+        noRestoreInFlight();
+        return this.startup.set(id, enabled, acknowledged === true);
+      },
+      startupUndo: async ({ id }) => {
+        guard();
+        noRestoreInFlight();
+        return this.startup.undo(id);
       },
       boostTimerGlobal: async ({ action }) => {
         guard();
@@ -885,6 +903,7 @@ export class AppService {
             "monitorStop",
             "fpsStatus",
             "fpsHistory",
+            "startupList",
           ].includes(key)
         )
           this.log(

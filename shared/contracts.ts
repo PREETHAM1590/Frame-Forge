@@ -983,6 +983,86 @@ export const FpsEventSchema = z.union([
 ]);
 export type FpsEvent = z.infer<typeof FpsEventSchema>;
 const Empty = z.object({}).strict();
+// ---- Startup apps (v1.4.0) -------------------------------------------------------------------------------------
+const StartupId = z.string().min(3).max(300);
+const StartupHex = z
+  .string()
+  .regex(/^[0-9a-f]{2,512}$/)
+  .nullable();
+export const StartupItemSchema = z
+  .object({
+    id: StartupId,
+    name: z.string().min(1).max(260),
+    command: z.string().max(2048),
+    path: z.string().max(2048),
+    publisher: z.string().max(200),
+    source: z.enum([
+      "hkcu-run",
+      "hklm-run",
+      "hklm-run32",
+      "hkcu-folder",
+      "hklm-folder",
+      "hkcu-runonce",
+      "hklm-runonce",
+      "task",
+      "uwp",
+    ]),
+    scope: z.enum(["user", "machine"]),
+    /** Null when Windows has no per-item switch to read. */
+    enabled: z.boolean().nullable(),
+    /** True only for items with a StartupApproved switch (the one Task Manager uses). */
+    canToggle: z.boolean(),
+    sizeBytes: z.number().int().nonnegative().nullable(),
+    /** An estimate from the program's file size, not Windows' own startup impact. */
+    impact: z.enum(["low", "medium", "high", "unknown"]),
+    critical: z.boolean(),
+    criticalReason: z.string().max(300).nullable(),
+    /** Current StartupApproved value as hex; null when Windows has none. */
+    approved: StartupHex,
+    note: z.string().max(300).nullable(),
+  })
+  .strict();
+export type StartupItem = z.infer<typeof StartupItemSchema>;
+export const StartupHelperListSchema = z
+  .object({
+    items: z.array(StartupItemSchema).max(500),
+    warnings: z.array(z.string().max(200)).max(20),
+  })
+  .strict();
+export type StartupHelperList = z.infer<typeof StartupHelperListSchema>;
+export const StartupWriteResultSchema = z
+  .object({
+    state: z.enum([
+      "applied",
+      "already-set",
+      "conflict",
+      "failed",
+      "declined",
+      "timeout",
+      "expired",
+    ]),
+    detail: z.string().max(500),
+    before: StartupHex,
+    after: StartupHex,
+  })
+  .strict();
+export type StartupWriteResult = z.infer<typeof StartupWriteResultSchema>;
+export const StartupStatusSchema = z
+  .object({
+    items: z.array(StartupItemSchema).max(500),
+    warnings: z.array(z.string().max(200)).max(20),
+    /** Items Frameforge changed and can put back exactly. */
+    changes: z
+      .array(
+        z
+          .object({ id: StartupId, name: z.string().max(260), at: z.string() })
+          .strict(),
+      )
+      .max(500),
+    message: z.string().max(500),
+  })
+  .strict();
+export type StartupStatus = z.infer<typeof StartupStatusSchema>;
 export const UpdateStatusSchema = z
   .object({
     state: z.enum([
@@ -1017,6 +1097,7 @@ export const featurePages = [
   "Restore & backups",
   "System",
   "Monitor",
+  "Startup",
   "Activity",
   "Settings",
 ] as const;
@@ -1176,6 +1257,17 @@ export const requests = {
   fpsStart: z.object({ gameId: Id, confirmed: z.literal(true) }).strict(),
   fpsStop: z.object({ confirmed: z.literal(true) }).strict(),
   fpsHistory: z.object({ gameId: Id }).strict(),
+  // Startup apps: read-only list; enable/disable one item the way Task Manager does (StartupApproved) and put it back exactly.
+  startupList: Empty,
+  // acknowledged: the user saw the warning for a protected item (security software, Windows component, driver helper).
+  startupSet: z
+    .object({
+      id: StartupId,
+      enabled: z.boolean(),
+      acknowledged: z.literal(true).optional(),
+    })
+    .strict(),
+  startupUndo: z.object({ id: StartupId }).strict(),
 };
 export const responses = {
   bootstrap: BootstrapSchema,
@@ -1229,6 +1321,9 @@ export const responses = {
   fpsStart: FpsStatusSchema,
   fpsStop: FpsStatusSchema,
   fpsHistory: z.array(FpsSummarySchema).max(50),
+  startupList: StartupStatusSchema,
+  startupSet: StartupStatusSchema,
+  startupUndo: StartupStatusSchema,
 };
 export type Method = keyof typeof requests;
 export type Request<M extends Method> = z.infer<(typeof requests)[M]>;
@@ -1383,6 +1478,8 @@ export const HelperResult = z
     network: NetworkCheckSchema.optional(),
     launch: LaunchResultSchema.optional(),
     timerGlobal: TimerGlobalResultSchema.optional(),
+    startup: StartupHelperListSchema.optional(),
+    startupResult: StartupWriteResultSchema.optional(),
     reverts: z.array(MechanismResultSchema).optional(),
     powerPlan: Id.optional(),
     powerPlans: z.array(PowerPlanEntrySchema).max(200).optional(),

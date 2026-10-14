@@ -1,0 +1,59 @@
+/* Startup apps page. Tokens only. */
+.startup-list {
+  list-style: none;
+  margin: 0 0 var(--sp-4);
+  padding: 0;
+  border: var(--bw) solid var(--c-border);
+  background: var(--c-border);
+  display: grid;
+  gap: 1px;
+}
+.startup-row {
+  background: var(--c-cell);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--sp-4);
+  align-items: center;
+  padding: var(--sp-3) var(--sp-4);
+}
+.startup-row.off .startup-main strong {
+  color: var(--c-muted);
+}
+.startup-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.startup-path {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--c-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.startup-meta,
+.startup-actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.startup-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+@media (max-width: 900px) {
+  .startup-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .startup-meta,
+  .startup-actions {
+    justify-content: flex-start;
+  }
+}
