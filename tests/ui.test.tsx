@@ -105,13 +105,14 @@ describe("configuration and safety UI", () => {
       mode: "desktop",
       boost: { session: null, available: false, watching: false },
     };
-    let emit: (event: AppEvent) => void = () => {};
+    const listeners = new Set<(event: AppEvent) => void>();
+    const emit = (event: AppEvent) => listeners.forEach((l) => l(event));
     let finish: () => void = () => {};
     window.frameforge = {
       bootstrap: async () => bootstrap,
       onEvent: (callback: (event: AppEvent) => void) => {
-        emit = callback;
-        return () => {};
+        listeners.add(callback);
+        return () => listeners.delete(callback);
       },
       detectGames: () =>
         new Promise((resolve) => {

@@ -1,3 +1,4 @@
+import type { ScanState } from "./useScan";
 import type {
   Bootstrap,
   Method,
@@ -30,4 +31,6 @@ export interface ViewProps {
   ) => Promise<Response<M> | undefined>;
   navigate: (page: Page) => void;
   preview: (ids: OperationId[]) => void;
+  /** Live game-scan state, owned by App so it is never behind a page's own subscription. */
+  scan: ScanState;
 }
