@@ -4,3 +4,4 @@ export * from "./Panel";
 export * from "./shell";
 export * from "./format";
 export { CountUp } from "./CountUp";
+export { Disclosure } from "./Disclosure";

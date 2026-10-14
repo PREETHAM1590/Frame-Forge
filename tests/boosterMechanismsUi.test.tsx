@@ -210,6 +210,8 @@ async function openGameMode() {
   await screen.findByText("Your setup, in focus.");
   fireEvent.click(screen.getByRole("button", { name: "Game Mode" }));
   await screen.findByRole("heading", { name: "Game Mode", level: 1 });
+  // Advanced sub-sections (background apps, launch settings, network check) start collapsed.
+  document.querySelectorAll("details").forEach((d) => (d.open = true));
 }
 const card = (name: string) => screen.getByRole("article", { name });
 beforeEach(() => {

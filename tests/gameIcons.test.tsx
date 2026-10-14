@@ -139,7 +139,7 @@ describe("game icons", () => {
     await screen.findByText("Your setup, in focus.");
     fireEvent.click(screen.getByRole("button", { name: "Game Mode" }));
     const picker = (await screen.findByLabelText("Game")).closest(
-      ".picker-row",
+      ".gm-launch-row",
     ) as HTMLElement;
     await within(picker).findByRole("presentation", { hidden: true });
     expect(picker.querySelector("img")).toHaveAttribute("src", png);
