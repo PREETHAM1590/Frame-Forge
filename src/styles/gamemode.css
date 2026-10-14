@@ -314,3 +314,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.mode-card .disclosure summary {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-xs);
+}
+.mode-card .disclosure-body {
+  padding: var(--sp-2) var(--sp-3);
+}

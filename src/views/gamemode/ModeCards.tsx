@@ -1,4 +1,4 @@
-import { Badge, Button, Meter } from "../../components/ui";
+import { Badge, Button, Disclosure, Meter } from "../../components/ui";
 import type {
   BoostMode,
   BoosterConfig,
@@ -91,8 +91,7 @@ export function ModeCards({
                 )}
               </ul>
               {notApplied.length > 0 && (
-                <>
-                  <p className="muted">Not applied on this PC:</p>
+                <Disclosure title={`${notApplied.length} not applied — why?`}>
                   <ul
                     className="mechanism-list"
                     aria-label={`${m.label}: not applied on this PC`}
@@ -107,7 +106,7 @@ export function ModeCards({
                       </li>
                     ))}
                   </ul>
-                </>
+                </Disclosure>
               )}
               <footer className="mode-card-foot">
                 {asksAdmin && <Badge tone="amber">asks for admin</Badge>}

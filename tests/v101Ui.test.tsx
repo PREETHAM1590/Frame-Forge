@@ -429,6 +429,7 @@ describe("Game Bar capture blocked by policy", () => {
     const card = await screen.findByRole("article", {
       name: "Balanced on this PC",
     });
+    card.querySelectorAll("details").forEach((d) => (d.open = true));
     await within(card).findByText("already off by policy");
     expect(within(card).queryByText("unavailable")).toBeNull();
     expect(within(card).queryByText("unsupported")).toBeNull();

@@ -316,11 +316,10 @@ describe("smart core targeting and Windows 11", () => {
     await openGameMode();
     const performance = await waitFor(() => {
       const c = card("Performance on this PC");
-      expect(
-        within(c).getByLabelText("Performance: not applied on this PC"),
-      ).toBeVisible();
+      expect(within(c).getByText(/not applied/)).toBeVisible();
       return c;
     });
+    performance.querySelectorAll("details").forEach((d) => (d.open = true));
     const notApplied = within(performance).getByLabelText(
       "Performance: not applied on this PC",
     );
