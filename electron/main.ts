@@ -18,6 +18,7 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
 import { Repository } from "./repository.js";
@@ -34,6 +35,9 @@ import { userDataOverride } from "./userData.js";
 import { GameIcons, maxIconBytes } from "./icons.js";
 import { UpdateManager } from "./updater.js";
 import { Analytics, validAppKey } from "./analytics.js";
+import { createLogs } from "./logger.js";
+import { currentIdentity, makeRedactor, type GamePaths } from "./redact.js";
+import { allowedIssueUrl, validZipPath } from "./diagnostics.js";
 import {
   BoostNotices,
   closeToTray,
@@ -97,6 +101,51 @@ try {
   console.error(error instanceof Error ? error.message : error);
   app.exit(1);
 }
+// Local rotating logs in <profile>\logs; every line is redacted as it is written and nothing leaves the PC.
+let gameCache = { at: 0, list: [] as GamePaths[] };
+const redact = makeRedactor(currentIdentity(), () => {
+  if (!repo) return [];
+  if (Date.now() - gameCache.at > 5000)
+    try {
+      gameCache = { at: Date.now(), list: repo.state().games };
+    } catch {
+      /* the database may be closing */
+    }
+  return gameCache.list;
+});
+const logsDir = path.join(app.getPath("userData"), "logs");
+const logs = createLogs(logsDir, redact);
+const log = logs.main;
+// Session and update events are logged on change only.
+const lastBoost = new Map<string, string>();
+function logBoost(session: BoostSession) {
+  if (lastBoost.get(session.id) === session.status) return;
+  lastBoost.set(session.id, session.status);
+  const failed = session.mechanisms.filter((m) => m.state === "failed");
+  log(
+    session.failed || session.abnormal ? "warn" : "info",
+    "booster",
+    `Session ${session.id.slice(0, 8)} ${session.status} (mode ${session.mode}${session.failed ? ", failed" : ""}${failed.length ? `, ${failed.length} mechanism(s) failed` : ""}): ${session.message}`,
+  );
+}
+let lastUpdate = "";
+function logUpdate(status: { state: string; error: string }) {
+  if (lastUpdate === status.state + status.error) return;
+  lastUpdate = status.state + status.error;
+  log(
+    status.error ? "warn" : "info",
+    "updater",
+    `Update state ${status.state}${status.error ? `: ${status.error}` : ""}`,
+  );
+}
+process.on("uncaughtExceptionMonitor", (error, origin) =>
+  log("error", "process", `${origin}: ${error.stack ?? error.message}`),
+);
+log(
+  "info",
+  "app",
+  `Frameforge ${app.getVersion()} starting (${app.isPackaged ? "installed" : "dev"}, Windows ${os.release()}, Electron ${process.versions.electron})`,
+);
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -104,6 +153,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     try {
       mkdirSync(app.getPath("userData"), { recursive: true });
+      log("info", "app", "Ready");
       repo = new Repository(
         path.join(app.getPath("userData"), "frameforge.db"),
       );
@@ -113,7 +163,7 @@ if (!app.requestSingleInstanceLock()) {
         : path.join(here, "../../windows/publish/Frameforge.Windows.exe");
       const platform =
         process.platform === "win32" && existsSync(helper)
-          ? new WindowsPlatform(helper)
+          ? new WindowsPlatform(helper, logs)
           : new MockPlatform();
       // Icons are shown at most ~96px; keep the cached PNGs small.
       // Scaled to fit 128px, then shrunk further until it is under the size the app serves.
@@ -232,7 +282,44 @@ if (!app.requestSingleInstanceLock()) {
         notify: (event) => {
           if (window && !window.isDestroyed())
             window.webContents.send("frameforge:event", event);
-          if (event.type === "boost") onBoost(event.session);
+          if (event.type === "boost") {
+            logBoost(event.session);
+            onBoost(event.session);
+          }
+        },
+        diagnostics: {
+          logsDir,
+          redact,
+          build: { packaged: String(app.isPackaged) },
+          openLogs: async () => {
+            mkdirSync(logsDir, { recursive: true });
+            return (await shell.openPath(logsDir)) === "";
+          },
+          // Fixed GitHub new-issue page only; the service builds the URL from version and Windows build.
+          openIssue: async (url) => {
+            if (!allowedIssueUrl(url)) return false;
+            await shell.openExternal(url);
+            return true;
+          },
+          saveZip: async (defaultName, data) => {
+            if (!window) return null;
+            const result = await dialog.showSaveDialog(window, {
+              title: "Save Frameforge diagnostics",
+              defaultPath: path.join(app.getPath("documents"), defaultName),
+              filters: [{ name: "Zip archive", extensions: ["zip"] }],
+            });
+            if (result.canceled || !result.filePath) return null;
+            const file = validZipPath(result.filePath);
+            if (!file)
+              throw new Error("Choose a local folder and a .zip file name.");
+            await writeFile(file, data);
+            log(
+              "info",
+              "diagnostics",
+              `Diagnostics zip saved (${data.length} bytes)`,
+            );
+            return path.basename(file);
+          },
         },
         pickExecutable: async (game) => {
           if (!window) return null;
@@ -274,11 +361,13 @@ if (!app.requestSingleInstanceLock()) {
           analyticsAvailable: analytics.available,
           boostActive: () => service.booster.active,
           autoCheck: () => repo.state().settings.updateCheck === true,
-          notify: (status) =>
+          notify: (status) => {
+            logUpdate(status);
             window?.webContents.send(
               "frameforge:event",
               EventSchema.parse({ type: "update", status }),
-            ),
+            );
+          },
         });
       }
       await service.refresh();
@@ -345,6 +434,11 @@ if (!app.requestSingleInstanceLock()) {
             refreshTray();
             return { ok: true, data };
           } catch (error) {
+            log(
+              "error",
+              "ipc",
+              `${typeof method === "string" ? method.slice(0, 40) : "?"} failed: ${error instanceof Error ? error.message : "unknown error"}`,
+            );
             return {
               ok: false,
               error: {
@@ -377,6 +471,18 @@ if (!app.requestSingleInstanceLock()) {
             webSecurity: true,
           },
         });
+        // Renderer errors reach main.log; render crashes too.
+        window.webContents.on("console-message", (event) => {
+          if (event.level === "error")
+            log(
+              "error",
+              "renderer",
+              `${event.message} (${path.basename(event.sourceId)}:${event.lineNumber})`,
+            );
+        });
+        window.webContents.on("render-process-gone", (_event, details) =>
+          log("error", "renderer", `Renderer process gone: ${details.reason}`),
+        );
         window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
         window.webContents.on("will-navigate", (event, url) => {
           if (!trustedUrl(url)) event.preventDefault();
@@ -535,7 +641,8 @@ if (!app.requestSingleInstanceLock()) {
       app.on("activate", () => {
         if (!window) createWindow();
       });
-    } catch {
+    } catch (error) {
+      log("error", "app", error instanceof Error ? error : "startup failed");
       dialog.showErrorBox(
         "Frameforge could not start",
         "Local data or startup initialization failed. Existing data has been preserved.",
@@ -549,6 +656,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   let quitting = false;
   app.on("before-quit", (event) => {
+    log("info", "app", "Quitting");
     // Keep installation disarmed through refused quits and boost restoration.
     if (updater) updater.autoInstallOnAppQuit = false;
     if (activeService?.isBusy) event.preventDefault();

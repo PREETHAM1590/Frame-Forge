@@ -23,6 +23,7 @@ import {
 import type { ViewProps } from "../types";
 import { UpdateCard } from "../components/UpdatePanel";
 import { useUpdate } from "../useUpdate";
+import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
 export function System({ data, run, pending }: ViewProps) {
   const h = data.hardware;
   const [refreshing, setRefreshing] = useState(false);
@@ -323,6 +324,11 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           <Button onClick={() => navigate("Activity")}>Open activity</Button>
         </div>
       </section>
+      <DiagnosticsPanel
+        run={run}
+        pending={pending}
+        desktop={data.mode === "desktop"}
+      />
       <section className="settings-section">
         <h2>
           <Info size={20} />

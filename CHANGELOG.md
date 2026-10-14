@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased (1.4.0)
+
+- Settings > Diagnostics: preview and save a redacted diagnostics .zip (versions, hardware summary, booster config, recent sessions, optimization history, activity, FPS summaries, capabilities, errors, logs), open the logs folder, and report a problem on GitHub with only the version and Windows build prefilled. Nothing is uploaded.
+- Local rotating logs in `%APPDATA%\Frameforge\logs` (`main.log`, `helper.log`; 2 MB each, 3 rotations), redacted as they are written.
+
 ## 1.3.0
 
 - Optional update checks at startup, every six hours, or from Settings and the tray. Downloads happen when requested. Installation waits until a boost has ended and the app quits; closing to the tray keeps it running.

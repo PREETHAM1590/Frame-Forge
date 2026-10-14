@@ -156,6 +156,10 @@ Frameforge contacts the network in exactly two optional ways. Both are chosen on
 
    The Aptabase SDK adds the operating system name and version, the system locale, the Electron/Chromium version and a random session id that rotates after an hour of inactivity. Frameforge never sends game names, file paths, user names, PC names, hardware serial numbers or any free text. Aptabase does not store IP addresses. Turning the setting off stops sending immediately. Builds made without an Aptabase key (for example local builds) cannot send statistics at all; the setting then reads "Not available in this build".
 
+### Logs and diagnostics (local only)
+
+Frameforge writes short rotating text logs to `%APPDATA%\Frameforge\logs` (`main.log` for the app, `helper.log` for the Windows helper; each file is capped at 2 MB with 3 rotations). Your user name, profile path, PC name, game folders, emails, IP and MAC addresses and serial numbers are replaced as each line is written, and the logs never contain the statistics key or session ids. They are never uploaded. **Settings > Diagnostics** can open the folder, and **Export diagnostics...** shows you exactly what will go into a redacted .zip, which you save yourself and may attach to a [GitHub issue](https://github.com/PREETHAM1590/Frame-Forge/issues/new) (the **Report a problem** button opens that page with only the version and Windows build filled in).
+
 Plain-language privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md). See also the [privacy statement](docs/CODE_SIGNING_POLICY.md#privacy) and [Security](docs/SECURITY.md).
 
 ## Verification and Limitations

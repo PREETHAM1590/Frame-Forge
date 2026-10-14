@@ -7,6 +7,7 @@ Frameforge runs locally on Windows. Core desktop features work offline. This pag
 ## What stays on your PC
 
 - Your game library, detected game paths, configuration, Game Mode sessions and app backups are stored in `frameforge.db` under your per-user app data folder (ordinarily `%APPDATA%\frameforge`). That database is not uploaded.
+- Short text logs (`main.log`, `helper.log`) are kept in `%APPDATA%\Frameforge\logs`, capped at 2 MB per file with 3 rotations. Your user name, profile path, PC name, game folders, emails, IP and MAC addresses and serial numbers are replaced as lines are written. Logs stay on this PC. Settings > Diagnostics can open the folder or export a redacted .zip that you preview and save yourself; Frameforge never uploads it, and only you decide whether to attach it to a GitHub issue.
 - Monitor's system counters and FPS capture summaries are shown locally.
 
 ## The two optional network uses

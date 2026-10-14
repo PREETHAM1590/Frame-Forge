@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { noLog, type LogFn } from "./logger.js";
 import { EventEmitter } from "node:events";
 import { createInterface } from "node:readline";
 import os from "node:os";
@@ -280,7 +281,18 @@ export class WindowsPlatform implements Platform {
   boostAvailable = true;
   readonly elevation = new ElevationGate();
   private ownedPlan: string | null = null;
-  constructor(private executable: string) {}
+  constructor(
+    private executable: string,
+    private logs: { main: LogFn; helper: LogFn } = {
+      main: noLog,
+      helper: noLog,
+    },
+  ) {}
+  /** Helper stderr goes to helper.log (redacted by the log itself); never into the UI or activity. */
+  private helperErr = (chunk: Buffer) => {
+    const text = chunk.toString().trim().slice(0, 2000);
+    if (text) this.logs.helper("warn", "helper", text);
+  };
   setOwnedPlan(guid: string | null) {
     this.ownedPlan = guid;
   }
@@ -330,9 +342,7 @@ export class WindowsPlatform implements Platform {
         if (output.length > 1024 * 1024)
           terminate(new Error("Helper response exceeded the limit."));
       });
-      child.stderr.on("data", () => {
-        /* Helper diagnostics are intentionally not copied into user logs. */
-      });
+      child.stderr.on("data", this.helperErr);
       child.on("error", () => {
         if (!child.pid) finish(new Error("Windows helper could not start."));
         else terminate(new Error("Windows helper failed."));
@@ -630,13 +640,33 @@ export class WindowsPlatform implements Platform {
     ).message;
   }
   // GC-7: the helper elevates itself; the Node side never builds a command line.
-  private elevated(action: string, args: string[]) {
-    return this.call(
-      { command: "elevated", elevated: { action, args } },
-      undefined,
-      elevatedTimeout,
-      true,
+  private async elevated(action: string, args: string[]) {
+    this.logs.main(
+      "info",
+      "elevation",
+      `Administrator prompt requested: ${action}`,
     );
+    try {
+      const result = await this.call(
+        { command: "elevated", elevated: { action, args } },
+        undefined,
+        elevatedTimeout,
+        true,
+      );
+      this.logs.main(
+        "info",
+        "elevation",
+        `${action} finished: ${result.code ?? (result.ok ? "ok" : "failed")}`,
+      );
+      return result;
+    } catch (error) {
+      this.logs.main(
+        "warn",
+        "elevation",
+        `${action} did not complete: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+      throw error;
+    }
   }
   async restoreStatus() {
     return restoreStatusOf(await this.call({ command: "restore-status" }));
@@ -723,8 +753,9 @@ export class WindowsPlatform implements Platform {
     const child = spawn(this.executable, ["--watch"], {
       windowsHide: true,
       shell: false,
-      stdio: ["pipe", "pipe", "ignore"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
+    child.stderr.on("data", this.helperErr);
     createInterface({ input: child.stdout }).on("line", (line) => {
       if (line.length > 262144) return;
       try {
@@ -775,8 +806,9 @@ export class WindowsPlatform implements Platform {
       windowsHide: true,
       shell: false,
       detached,
-      stdio: ["pipe", "pipe", "ignore"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
+    child.stderr.on("data", this.helperErr);
     const channel = new EventEmitter();
     let exited = false;
     const exit = () => {

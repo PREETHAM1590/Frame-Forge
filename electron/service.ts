@@ -15,6 +15,7 @@ import {
   type Bootstrap,
   type Activity,
   type AppEvent,
+  type DiagnosticsGroup,
 } from "../shared/contracts.js";
 import { catalogue, presets, upsertPreset } from "../shared/catalogue.js";
 import { Repository } from "./repository.js";
@@ -25,6 +26,16 @@ import { LaunchSettingsService } from "./launchSettings.js";
 import { MonitorService } from "./monitor.js";
 import { FpsService } from "./fps.js";
 import { within, type DetectionResult } from "./games.js";
+import {
+  allowedIssueUrl,
+  groupInfo,
+  buildBundle,
+  collectData,
+  preview as diagnosticsPreview,
+  reportUrl,
+  zip,
+  type DiagnosticsHost,
+} from "./diagnostics.js";
 import { fallbackHardware, type Platform } from "./platform.js";
 import {
   dismissGame,
@@ -65,6 +76,8 @@ export interface DesktopServices {
     install(when: "now" | "onQuit"): UpdateStatus;
   };
   analyticsAvailable?: boolean;
+  /** Settings > Diagnostics: redaction, save dialog, logs folder and the fixed issue page. Absent in the browser demo. */
+  diagnostics?: DiagnosticsHost;
   /** Anonymous, allowlisted usage event; the callee drops it unless the user opted in. */
   track?: (event: string, props?: Record<string, string>) => void;
 }
@@ -571,6 +584,63 @@ export class AppService {
       fpsStart: async ({ gameId }) => this.fps.start(gameId),
       fpsStop: async () => this.fps.stop(),
       fpsHistory: async ({ gameId }) => this.fps.history(gameId),
+      diagnosticsPreview: async () => {
+        const host = this.diagnosticsHost();
+        return diagnosticsPreview(
+          buildBundle(
+            await collectData(this.diagnosticsSources(), host),
+            Object.keys(groupInfo) as DiagnosticsGroup[],
+            host.redact,
+          ),
+        );
+      },
+      diagnosticsExport: async ({ groups }) => {
+        const host = this.diagnosticsHost();
+        const files = buildBundle(
+          await collectData(this.diagnosticsSources(), host),
+          groups,
+          host.redact,
+        );
+        const data = zip(files);
+        const stamp = new Date().toISOString().slice(0, 10);
+        const file = await host.saveZip(
+          `frameforge-diagnostics-${stamp}.zip`,
+          data,
+        );
+        if (file)
+          this.log(
+            "Diagnostics exported",
+            `${files.length} files saved to a zip you chose. Nothing was uploaded.`,
+          );
+        return {
+          saved: file !== null,
+          file: file ?? "",
+          bytes: file ? data.length : 0,
+          files: file ? files.length : 0,
+        };
+      },
+      reportProblem: async () => {
+        const url = reportUrl(this.desktop.version, os.release());
+        if (!allowedIssueUrl(url)) throw new Error("Blocked address.");
+        return this.diagnosticsHost().openIssue(url);
+      },
+      openLogsFolder: async () => this.diagnosticsHost().openLogs(),
+    };
+  }
+  private diagnosticsHost(): DiagnosticsHost {
+    if (!this.desktop.diagnostics)
+      throw new Error("Diagnostics require the desktop app.");
+    return this.desktop.diagnostics;
+  }
+  private diagnosticsSources() {
+    return {
+      repo: this.repo,
+      hardware: () => this.currentHardware(),
+      capabilities: async () => (await this.booster.status()).capabilities,
+      supported: () => [...this.platform.capabilities],
+      fpsHistory: (gameId: string) => this.fps.history(gameId),
+      version: this.desktop.version,
+      mode: "desktop" as const,
     };
   }
   private dismissed() {

@@ -104,6 +104,10 @@ const inputs: { [M in Method]: () => Request<M> } = {
   fpsStart: () => ({ gameId: id(), confirmed: true }),
   fpsStop: () => ({ confirmed: true }),
   fpsHistory: () => ({ gameId: id() }),
+  diagnosticsPreview: () => ({}),
+  diagnosticsExport: () => ({ groups: ["app"] }),
+  reportProblem: () => ({}),
+  openLogsFolder: () => ({}),
 };
 describe("IPC surface", () => {
   it("has identical request, response and handler sets", () => {
@@ -149,6 +153,10 @@ describe("IPC surface", () => {
       "fpsStart",
       "fpsStop",
       "fpsHistory",
+      "diagnosticsPreview",
+      "diagnosticsExport",
+      "reportProblem",
+      "openLogsFolder",
       "updateCheck",
       "updateDownload",
       "updateInstall",

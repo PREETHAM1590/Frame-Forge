@@ -1040,6 +1040,53 @@ export const GameIconSchema = z
 export const RunningGamesSchema = z.array(
   z.object({ gameId: Id, target: ProcessTargetSchema }).strict(),
 );
+export const diagnosticsGroups = [
+  "app",
+  "system",
+  "booster",
+  "sessions",
+  "catalogue",
+  "activity",
+  "fps",
+  "capabilities",
+  "errors",
+  "logs",
+] as const;
+export const DiagnosticsGroupSchema = z.enum(diagnosticsGroups);
+export type DiagnosticsGroup = z.infer<typeof DiagnosticsGroupSchema>;
+export const DiagnosticsPreviewSchema = z
+  .object({
+    groups: z.array(
+      z
+        .object({
+          id: DiagnosticsGroupSchema,
+          label: z.string().max(80),
+          description: z.string().max(300),
+          files: z.array(
+            z
+              .object({
+                name: z.string().max(80),
+                bytes: z.number().int().nonnegative(),
+                /** The start of the file exactly as it will be saved (redacted). */
+                preview: z.string().max(5000),
+              })
+              .strict(),
+          ),
+        })
+        .strict(),
+    ),
+    redactions: z.array(z.string().max(200)),
+  })
+  .strict();
+export const DiagnosticsResultSchema = z
+  .object({
+    saved: z.boolean(),
+    /** File name only, never the folder. */
+    file: z.string().max(260),
+    bytes: z.number().int().nonnegative(),
+    files: z.number().int().nonnegative(),
+  })
+  .strict();
 export const requests = {
   bootstrap: Empty,
   refresh: Empty,
@@ -1176,6 +1223,13 @@ export const requests = {
   fpsStart: z.object({ gameId: Id, confirmed: z.literal(true) }).strict(),
   fpsStop: z.object({ confirmed: z.literal(true) }).strict(),
   fpsHistory: z.object({ gameId: Id }).strict(),
+  // Diagnostics: a redacted preview, then a .zip the user saves; nothing is uploaded.
+  diagnosticsPreview: Empty,
+  diagnosticsExport: z
+    .object({ groups: z.array(DiagnosticsGroupSchema).min(1).max(10) })
+    .strict(),
+  reportProblem: Empty,
+  openLogsFolder: Empty,
 };
 export const responses = {
   bootstrap: BootstrapSchema,
@@ -1229,6 +1283,10 @@ export const responses = {
   fpsStart: FpsStatusSchema,
   fpsStop: FpsStatusSchema,
   fpsHistory: z.array(FpsSummarySchema).max(50),
+  diagnosticsPreview: DiagnosticsPreviewSchema,
+  diagnosticsExport: DiagnosticsResultSchema,
+  reportProblem: z.boolean(),
+  openLogsFolder: z.boolean(),
 };
 export type Method = keyof typeof requests;
 export type Request<M extends Method> = z.infer<(typeof requests)[M]>;
