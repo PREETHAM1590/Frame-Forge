@@ -20,7 +20,8 @@ type Rules = BoosterConfig["background"];
 const actionLabel: Record<BackgroundAction, string> = {
   suspend: "Pause (resume after)",
   lower: "Lower priority",
-  close: "Close (not reopened)",
+  close: "Close politely",
+  end: "End process",
 };
 const mb = (bytes: number) =>
   bytes >= 1024 ** 3
@@ -289,7 +290,7 @@ export function BackgroundApps({
                     )
                   }
                 >
-                  {(["suspend", "lower", "close"] as const).map((a) => (
+                  {(["suspend", "lower", "close", "end"] as const).map((a) => (
                     <option key={a} value={a}>
                       {actionLabel[a]}
                     </option>

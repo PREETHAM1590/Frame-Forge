@@ -15,10 +15,13 @@ namespace Frameforge.Windows;
 public record Mechanisms(bool GameMode, string Priority, int[]? Affinity, bool PowerPlan, bool LowerBackground, bool SuspendBackground, bool CloseBackground, bool TimerResolution,
     bool PauseServices = false, bool GameBarCapture = false, bool SmartCores = false, bool CoreParking = false, bool PowerThrottling = false, bool StandbyPurge = false, bool GpuPriority = false);
 public record BackgroundRule(string Image, string Action);
+// Boost start clean-up. Rules: apps to close ("close"), end ("end") or pause ("suspend"). Trim: image names whose big background processes get their working set trimmed
+// (chosen in Node, where the never-touch list lives). Purge: the standby list may be cleared when memory is still tight afterwards.
+public record CleanupPlan(BackgroundRule[]? Rules = null, string[]? Trim = null, int GraceSeconds = 5, bool Relaunch = false, bool Purge = false, long TrimMinBytes = 100L * 1024 * 1024);
 // StoreGame: the game comes from the Xbox app or Microsoft Store. Unattended: auto-boost, which must not open an administrator prompt.
 // Preset: a preset mode rather than Custom; smart core targeting stays off in presets on Windows 11 hybrid CPUs.
 public record SessionCommand(string Command, int GamePid = 0, string? GameStartTime = null, string? GamePath = null, Mechanisms? Mechanisms = null, BackgroundRule[]? Background = null, int ParentPid = 0, string? OwnedPlan = null,
-    bool StoreGame = false, bool Unattended = false, bool Preset = false, bool TimerRestartPending = false, bool BrokerOnly = false);
+    bool StoreGame = false, bool Unattended = false, bool Preset = false, bool TimerRestartPending = false, bool BrokerOnly = false, CleanupPlan? Cleanup = null);
 // Prior state saved before a change. Applied is what Frameforge set, so a revert only happens while it is still in place.
 // Only these optional members omit nulls; registry snapshots keep an explicit `value: null` for absent values.
 public record Captured(string Mechanism, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProcessTarget? Process = null,
@@ -30,7 +33,9 @@ public record Captured(string Mechanism, [property: JsonIgnore(Condition = JsonI
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Setting = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? Items = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? AppliedItems = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RegCapture[]? RegValues = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RegCapture[]? RegValues = null,
+    // Full path of an app the clean-up closed, reopened when the session ends if the person asked for that.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Launch = null);
 public record MechanismResult(string Id, string State, string Detail, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Code = null);
 public record Step(string Event, string Mechanism, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Detail = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Captured? Prior = null,
@@ -87,10 +92,18 @@ public interface IProcessControl
     // Suspended and total thread counts.
     (int Suspended, int Total) Threads(ProcessTarget identity);
     int Close(ProcessTarget[] identities);
+    // Boost start clean-up. Defaults keep older fakes valid: nothing is posted, ended, trimmed or launched.
+    // Asks the processes' top-level windows to close (WM_CLOSE), the same as clicking X.
+    void PostClose(ProcessTarget[] identities) { }
+    void Terminate(ProcessTarget identity) => throw new NotSupportedException();
+    long WorkingSet(ProcessTarget identity) => 0;
+    // False when Windows refused (protected process); never throws for that.
+    bool TrimWorkingSet(ProcessTarget identity) => false;
+    bool Launch(string path) => false;
 }
 
 // ownedPlan: a plan Frameforge created with the user's consent (GUID recorded in SQLite), allowlisted next to the Windows plans.
-public sealed partial class BoostSessionEngine(IProcessControl processes, IPowerStore power, ITimerControl timer, IRegistryStore registry, Action<Step> emit, int selfPid, Guid? ownedPlan = null, Extras? extras = null)
+public sealed partial class BoostSessionEngine(IProcessControl processes, IPowerStore power, ITimerControl timer, IRegistryStore registry, Action<Step> emit, int selfPid, Guid? ownedPlan = null, Extras? extras = null, Action<int>? sleep = null)
 {
     public static readonly Guid HighPerformance = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"), Ultimate = new("e9a42b02-d5df-448d-aa00-03f14749eb61");
     public const string OwnedPlanName = "Frameforge High performance";
@@ -234,7 +247,8 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         var mechanisms = command.Mechanisms ?? throw new InvalidOperationException("Missing booster mechanisms.");
         var identity = Valid(new ProcessTarget(command.GamePid, command.GameStartTime ?? "", command.GamePath ?? "", Path.GetFileNameWithoutExtension(command.GamePath ?? ""), "Normal"));
         var rules = command.Background ?? [];
-        if (rules.Length > 50 || rules.Any(r => r is null || !Image.IsMatch(r.Image) || ProcessSafety.Denied(r.Image) || r.Action is not ("lower" or "suspend" or "close"))) throw new InvalidOperationException("Invalid background process list.");
+        if (rules.Length > 50 || rules.Any(r => r is null || !Image.IsMatch(r.Image) || ProcessSafety.Denied(r.Image) || r.Action is not ("lower" or "suspend" or "close" or "end"))) throw new InvalidOperationException("Invalid background process list.");
+        if (command.Cleanup?.Rules is { } cleanupRules && (cleanupRules.Length > 50 || cleanupRules.Any(r => r is null || !Image.IsMatch(r.Image) || ProcessSafety.Denied(r.Image) || r.Action is not ("suspend" or "close" or "end")))) throw new InvalidOperationException("Invalid clean-up app list.");
         if (mechanisms.Priority is not ("Normal" or "AboveNormal" or "High")) throw new InvalidOperationException("Unsupported game priority.");
         if (ProcessSafety.Denied(identity.Name)) throw new InvalidOperationException("This process is protected. Frameforge does not boost system, security or anti-cheat processes.");
         var game = processes.Read(identity) ?? throw new InvalidOperationException("The game is not running. Start it again before boosting.");
@@ -245,6 +259,9 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         // prompt itself runs after every other mechanism, so the game is already boosted while the prompt is open.
         if (mechanisms.PauseServices) PlanServices(command);
         if (mechanisms.StandbyPurge) PlanPurge(command);
+        // Clean-up runs before any other change: close and pause the picked apps, then trim memory.
+        var cleaned = command.Cleanup is not null;
+        if (cleaned) Cleanup(command, mechanisms, info, all);
         if (mechanisms.GameMode) Run("gameMode", GameMode);
         if (mechanisms.PowerPlan) Run("powerPlan", PowerPlan);
         if (mechanisms.PowerPlan && UsbSuspendOff() is { } usb) emit(new(usb.State, usb.Id, usb.Detail, Code: usb.Code));
@@ -258,8 +275,9 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         if (mechanisms.GpuPriority) Run("gpuPriority", () => GpuPriority(game));
         if (mechanisms.SmartCores) Run("smartCores", () => SmartCoresStep(game, mechanisms.Affinity is { Length: > 0 }, command.Preset));
         if (mechanisms.CoreParking) Run("coreParking", CoreParking);
-        foreach (var rule in rules) Background(rule, mechanisms, info, command.ParentPid, all);
-        foreach (var (action, id, on) in new[] { ("lower", "lowerBackground", mechanisms.LowerBackground), ("suspend", "suspendBackground", mechanisms.SuspendBackground), ("close", "closeBackground", mechanisms.CloseBackground) })
+        // With clean-up on, close/end/suspend rules were handled above; only "lower" is left for the mode's own toggle.
+        foreach (var rule in rules) if (!cleaned || rule.Action == "lower") Background(rule, mechanisms, info, command.ParentPid, all);
+        foreach (var (action, id, on) in cleaned ? new[] { ("lower", "lowerBackground", mechanisms.LowerBackground) } : new[] { ("lower", "lowerBackground", mechanisms.LowerBackground), ("suspend", "suspendBackground", mechanisms.SuspendBackground), ("close", "closeBackground", mechanisms.CloseBackground) })
             if (on && !rules.Any(r => r.Action == action)) emit(new("skipped", id, "Not configured: no background apps are selected for this action. Pick apps on the Game Mode page."));
         BeginElevated(deferElevated);
     }
@@ -388,16 +406,21 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         processes.SetAffinity(game, mask);
         return processes.GetAffinity(game) == mask ? new("affinity", "applied", $"Game limited to {cpus.Length} CPUs and verified.") : new("affinity", "failed", "Windows did not keep the CPU affinity.");
     }
+    // GC-11: same session and owner as the game, never critical, denylisted, the game (or another copy of its program), Frameforge or this helper.
+    // Every background change (priority, pause, close, memory trim) picks its targets through this one predicate.
+    public ProcInfo[] Candidates(ProcInfo game, int parentPid, ProcInfo[] all)
+    {
+        var parentPath = all.FirstOrDefault(p => p.Target.Pid == parentPid)?.Target.ExecutablePath;
+        return [.. all.Where(p => p.Sid is not null && p.Sid == game.Sid && p.SessionId == game.SessionId && p.SessionId != 0 && !p.Critical &&
+            !ProcessSafety.Denied(p.Target.Name) && p.Target.Pid != game.Target.Pid && p.Target.Pid != selfPid && p.Target.Pid != parentPid &&
+            !string.Equals(p.Target.ExecutablePath, parentPath, StringComparison.OrdinalIgnoreCase) && !p.Target.Name.StartsWith("Frameforge", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(p.Target.ExecutablePath, game.Target.ExecutablePath, StringComparison.OrdinalIgnoreCase))];
+    }
     private void Background(BackgroundRule rule, Mechanisms mechanisms, ProcInfo game, int parentPid, ProcInfo[] all)
     {
         var (id, enabled) = rule.Action switch { "lower" => ("lowerBackground", mechanisms.LowerBackground), "suspend" => ("suspendBackground", mechanisms.SuspendBackground), _ => ("closeBackground", mechanisms.CloseBackground) };
         if (!enabled) { emit(new("skipped", id, $"{rule.Image}: this action is not part of the selected mode.")); return; }
-        var parentPath = all.FirstOrDefault(p => p.Target.Pid == parentPid)?.Target.ExecutablePath;
-        // GC-11: same session and owner as the game, never critical, denylisted, the game, Frameforge or this helper.
-        var matches = all.Where(p => p.Sid is not null && p.Sid == game.Sid && p.SessionId == game.SessionId && p.SessionId != 0 && !p.Critical &&
-            !ProcessSafety.Denied(p.Target.Name) && p.Target.Pid != game.Target.Pid && p.Target.Pid != selfPid && p.Target.Pid != parentPid &&
-            !string.Equals(p.Target.ExecutablePath, parentPath, StringComparison.OrdinalIgnoreCase) && !p.Target.Name.StartsWith("Frameforge", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(Path.GetFileName(p.Target.ExecutablePath), rule.Image, StringComparison.OrdinalIgnoreCase)).Select(p => p.Target).ToArray();
+        var matches = Candidates(game, parentPid, all).Where(p => string.Equals(Path.GetFileName(p.Target.ExecutablePath), rule.Image, StringComparison.OrdinalIgnoreCase)).Select(p => p.Target).ToArray();
         if (matches.Length == 0) { emit(new("skipped", id, $"{rule.Image}: not running in your session, or protected.")); return; }
         if (id == "closeBackground")
         {
@@ -454,6 +477,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
                 "gpuPriority" => RevertGpuPriority(item!),
                 "smartCores" => RevertSmartCores(item!),
                 "coreParking" => RevertCoreParking(item!),
+                "closeBackground" => RevertRelaunch(item!),
                 // Node only sends known mechanism ids; the ones without a revert (close) are reported under their own id.
                 _ => new(id, "failed", "This saved change has no revert; nothing was changed.")
             };
@@ -726,6 +750,41 @@ public sealed class WindowsProcessControl : IProcessControl
         }
         finally { foreach (var (handle, process) in open) { handle.Dispose(); process.Dispose(); } }
     }
+    public void PostClose(ProcessTarget[] identities)
+    {
+        var pids = identities.Where(i => Read(i) is not null).Select(i => (uint)i.Pid).ToHashSet();
+        EnumWindows((window, _) =>
+        {
+            GetWindowThreadProcessId(window, out var owner);
+            if (pids.Contains(owner)) PostMessage(window, 0x0010, UIntPtr.Zero, IntPtr.Zero);
+            return true;
+        }, IntPtr.Zero);
+    }
+    public void Terminate(ProcessTarget identity)
+    {
+        using var handle = Verified(identity, WindowsProcesses.Terminate);
+        if (!TerminateProcess(handle, 1)) throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+    public long WorkingSet(ProcessTarget identity)
+    {
+        try { using var process = Process.GetProcessById(identity.Pid); return process.WorkingSet64; }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or Win32Exception) { return 0; }
+    }
+    // PROCESS_SET_QUOTA is all it takes for a process of the same user; protected or elevated ones refuse and are skipped.
+    public bool TrimWorkingSet(ProcessTarget identity)
+    {
+        try
+        {
+            using var handle = Verified(identity, 0x0100);
+            return SetProcessWorkingSetSizeEx(handle, UIntPtr.MaxValue, UIntPtr.MaxValue, 0);
+        }
+        catch (Exception error) when (error is Win32Exception or InvalidOperationException) { return false; }
+    }
+    public bool Launch(string path)
+    {
+        using var started = Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(path) ?? "", WindowStyle = ProcessWindowStyle.Minimized });
+        return started is not null;
+    }
     public ProcInfo[] List()
     {
         var results = new List<ProcInfo>();
@@ -777,6 +836,11 @@ public sealed class WindowsProcessControl : IProcessControl
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetPriorityClass(SafeProcessHandle handle, uint priorityClass);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetProcessAffinityMask(SafeProcessHandle handle, out UIntPtr process, out UIntPtr system);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetProcessAffinityMask(SafeProcessHandle handle, UIntPtr mask);
+    private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, UIntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetProcessWorkingSetSizeEx(SafeProcessHandle handle, UIntPtr minimum, UIntPtr maximum, uint flags);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool TerminateProcess(SafeProcessHandle handle, uint exitCode);
     [DllImport("ntdll.dll")] private static extern int NtSuspendProcess(SafeProcessHandle handle);
     [DllImport("ntdll.dll")] private static extern int NtResumeProcess(SafeProcessHandle handle);

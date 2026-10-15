@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
+import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   SessionEventSchema,
@@ -18,6 +19,12 @@ import {
   type SmartVerdict,
   type TimerStatus,
 } from "../shared/contracts.js";
+import {
+  planCleanup,
+  type CleanupBlocked,
+  type CleanupPlan,
+} from "../shared/boostCleanup.js";
+import { effectiveBackground } from "../shared/background.js";
 import type { Repository } from "./repository.js";
 import type { SmartDecision, SmartEngine } from "./smart.js";
 import {
@@ -571,7 +578,44 @@ export class BoostEngine {
       );
     }
   }
-  private run(
+  // Boost start clean-up (Settings, default on): the apps list plus the big background programs, planned from what runs right now.
+  // Smart mode already decided its list; the other modes use the saved list, a per-game list, or the suggested set.
+  private async cleanupFor(
+    game: Game,
+    mode: BoostMode,
+    config: BoosterConfig,
+    skipAdmin: boolean,
+  ) {
+    const settings = this.repo.state().settings;
+    if (settings.boostCleanup === false) return null;
+    let processes: Awaited<ReturnType<Platform["backgroundProcesses"]>> = [];
+    try {
+      processes = await this.platform.backgroundProcesses();
+    } catch {
+      /* Without a process list only the saved list applies and nothing is trimmed. */
+    }
+    const gameImage = game.executablePath
+      ? path.win32.basename(game.executablePath)
+      : undefined;
+    const rules =
+      mode === "smart"
+        ? config.background
+        : effectiveBackground(game, config, processes, {
+            gameImage,
+            gameSource: game.source,
+          }).rules;
+    return planCleanup({
+      rules,
+      processes,
+      gameImage,
+      relaunch: settings.relaunchClosed === true,
+      // The standby list needs administrator rights: only through approval already given (service) or the "allow admin prompts" setting.
+      purge:
+        !skipAdmin &&
+        (this.platform.elevation.silent || settings.autoBoostAdmin),
+    });
+  }
+  private async run(
     game: Game,
     mode: BoostMode,
     target: ProcessTarget,
@@ -580,6 +624,34 @@ export class BoostEngine {
     reason: "manual" | "auto",
     skipAdmin = false,
     verdict?: SmartVerdict,
+  ): Promise<BoostSession> {
+    const cleanup = await this.cleanupFor(game, mode, config, skipAdmin);
+    return this.launch(
+      game,
+      mode,
+      target,
+      wanted,
+      config,
+      reason,
+      skipAdmin,
+      verdict,
+      cleanup,
+    );
+  }
+  private launch(
+    game: Game,
+    mode: BoostMode,
+    target: ProcessTarget,
+    wanted: CustomMechanisms,
+    config: BoosterConfig,
+    reason: "manual" | "auto",
+    skipAdmin: boolean,
+    verdict: SmartVerdict | undefined,
+    cleanup: {
+      plan: CleanupPlan;
+      lower: BoosterConfig["background"];
+      blocked: CleanupBlocked[];
+    } | null,
   ): Promise<BoostSession> {
     const captured: Captured[] = [];
     // Auto-boost runs in the background: it opens an administrator prompt only when the user opted in.
@@ -625,6 +697,14 @@ export class BoostEngine {
           status: "preparing",
           message: `${modeLabels[mode]} mode starting for ${game.name}.${mechanisms.pauseServices && (reason === "manual" || (allowAdmin && !silentAdmin)) ? " Windows will ask for administrator approval to pause services." : ""}`,
           mechanisms: [
+            ...(cleanup?.blocked ?? []).map((b) => ({
+              id: (b.action === "suspend"
+                ? "suspendBackground"
+                : "closeBackground") as MechanismId,
+              state: "skipped" as const,
+              detail: `${b.image}: not touched. ${b.reason}`.slice(0, 480),
+              code: "never-touch",
+            })),
             ...skipped.map((id) => ({
               id,
               state: "skipped" as const,
@@ -800,8 +880,9 @@ export class BoostEngine {
               break;
             default:
               // A final result replaces the "waiting" row for the same step.
-              if (event.event !== "pending")
-                live.waiting.delete(event.mechanism);
+              // A prompt the helper opens on its own (the clean-up's conditional standby purge) holds the gate from here.
+              if (event.event === "pending") live.waiting.add(event.mechanism);
+              else live.waiting.delete(event.mechanism);
               this.update(live, {
                 mechanisms: [
                   ...live.session.mechanisms.filter(
@@ -857,13 +938,20 @@ export class BoostEngine {
         gameStartTime: target.startTime,
         gamePath: target.executablePath,
         mechanisms,
-        background: config.background,
+        // With clean-up on, close, end and pause go through it; only "lower" is left for the mode's own toggle.
+        background: cleanup ? cleanup.lower : config.background,
+        ...(cleanup && { cleanup: cleanup.plan }),
         parentPid: process.pid,
         ownedPlan: this.ownedPlan(),
         // Xbox and Microsoft Store games need the Xbox services; auto-boost must never open an administrator prompt.
         storeGame: game.source === "xbox" || game.source === "msstore",
         unattended: reason === "auto" && !allowAdmin,
-        brokerOnly: silentAdmin,
+        // The clean-up may clear the standby list on its own: without the "allow admin prompts" setting it never falls back to a prompt.
+        brokerOnly:
+          silentAdmin ||
+          (!!cleanup?.plan.purge &&
+            !this.repo.state().settings.autoBoostAdmin &&
+            prompts.length === 0),
         // Presets leave smart core targeting off on Windows 11 hybrid CPUs; Custom, or an explicit enhancer override, forces it.
         preset: mode !== "custom" && config.overrides.smartCores !== true,
         // Turned on by Frameforge but Windows has not restarted since: a timer request cannot reach the game yet.

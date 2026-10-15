@@ -12,10 +12,10 @@ public sealed record Extras(
     ICpuSets? CpuSets = null, IGpuInfo? Gpus = null, IServiceStore? Services = null, IServiceElevator? Elevator = null, IControllerProbe? Controllers = null,
     int Build = 0,
     // False for automatic recovery: it must never open an administrator prompt the user did not ask for.
-    bool Elevate = true, IGpuPriority? GpuPriority = null)
+    bool Elevate = true, IGpuPriority? GpuPriority = null, IMemory? Memory = null)
 {
     public static Extras Windows(bool elevate = true) => new(new WindowsRegistryAccess(), new WindowsPowerSettings(), new WindowsPowerThrottling(), new WindowsCpuTopology(),
-        new WindowsCpuSets(), new WindowsGpuInfo(), new WindowsServiceStore(), new WindowsServiceElevator(), new WindowsControllerProbe(), Environment.OSVersion.Version.Build, elevate, new WindowsGpuPriority());
+        new WindowsCpuSets(), new WindowsGpuInfo(), new WindowsServiceStore(), new WindowsServiceElevator(), new WindowsControllerProbe(), Environment.OSVersion.Version.Build, elevate, new WindowsGpuPriority(), new WindowsMemory());
 }
 
 public sealed partial class BoostSessionEngine

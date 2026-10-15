@@ -348,6 +348,21 @@ export function GameMode({
           title="Close or pause apps while gaming"
           hint={config.backgroundChosen ? "Your list" : "Suggested"}
         >
+          <Toggle
+            label="Clean up when a boost starts"
+            description="When a boost starts, close the apps picked below, then trim the memory big background programs hold. Pausing and closing happen first; memory is only freed when it was tight, and the result is shown after the boost starts."
+            checked={data.state.settings.boostCleanup !== false}
+            disabled={pending || !!unavailable}
+            onChange={(boostCleanup) =>
+              run(
+                "settings",
+                { ...data.state.settings, boostCleanup },
+                boostCleanup
+                  ? "Boosts now close the picked apps and free memory first."
+                  : "Boosts no longer close apps or free memory first.",
+              )
+            }
+          />
           <BackgroundApps
             config={config}
             game={game}
