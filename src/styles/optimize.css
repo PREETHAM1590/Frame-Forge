@@ -13,7 +13,7 @@
 }
 .optimization.opt-row {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) minmax(0, auto) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-4);
   min-height: 0;
@@ -25,20 +25,12 @@
 .opt-row:hover {
   background: var(--c-container);
 }
-.opt-row .category {
-  display: block;
-  margin: 0 0 var(--sp-1);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  text-transform: uppercase;
-  letter-spacing: var(--track-label);
-}
 .opt-row h2 {
   font-size: var(--fs-md);
   line-height: 1.3;
 }
 .opt-row p {
-  margin: var(--sp-1) 0 0;
+  margin: var(--sp-1) 0 var(--sp-2);
   font-size: var(--fs-sm);
   max-width: 70ch;
 }
@@ -46,20 +38,23 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
-  justify-content: flex-end;
-  max-width: 320px;
 }
 .opt-actions {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
 }
-.group-title {
+.opt-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin: var(--sp-5) 0;
   font-size: var(--fs-sm);
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: var(--track-label);
-  color: var(--c-muted);
+}
+.group-title {
+  font-size: var(--fs-md);
+  color: var(--c-text);
   margin: var(--sp-5) 0 var(--sp-3);
 }
 .opt-security {
@@ -68,14 +63,9 @@
 .opt-security .catalogue-grid {
   margin-bottom: 0;
 }
-@media (max-width: 1100px) {
+@media (max-width: 700px) {
   .optimization.opt-row {
-    grid-template-columns: 40px minmax(0, 1fr) auto;
-  }
-  .opt-tags {
-    grid-column: 2 / 4;
-    justify-content: flex-start;
-    max-width: none;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 /* Presets as cards */
@@ -95,16 +85,19 @@
   padding: var(--sp-5);
   border: 0;
 }
-.preset-list article > .preset-mark {
-  width: 40px;
-  height: 40px;
-}
 .preset-list h2 {
   font-size: var(--fs-md);
   text-transform: uppercase;
 }
 .preset-items > span {
   font-family: var(--font-mono);
+}
+.preset-list .preset-controls .button {
+  flex: none;
+}
+.preset-list .preset-controls > .muted {
+  flex-basis: 100%;
+  text-align: left;
 }
 .preset-list .preset-controls {
   margin-top: auto;

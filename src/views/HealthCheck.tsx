@@ -25,6 +25,7 @@ import type {
   LaunchPreview,
 } from "../../shared/contracts";
 import type { ViewProps } from "../types";
+import { Cleanup } from "./system/Cleanup";
 
 export const statusText: Record<HealthStatus, string> = {
   good: "Good",
@@ -132,6 +133,8 @@ export function useFix({
   return { apply, dialog, error };
 }
 
+const isQuiet = (c: Check) => c.status === "good" || c.status === "unknown";
+
 function CheckCard({
   check,
   onFix,
@@ -141,20 +144,8 @@ function CheckCard({
   onFix: (fix: HealthFix) => void;
   busy: boolean;
 }) {
-  return (
-    <article
-      className={`health-check ${check.status}`}
-      aria-label={check.title}
-      data-status={check.status}
-    >
-      <header>
-        <StatusBadge status={check.status} />
-        <h3>{check.title}</h3>
-        {check.top && check.status !== "good" && (
-          <Badge tone="amber">check first</Badge>
-        )}
-      </header>
-      <p className="health-summary">{check.summary}</p>
+  const body = (
+    <>
       <dl>
         <dt>What it means</dt>
         <dd>{check.explanation}</dd>
@@ -177,6 +168,36 @@ function CheckCard({
           {check.fix.label}
           {check.fix.kind === "settings" && <ArrowUpRight size={15} />}
         </Button>
+      )}
+    </>
+  );
+  // Things to fix are shown in full; checks that are fine (or unreadable) are one line you can open.
+  const quiet = check.status === "good" || check.status === "unknown";
+  return (
+    <article
+      className={`health-check ${check.status} ${quiet ? "quiet" : ""}`}
+      aria-label={check.title}
+      data-status={check.status}
+    >
+      {quiet ? (
+        <details>
+          <summary>
+            <StatusBadge status={check.status} />
+            <h3>{check.title}</h3>
+            <span className="health-summary">{check.summary}</span>
+          </summary>
+          <div className="health-quiet-body">{body}</div>
+        </details>
+      ) : (
+        <>
+          <header>
+            <StatusBadge status={check.status} />
+            <h3>{check.title}</h3>
+            {check.top && <Badge tone="amber">check first</Badge>}
+          </header>
+          <p className="health-summary">{check.summary}</p>
+          {body}
+        </>
       )}
     </article>
   );
@@ -217,7 +238,7 @@ export function HealthCheck(props: ViewProps) {
     <div className="health">
       <PageTitle
         title="PC Health Check"
-        subtitle="What may be holding your games back on this PC, why it matters, and what to do. Nothing is changed unless you press a fix button."
+        subtitle="What may be holding your games back, why it matters and what to do. Nothing changes unless you press a fix button."
         action={
           <Button
             disabled={!desktop || loading || pending}
@@ -286,17 +307,26 @@ export function HealthCheck(props: ViewProps) {
               {fixes.error}
             </p>
           )}
-          <div className="health-list">
-            {sorted.map((c) => (
-              <CheckCard
-                key={c.id}
-                check={c}
-                busy={pending}
-                onFix={(fix) => void fixes.apply(fix)}
-              />
-            ))}
-            {!sorted.length && <p className="muted">Nothing in this view.</p>}
-          </div>
+          {[sorted.filter((c) => !isQuiet(c)), sorted.filter(isQuiet)].map(
+            (group, i) =>
+              group.length > 0 && (
+                <div
+                  key={i}
+                  className={i === 0 ? "health-list" : "health-list quiet"}
+                >
+                  {group.map((c) => (
+                    <CheckCard
+                      key={c.id}
+                      check={c}
+                      busy={pending}
+                      onFix={(fix) => void fixes.apply(fix)}
+                    />
+                  ))}
+                </div>
+              ),
+          )}
+          {!sorted.length && <p className="muted">Nothing in this view.</p>}
+          <Cleanup />
         </>
       )}
       {fixes.dialog}

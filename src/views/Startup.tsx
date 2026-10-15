@@ -7,6 +7,7 @@ import {
   Busy,
   Button,
   Chips,
+  Disclosure,
   Empty,
   ErrorState,
   Modal,
@@ -111,6 +112,84 @@ export function Startup({ run, data }: ViewProps) {
     [status, filter, query],
   );
   const undoable = new Set(status?.changes.map((c) => c.id));
+  // What you can switch off comes first, biggest estimated impact on top.
+  const impactRank = { high: 0, medium: 1, low: 2, unknown: 3 } as const;
+  const switchable = shown
+    .filter((i) => i.canToggle)
+    .sort(
+      (x, y) =>
+        Number(y.enabled === true) - Number(x.enabled === true) ||
+        impactRank[x.impact] - impactRank[y.impact],
+    );
+  const listed = shown.filter((i) => !i.canToggle);
+  const row = (item: StartupItem) => (
+    <li
+      key={item.id}
+      className={`startup-row ${item.enabled === false ? "off" : ""}`}
+    >
+      <div className="startup-main">
+        <strong>{item.name}</strong>
+        <span className="muted">
+          {item.publisher || "Publisher unknown"} · {sourceLabels[item.source]}
+        </span>
+        <code className="startup-path" title={item.command}>
+          {item.path || item.command}
+        </code>
+        {item.note && <span className="muted">{item.note}</span>}
+      </div>
+      <div className="startup-meta">
+        {item.critical && (
+          <span title={item.criticalReason ?? undefined}>
+            <Badge tone="amber">
+              <ShieldAlert size={13} /> Protected
+            </Badge>
+          </span>
+        )}
+        <span title="Estimated from the program's file size. Windows' own startup impact is not available to Frameforge.">
+          <Badge tone={impactTone[item.impact]}>
+            Est. impact: {item.impact}
+            {item.sizeBytes !== null ? ` · ${size(item.sizeBytes)}` : ""}
+          </Badge>
+        </span>
+        {item.scope === "machine" && item.canToggle && (
+          <Badge>Needs admin</Badge>
+        )}
+      </div>
+      <div className="startup-actions">
+        {undoable.has(item.id) && (
+          <Button
+            disabled={busy !== null}
+            aria-label={`Undo change to ${item.name}`}
+            onClick={() =>
+              void change(item.id, () =>
+                run("startupUndo", { id: item.id }, `${item.name} restored.`),
+              )
+            }
+          >
+            <Undo2 size={15} /> Undo
+          </Button>
+        )}
+        {item.canToggle ? (
+          <Switch.Root
+            className="switch"
+            aria-label={`${item.name} starts with Windows`}
+            checked={item.enabled === true}
+            disabled={busy !== null}
+            onCheckedChange={(on) =>
+              !on && item.critical ? setConfirm(item) : void toggle(item, on)
+            }
+          >
+            <Switch.Thumb className="switch-thumb" />
+          </Switch.Root>
+        ) : (
+          <Badge>
+            Listed only
+            {item.enabled === null ? "" : item.enabled ? " · on" : " · off"}
+          </Badge>
+        )}
+      </div>
+    </li>
+  );
   const count = (f: Filter) => filterItems(status?.items ?? [], f, "").length;
   const history = data.activity
     .filter((a) => a.label.startsWith("Startup "))
@@ -119,7 +198,7 @@ export function Startup({ run, data }: ViewProps) {
     <>
       <PageTitle
         title="Startup apps"
-        subtitle="Programs that start when you sign in to Windows. Switching one off here is the same switch Task Manager uses, so both show the same state. Nothing is ever deleted."
+        subtitle="Programs that start when you sign in. Switching one off here is the same switch Task Manager uses. Nothing is deleted."
         action={
           <Button
             disabled={busy !== null}
@@ -173,89 +252,28 @@ export function Startup({ run, data }: ViewProps) {
               }
             />
           ) : (
-            <ul className="startup-list" aria-label="Startup apps">
-              {shown.map((item) => (
-                <li
-                  key={item.id}
-                  className={`startup-row ${item.enabled === false ? "off" : ""}`}
+            <>
+              <ul className="startup-list" aria-label="Startup apps">
+                {switchable.map(row)}
+              </ul>
+              {listed.length > 0 && (
+                <Disclosure
+                  title={`Can't be switched from here (${listed.length})`}
+                  hint="Use Task Manager"
                 >
-                  <div className="startup-main">
-                    <strong>{item.name}</strong>
-                    <span className="muted">
-                      {item.publisher || "Publisher unknown"} ·{" "}
-                      {sourceLabels[item.source]}
-                    </span>
-                    <code className="startup-path" title={item.command}>
-                      {item.path || item.command}
-                    </code>
-                    {item.note && <span className="muted">{item.note}</span>}
-                  </div>
-                  <div className="startup-meta">
-                    {item.critical && (
-                      <span title={item.criticalReason ?? undefined}>
-                        <Badge tone="amber">
-                          <ShieldAlert size={13} /> Protected
-                        </Badge>
-                      </span>
-                    )}
-                    <span title="Estimated from the program's file size. Windows' own startup impact is not available to Frameforge.">
-                      <Badge tone={impactTone[item.impact]}>
-                        Est. impact: {item.impact}
-                        {item.sizeBytes !== null
-                          ? ` · ${size(item.sizeBytes)}`
-                          : ""}
-                      </Badge>
-                    </span>
-                    {item.scope === "machine" && item.canToggle && (
-                      <Badge>Needs admin</Badge>
-                    )}
-                  </div>
-                  <div className="startup-actions">
-                    {undoable.has(item.id) && (
-                      <Button
-                        disabled={busy !== null}
-                        aria-label={`Undo change to ${item.name}`}
-                        onClick={() =>
-                          void change(item.id, () =>
-                            run(
-                              "startupUndo",
-                              { id: item.id },
-                              `${item.name} restored.`,
-                            ),
-                          )
-                        }
-                      >
-                        <Undo2 size={15} /> Undo
-                      </Button>
-                    )}
-                    {item.canToggle ? (
-                      <Switch.Root
-                        className="switch"
-                        aria-label={`${item.name} starts with Windows`}
-                        checked={item.enabled === true}
-                        disabled={busy !== null}
-                        onCheckedChange={(on) =>
-                          !on && item.critical
-                            ? setConfirm(item)
-                            : void toggle(item, on)
-                        }
-                      >
-                        <Switch.Thumb className="switch-thumb" />
-                      </Switch.Root>
-                    ) : (
-                      <Badge>
-                        Listed only
-                        {item.enabled === null
-                          ? ""
-                          : item.enabled
-                            ? " · on"
-                            : " · off"}
-                      </Badge>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  <p className="muted">
+                    Frameforge can only read these. Change them in Task Manager
+                    or Settings &gt; Apps &gt; Startup.
+                  </p>
+                  <ul
+                    className="startup-list"
+                    aria-label="Startup apps that cannot be switched here"
+                  >
+                    {listed.map(row)}
+                  </ul>
+                </Disclosure>
+              )}
+            </>
           )}
           {busy && <Busy label="Applying change" />}
           <Panel>

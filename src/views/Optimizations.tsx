@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   ArrowUpRight,
-  SlidersHorizontal,
   ShieldAlert,
   Check,
   Plus,
@@ -74,36 +73,32 @@ export function Optimizations({ data, preview, run, pending }: ViewProps) {
   const shown = categories.filter((c) => list.some((o) => o.category === c));
   const card = (o: Optimization) => (
     <article className="optimization opt-row" key={o.id}>
-      <span className={`action-icon ${o.supported ? "lime" : "neutral"}`}>
-        <SlidersHorizontal size={21} />
-      </span>
       <div className="opt-main">
-        <span className="muted category">
-          {o.category} / {o.impact}
-        </span>
         <h2>{o.name}</h2>
         <p className="muted">{o.description}</p>
+        <span className="badge-row opt-tags">
+          <Badge
+            tone={
+              o.risk === "Low" ? "lime" : o.risk === "High" ? "red" : "amber"
+            }
+          >
+            {o.risk} risk
+          </Badge>
+          <Badge tone={data.capabilities.includes(o.id) ? "cyan" : "neutral"}>
+            {data.capabilities.includes(o.id)
+              ? "Available"
+              : o.supported
+                ? missingHere(data)
+                  ? "Not available on this PC"
+                  : "Desktop helper required"
+                : "Review only"}
+          </Badge>
+          {o.restart !== "none" && <Badge tone="amber">Restart needed</Badge>}
+          {o.tier === "advanced" && <Badge tone="amber">Advanced</Badge>}
+          {o.tier === "security" && <Badge tone="red">Lowers security</Badge>}
+          {o.admin && <Badge tone="neutral">Administrator</Badge>}
+        </span>
       </div>
-      <span className="badge-row opt-tags">
-        <Badge
-          tone={o.risk === "Low" ? "lime" : o.risk === "High" ? "red" : "amber"}
-        >
-          {o.risk} risk
-        </Badge>
-        <Badge tone={data.capabilities.includes(o.id) ? "cyan" : "neutral"}>
-          {data.capabilities.includes(o.id)
-            ? "Available"
-            : o.supported
-              ? missingHere(data)
-                ? "Not available on this PC"
-                : "Desktop helper required"
-              : "Review only"}
-        </Badge>
-        {o.restart !== "none" && <Badge tone="amber">Restart needed</Badge>}
-        {o.tier === "advanced" && <Badge tone="amber">Advanced</Badge>}
-        {o.tier === "security" && <Badge tone="red">Lowers security</Badge>}
-        {o.admin && <Badge tone="neutral">Administrator</Badge>}
-      </span>
       <span className="opt-actions">
         {planMissing(o.id) && (
           <Button
@@ -114,14 +109,13 @@ export function Optimizations({ data, preview, run, pending }: ViewProps) {
             <Plus size={16} /> Create plan…
           </Button>
         )}
-        <button
-          className="icon-button"
+        <Button
           aria-label={`Details for ${o.name}`}
-          title={`Details for ${o.name}`}
           onClick={() => setDetail(o)}
         >
-          <ArrowUpRight size={21} />
-        </button>
+          Details
+          <ArrowUpRight size={16} />
+        </Button>
       </span>
     </article>
   );
@@ -129,21 +123,7 @@ export function Optimizations({ data, preview, run, pending }: ViewProps) {
     <>
       <PageTitle
         title="Optimizations"
-        subtitle="Understand the setting before you change it."
-        action={
-          <Button
-            disabled={pending || data.mode === "demo"}
-            title={
-              data.mode === "demo"
-                ? "Restarting Explorer requires the desktop app."
-                : "Use after changes marked 'Restart Windows Explorer'."
-            }
-            onClick={() => setRestarting(true)}
-          >
-            <RotateCw size={17} />
-            Restart Explorer
-          </Button>
-        }
+        subtitle="Small Windows tweaks for gaming. Open one to see what it changes and how to undo it."
       />
       <div className="lib-toolbar">
         <SearchField
@@ -222,6 +202,21 @@ export function Optimizations({ data, preview, run, pending }: ViewProps) {
           </section>
         );
       })}
+      <p className="opt-foot muted">
+        Some changes say "Restart Windows Explorer".
+        <Button
+          disabled={pending || data.mode === "demo"}
+          title={
+            data.mode === "demo"
+              ? "Restarting Explorer requires the desktop app."
+              : "Use after changes marked 'Restart Windows Explorer'."
+          }
+          onClick={() => setRestarting(true)}
+        >
+          <RotateCw size={17} />
+          Restart Explorer
+        </Button>
+      </p>
       {!list.length && (
         <Empty
           title="No matching optimizations"
@@ -428,9 +423,6 @@ export function Presets({ data, preview, run, pending }: ViewProps) {
       <div className="preset-list stagger">
         {all.map((p) => (
           <article key={p.id}>
-            <div className="preset-mark">
-              <SlidersHorizontal size={26} />
-            </div>
             <div>
               <h2>{p.name}</h2>
               <p className="muted">{p.description}</p>
@@ -487,6 +479,7 @@ export function Presets({ data, preview, run, pending }: ViewProps) {
                   </span>
                 )}
               <Button
+                variant={p.name === "Recommended" ? "primary" : "secondary"}
                 disabled={
                   pending ||
                   (missingHere(data) &&

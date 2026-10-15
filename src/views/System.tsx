@@ -25,7 +25,6 @@ import { UpdateCard } from "../components/UpdatePanel";
 import { AdminAccess } from "../components/AdminAccess";
 import { OverlaySettings } from "../components/OverlaySettings";
 import { useUpdate } from "../useUpdate";
-import { Cleanup } from "./system/Cleanup";
 import { DriverCheck } from "./system/DriverCheck";
 import { HotkeysSection } from "./HotkeysSection";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
@@ -139,7 +138,6 @@ export function System({ data, run, pending }: ViewProps) {
         </dl>
       </section>
       <DriverCheck />
-      <Cleanup />
     </>
   );
 }

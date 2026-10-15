@@ -68,11 +68,9 @@
 }
 .health-check h3 {
   font-size: var(--fs-base);
-  text-transform: uppercase;
   margin: 0;
 }
 .health-summary {
-  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   overflow-wrap: anywhere;
 }
@@ -87,7 +85,7 @@
 .health-check dt,
 .health-diff dt {
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: var(--track-label);
   color: var(--c-dim);
@@ -245,4 +243,38 @@
     grid-column: 3;
     text-align: left;
   }
+}
+/* Checks that are fine (or unreadable) collapse to one line. */
+.health-check.quiet {
+  padding: 0;
+}
+.health-check.quiet summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  cursor: pointer;
+  list-style: none;
+}
+.health-check.quiet summary::-webkit-details-marker {
+  display: none;
+}
+.health-check.quiet summary:hover {
+  background: var(--c-hover);
+}
+.health-check.quiet .health-summary {
+  flex: 1 1 260px;
+  color: var(--c-muted);
+}
+.health-quiet-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  align-items: flex-start;
+  padding: 0 var(--sp-4) var(--sp-4);
+}
+.health-list.quiet {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-1);
 }

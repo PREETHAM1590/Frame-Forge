@@ -2,11 +2,9 @@
 .af-kicker {
   display: block;
   margin: var(--sp-5) 0 var(--sp-2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  text-transform: uppercase;
-  letter-spacing: var(--track-label);
-  color: var(--c-primary);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--c-muted);
 }
 .af-steps {
   display: grid;
@@ -26,7 +24,7 @@
   background: var(--c-cell);
   color: var(--c-dim);
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: var(--track-label);
   min-width: 0;
@@ -218,4 +216,16 @@
 .af-result.reverted .af-result-head svg,
 .af-result.unchanged .af-result-head svg {
   color: var(--c-info);
+}
+
+/* The primary action of a dialog stays in view while its content scrolls. */
+.modal > .dialog-actions,
+.modal form > .dialog-actions {
+  position: sticky;
+  bottom: calc(var(--sp-5) * -1);
+  margin: var(--sp-4) calc(var(--sp-5) * -1) calc(var(--sp-5) * -1);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--c-canvas);
+  border-top: var(--bw) solid var(--c-border);
+  z-index: 1;
 }
