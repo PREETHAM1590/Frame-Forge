@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   catalogue,
+  bootStoreIds,
   restartText,
   serviceOpIds,
   type Restart,
@@ -58,10 +59,10 @@ const planName = (scheme: string, name?: string) =>
 // Snapshots saved before the target was recorded always meant High performance.
 const targetPlan = (snapshot: Snapshot) =>
   (snapshot.target ?? "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c").toLowerCase();
-const alreadyOnTarget = (snapshot: Snapshot) =>
+export const alreadyOnTarget = (snapshot: Snapshot) =>
   snapshot.scheme?.toLowerCase() === targetPlan(snapshot);
 // Every captured value already equals what applying would write (and the plan, if any, is active): applying changes nothing.
-const sameAsTarget = (v: Snapshot["values"][number]) =>
+export const sameAsTarget = (v: Snapshot["values"][number]) =>
   v.target !== undefined &&
   (v.target === null ? !v.existed : v.existed && v.value === v.target);
 const alreadySet = (snapshot: Snapshot) =>
@@ -275,44 +276,112 @@ export class OperationEngine {
     }
   }
   async rollback(id: string): Promise<Activity> {
+    return (await this.rollbackBatch([id]))[0]!;
+  }
+  /**
+   * Read-only, never opens an administrator prompt: whether Windows currently has each available optimization's target values.
+   * Boot-store items need administrator rights to read, so they stay "unknown".
+   */
+  async status(): Promise<
+    { id: OperationId; state: "on" | "off" | "unknown" }[]
+  > {
+    const ids = this.platform.capabilities;
+    const state = new Map<OperationId, "on" | "off" | "unknown">(
+      ids.map((id) => [id, "unknown"]),
+    );
+    const read = async (list: OperationId[]): Promise<void> => {
+      if (!list.length) return;
+      try {
+        const snapshot = await this.platform.capture(list);
+        for (const id of list) {
+          const values = snapshot.values.filter((v) => v.operation === id);
+          if (values.length)
+            state.set(id, values.every(sameAsTarget) ? "on" : "off");
+        }
+      } catch {
+        // One unreadable item (e.g. a service that is not installed) must not blank the others.
+        if (list.length > 1) for (const id of list) await read([id]);
+      }
+    };
+    await read(
+      ids.filter((id) => id !== "power-plan" && !bootStoreIds.includes(id)),
+    );
+    if (ids.includes("power-plan"))
+      try {
+        state.set(
+          "power-plan",
+          alreadyOnTarget(await this.platform.capture(["power-plan"]))
+            ? "on"
+            : "off",
+        );
+      } catch {
+        // Stays unknown.
+      }
+    return ids.map((id) => ({ id, state: state.get(id)! }));
+  }
+  /**
+   * Restores several applied operations through ONE platform restore, so a machine-wide batch opens one administrator prompt.
+   * Each operation keeps its own journal row.
+   */
+  async rollbackBatch(activityIds: string[]): Promise<Activity[]> {
     if (this.busy) throw new Error("Another operation is running.");
-    const row = this.repo.operation(id);
-    if (!row || !row.activity.rollback)
+    if (!activityIds.length || new Set(activityIds).size !== activityIds.length)
       throw new Error("No restorable snapshot for this operation.");
-    if (row.activity.ids.includes("capture-off")) this.noBoost(["capture-off"]);
-    this.noBoost(row.activity.ids.filter((id) => serviceOpIds.includes(id)));
+    const rows = activityIds.map((id) => {
+      const row = this.repo.operation(id);
+      if (!row || !row.activity.rollback)
+        throw new Error("No restorable snapshot for this operation.");
+      return row;
+    });
+    const all = rows.flatMap((r) => r.activity.ids);
+    if (all.includes("capture-off")) this.noBoost(["capture-off"]);
+    this.noBoost(all.filter((id) => serviceOpIds.includes(id)));
     // The probe hides power-plan when High performance is missing, but going back to the prior plan needs only the helper.
     if (
-      row.activity.ids.some(
+      all.some(
         (id) =>
           !this.platform.capabilities.includes(id) &&
           !(id === "power-plan" && this.platform.probe),
       )
     )
       throw new Error("This operation is unavailable on this installation.");
+    const snapshots = rows.map((r) => SnapshotSchema.parse(r.snapshot));
+    // Two rows that touch the same item would fight over one value; they must be undone one at a time.
+    if (
+      new Set(all).size !== all.length ||
+      snapshots.filter((s) => s.scheme).length > 1
+    )
+      throw new Error(
+        "Some of these changes overlap. Undo them one at a time from Activity.",
+      );
+    const merged: Snapshot = {
+      ...(snapshots.find((s) => s.scheme) ?? {}),
+      values: snapshots.flatMap((s) => s.values),
+    };
     this.busy = true;
     try {
-      const note = await this.platform.restore(
-        SnapshotSchema.parse(row.snapshot),
-        false,
-      );
-      return this.repo.finish(
-        id,
-        "rolled-back",
-        `The captured Windows state was restored and verified.${note ? ` ${note}` : ""}`,
-        false,
+      const note = await this.platform.restore(merged, false);
+      return activityIds.map((id) =>
+        this.repo.finish(
+          id,
+          "rolled-back",
+          `The captured Windows state was restored and verified.${note ? ` ${note}` : ""}`,
+          false,
+        ),
       );
     } catch (e) {
-      // Declined, not approved or blocked by another prompt: nothing was restored and nothing is in doubt. The row stays restorable.
+      // Declined, not approved or blocked by another prompt: nothing was restored and nothing is in doubt. The rows stay restorable.
       if (e instanceof NotApplied) {
         const text = `Rollback not done — ${e.reason}. The settings are unchanged; retry when you can answer the prompt.`;
         this.repo.log("Rollback not done", text, "failed");
         throw Object.assign(new Error(text), { logged: true });
       }
-      return this.repo.finish(
-        id,
-        "recovery-needed",
-        "Rollback could not finish. Settings may have been changed externally; review the Windows preferences before retrying.",
+      return activityIds.map((id) =>
+        this.repo.finish(
+          id,
+          "recovery-needed",
+          "Rollback could not finish. Settings may have been changed externally; review the Windows preferences before retrying.",
+        ),
       );
     } finally {
       this.busy = false;

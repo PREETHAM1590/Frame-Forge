@@ -31,8 +31,10 @@ import type {
   Settings,
 } from "../shared/contracts";
 import type { Page, ViewProps } from "./types";
+import { pendingStore } from "./pendingChanges";
 import {
   Button,
+  Modal,
   Badge,
   Busy,
   Toast,
@@ -294,6 +296,11 @@ export default function App() {
     if (saved && c.updateCheck) void request("updateCheck", {}).catch(() => 0);
   }
   function navigate(next: Page) {
+    // Unsaved switch flips: ask before leaving the page.
+    if (next !== page && pendingStore.count() > 0) {
+      setLeaving(next);
+      return;
+    }
     if (next !== page)
       void request("trackUsage", { event: "feature_opened", page: next }).catch(
         () => undefined,
@@ -302,6 +309,7 @@ export default function App() {
     setMobile(false);
     window.scrollTo({ top: 0 });
   }
+  const [leaving, setLeaving] = useState<Page | null>(null);
   const flow = useApplyFlow({
     data,
     run,
@@ -363,6 +371,7 @@ export default function App() {
     run,
     navigate,
     preview: (ids) => void flow.open(ids),
+    review: (ids, offs) => void flow.open(ids, data, offs),
     scan,
   };
   const views: Record<Page, React.ReactNode> = {
@@ -494,6 +503,30 @@ export default function App() {
         />
       )}
       {closeModal}
+      {leaving && (
+        <Modal
+          title="Unsaved changes"
+          description="You flipped switches that are not saved yet. Nothing has changed in Windows."
+          onClose={() => setLeaving(null)}
+        >
+          <div className="dialog-actions">
+            <Button onClick={() => setLeaving(null)}>
+              Stay to review &amp; save
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                const target = leaving;
+                pendingStore.clear();
+                setLeaving(null);
+                navigate(target);
+              }}
+            >
+              Discard and leave
+            </Button>
+          </div>
+        </Modal>
+      )}
       <ApplyFlowDialog
         flow={flow}
         run={run}

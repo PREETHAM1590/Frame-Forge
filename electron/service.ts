@@ -305,6 +305,11 @@ export class AppService {
         noRestoreInFlight();
         return this.engine.rollback(id);
       },
+      rollbackBatch: async ({ ids }) => {
+        noRestoreInFlight();
+        return this.engine.rollbackBatch(ids);
+      },
+      optimizationStatus: async () => this.engine.status(),
       backup: async ({ name }) => {
         guard();
         const result = this.repo.backup(name);

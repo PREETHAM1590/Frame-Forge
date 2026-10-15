@@ -1,16 +1,18 @@
 import { AlertTriangle, ChevronRight } from "lucide-react";
-import { catalogue, restartText } from "../../../shared/catalogue";
+import { adminIds, catalogue, restartText } from "../../../shared/catalogue";
 import { Badge, Busy, formatTime } from "../../components/ui";
 import type { ReactNode } from "react";
-import type { ApplyFlow } from "./useApplyFlow";
+import { securityPhrase, type ApplyFlow } from "./useApplyFlow";
 
 export const restoreWait =
   "A System Restore request is waiting on Windows. Wait for it to finish before changing Windows settings.";
 /** Name the person must type for a security trade-off (compared case-insensitively). */
 export const securityName = (flow: ApplyFlow) =>
-  flow.preview && flow.preview.security.length > 0
-    ? catalogue.find((o) => o.id === flow.preview!.security[0])!.name
-    : "";
+  !flow.preview || flow.preview.security.length === 0
+    ? ""
+    : flow.preview.security.length > 1
+      ? securityPhrase
+      : catalogue.find((o) => o.id === flow.preview!.security[0])!.name;
 
 /** Rows that would actually write something; already-set rows are shown but not counted. */
 export const changeCount = (preview: { changes: { alreadySet: boolean }[] }) =>
@@ -29,7 +31,7 @@ export function ReviewStep({
   /** Rendered after the preview text: the restore-point failure prompt. */
   children?: ReactNode;
 }) {
-  const { preview, selection, skipped, applying } = flow;
+  const { preview, selection, skipped, applying, offs = [] } = flow;
   return (
     <>
       <div className="preview-items">
@@ -55,6 +57,9 @@ export function ReviewStep({
         <Busy label="Checking prerequisites and current values" />
       ) : preview ? (
         <>
+          {preview.token && offs.length > 0 && (
+            <span className="af-kicker">Turning on</span>
+          )}
           <span className="af-kicker">
             {changeCount(preview)} change
             {changeCount(preview) === 1 ? "" : "s"}
@@ -72,6 +77,30 @@ export function ReviewStep({
               </div>
             ))}
           </div>
+          {offs.length > 0 && (
+            <>
+              <span className="af-kicker">
+                Turning off ({offs.length} undo)
+              </span>
+              <div className="change-list">
+                {offs.map((o) => (
+                  <div key={o.activityId}>
+                    <code>
+                      {o.ids
+                        .map((id) => catalogue.find((c) => c.id === id)!.name)
+                        .join(", ")}
+                    </code>
+                    <span>
+                      Puts the exact values captured before back
+                      {o.ids.length > 1
+                        ? ` (this undoes all ${o.ids.length} items applied together)`
+                        : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
           {preview.warnings.map((w) => (
             <p className="notice" key={w}>
               <AlertTriangle size={17} />
@@ -79,13 +108,18 @@ export function ReviewStep({
             </p>
           ))}
           <p className="muted">
-            Preview expires {formatTime(preview.expiresAt)}.{" "}
+            {preview.token && (
+              <>Preview expires {formatTime(preview.expiresAt)}. </>
+            )}
             {flow.restoreOffer && flow.createPoint
               ? "Creating the restore point shows a Windows administrator prompt. "
               : ""}
             {preview.admin
-              ? "Applying shows a Windows administrator prompt for the machine settings above. "
+              ? "Saving shows one Windows administrator prompt for the machine settings above. "
               : "No administrator prompt for these settings. "}
+            {preview.token &&
+              offs.some((o) => o.ids.some((id) => adminIds.includes(id))) &&
+              "Turning items off asks for administrator approval separately. "}
             {restartText[preview.restart]}
           </p>
           {flow.restoreOffer && (

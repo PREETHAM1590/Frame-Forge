@@ -367,11 +367,11 @@ describe("presets without a performance power plan", () => {
     );
     // Capabilities refresh: the card now says Available and the offer is gone, without a restart.
     await waitFor(() =>
-      expect(within(card).getByText("Available")).toBeVisible(),
+      expect(
+        within(card).queryByRole("button", { name: /Create plan…/ }),
+      ).toBeNull(),
     );
-    expect(
-      within(card).queryByRole("button", { name: /Create plan…/ }),
-    ).toBeNull();
+    expect(within(card).queryByText("Not available on this PC")).toBeNull();
   });
   it("still lists the skipped item in the operation result", async () => {
     install(["mouse-precision"]);

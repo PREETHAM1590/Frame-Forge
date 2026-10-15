@@ -350,6 +350,25 @@ public class OptimizationCatalogTests
     }
 
     [Fact]
+    public void ManyMachineItemsAndASecurityItemShareOneAdministratorRequestPerStep()
+    {
+        var store = new Memory(); var machine = new Memory();
+        var inner = new RegistryOperations(machine, new Facts());
+        var gateway = new Gateway(request => AdminCommands.Execute(request, inner));
+        var engine = new Optimizations(new RegistryOperations(store, new Facts()), new NoPower(), null, gateway, false);
+        string[] ids = ["transparency-off", "lock-screen-blur-off", "boot-logo-off", "uac-off"];
+        var snapshot = engine.Capture(ids);
+        gateway.Requests.Clear();
+        Assert.True(engine.Apply(ids, snapshot));
+        // One request carries every machine item, the security item included, so the person approves once.
+        var apply = Assert.Single(gateway.Requests);
+        Assert.Equal(["boot-logo-off", "lock-screen-blur-off", "uac-off"], apply.Ids.OrderBy(i => i));
+        gateway.Requests.Clear();
+        engine.Restore(snapshot);
+        Assert.Equal("restore", Assert.Single(gateway.Requests).Command);
+    }
+
+    [Fact]
     public void DecliningTheAdministratorPromptLeavesEverythingUntouched()
     {
         var store = new Memory();

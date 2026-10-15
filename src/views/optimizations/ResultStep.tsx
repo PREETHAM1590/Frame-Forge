@@ -6,7 +6,9 @@ import {
   RotateCcw,
   XCircle,
 } from "lucide-react";
+import { catalogue } from "../../../shared/catalogue";
 import type { Activity } from "../../../shared/contracts";
+import type { RowOutcome } from "./useApplyFlow";
 import { Badge, Button } from "../../components/ui";
 import type { ReactNode } from "react";
 
@@ -61,12 +63,22 @@ export const ResultStep = forwardRef<
   {
     result: Activity;
     skippedCount: number;
+    rows?: RowOutcome[];
+    notes?: string[];
     skippedNotice: ReactNode;
     onActivity: () => void;
     onClose: () => void;
   }
 >(function ResultStep(
-  { result, skippedCount, skippedNotice, onActivity, onClose },
+  {
+    result,
+    skippedCount,
+    rows = [],
+    notes = [],
+    skippedNotice,
+    onActivity,
+    onClose,
+  },
   ref,
 ) {
   const outcome = outcomeOf(result, skippedCount);
@@ -81,6 +93,27 @@ export const ResultStep = forwardRef<
         <Badge tone={outcome.tone}>{result.status}</Badge>
       </div>
       <p>{result.message}</p>
+      {rows.length > 0 && (
+        <ul className="af-rows" aria-label="Result for each switch">
+          {rows.map((r) => (
+            <li key={`${r.id}-${r.want}`}>
+              <strong>{catalogue.find((o) => o.id === r.id)?.name}</strong>
+              {": "}
+              {r.got === r.want
+                ? `${r.want === "on" ? "On" : "Off"} (verified)`
+                : r.got === "unknown"
+                  ? `Asked to turn ${r.want}; Windows cannot be read here. See Activity.`
+                  : `Still ${r.got}: it did not turn ${r.want}.`}
+            </li>
+          ))}
+        </ul>
+      )}
+      {notes.map((n) => (
+        <p className="notice" key={n} role="alert">
+          <AlertTriangle size={17} />
+          {n}
+        </p>
+      ))}
       <code className="setting-path">{result.id}</code>
       {skippedNotice}
       <div className="dialog-actions">

@@ -57,7 +57,8 @@ export function ApplyFlowDialog({
   ) : null;
   const step = result ? 3 : applying ? 2 : preview ? 1 : 0;
   const withPoint = flow.restoreOffer && flow.createPoint;
-  const nothingToChange = !!preview && changeCount(preview) === 0;
+  const nothingToChange =
+    !!preview && changeCount(preview) === 0 && !flow.offs?.length;
   const canApply =
     !!preview &&
     !nothingToChange &&
@@ -84,9 +85,11 @@ export function ApplyFlowDialog({
           title={
             result
               ? "Operation result"
-              : selection.length > 1
-                ? "Review preset"
-                : "Preview Windows preference"
+              : flow.offs
+                ? "Review changes"
+                : selection.length > 1
+                  ? "Review preset"
+                  : "Preview Windows preference"
           }
           description={
             result
@@ -102,6 +105,8 @@ export function ApplyFlowDialog({
               ref={resultHeading}
               result={result}
               skippedCount={flow.skipped.length}
+              rows={flow.rows}
+              notes={flow.notes}
               skippedNotice={skippedNotice}
               onClose={flow.close}
               onActivity={() => {

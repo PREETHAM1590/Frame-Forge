@@ -1611,6 +1611,13 @@ export const requests = {
     .strict(),
   cancel: Empty,
   rollback: z.object({ id: Id, confirmed: z.literal(true) }).strict(),
+  rollbackBatch: z
+    .object({
+      ids: z.array(Id).min(1).max(24),
+      confirmed: z.literal(true),
+    })
+    .strict(),
+  optimizationStatus: Empty,
   backup: z.object({ name: Name }).strict(),
   restore: z.object({ id: Id, confirmed: z.literal(true) }).strict(),
   addGame: Empty,
@@ -1812,6 +1819,10 @@ export const responses = {
   confirm: ActivitySchema,
   cancel: z.boolean(),
   rollback: ActivitySchema,
+  rollbackBatch: z.array(ActivitySchema),
+  optimizationStatus: z.array(
+    z.object({ id: OperationId, state: z.enum(["on", "off", "unknown"]) }),
+  ),
   backup: BackupSchema,
   restore: StateSchema,
   addGame: GameSchema.nullable(),

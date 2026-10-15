@@ -34,6 +34,11 @@ export interface ViewProps {
   ) => Promise<Response<M> | undefined>;
   navigate: (page: Page) => void;
   preview: (ids: OperationId[]) => void;
+  /** Review & save: turn-ons to apply and journal rows to undo, in one dialog. */
+  review?: (
+    ids: OperationId[],
+    offs: { activityId: string; ids: OperationId[] }[],
+  ) => void;
   /** Live game-scan state, owned by App so it is never behind a page's own subscription. */
   scan: ScanState;
 }

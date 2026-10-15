@@ -90,7 +90,7 @@ function bootstrap(): Bootstrap {
     backups,
     activity,
     hardware,
-    version: "1.4.1",
+    version: "1.4.2",
     capabilities: [],
     bootedAt: "",
     drifted: [],

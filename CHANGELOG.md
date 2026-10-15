@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.2
+
+- **On/off switches on optimizations, showing the real Windows state.** Every optimization row has a switch that is on when Windows currently has that optimization's values, read fresh when the page opens and after every apply or undo. A caption says whether Frameforge applied it (and can undo it) or Windows already had it. Items that need administrator rights to read show a neutral switch and point to Details. Flipping a switch only queues a change: a bar at the bottom says how many are pending and how many need administrator, with Review & save and Discard. One review lists every setting that will change, offers the restore point once, asks for one typed confirmation if a security trade-off is included, and saves everything with at most one administrator prompt for turning items on and one for turning items off. Switches settle to what Windows reports afterwards, and leaving the page with pending changes asks first. Rows show at most two chips; the rest moved into Details.
+
 ## 1.4.1
 
 - **In-app welcome and close dialogs.** The first-run question is now a Frameforge welcome screen (what it does, privacy and updates, running in the background) instead of a Windows message box. Update checks default to on, anonymous statistics to off, with a "What's shared" explanation. Upgrades that never answered see it too. Nothing is checked or sent until it is answered, and a hidden (tray) start shows it when the window first opens. The first-close question ("Keep Frameforge running in the tray?") is an in-app dialog too; the Windows box remains only as a fallback if the window does not answer within 3 seconds.

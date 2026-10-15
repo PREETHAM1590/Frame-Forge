@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import * as Switch from "@radix-ui/react-switch";
 import {
   ArrowUpRight,
   ShieldAlert,
@@ -30,6 +31,8 @@ import {
 } from "../components/ui";
 import { PowerPlanDialog } from "../components/PowerPlanDialog";
 import type { ViewProps } from "../types";
+import { request } from "../api";
+import { pendingStore, usePending } from "../pendingChanges";
 // The helper runs but a per-PC prerequisite (e.g. the High performance plan) is missing.
 const missingHere = (data: ViewProps["data"]) =>
   data.mode === "desktop" && data.capabilities.length > 0;
@@ -46,7 +49,64 @@ const settingsLabels = {
   gameMode: "Game Mode",
   coreIsolation: "Core isolation (Windows Security)",
 } as const;
-export function Optimizations({ data, preview, run, pending }: ViewProps) {
+type Real = "on" | "off" | "unknown";
+export function Optimizations({
+  data,
+  preview,
+  review,
+  run,
+  pending,
+}: ViewProps) {
+  const queued = usePending();
+  const [states, setStates] = useState<Record<string, Real>>({});
+  // Re-read what Windows has on load and whenever the journal changes (after any apply or rollback).
+  const journal = data.activity.map((a) => `${a.id}${a.status}`).join();
+  const available = data.capabilities.join();
+  useEffect(() => {
+    if (data.mode !== "desktop" || !available) return;
+    let live = true;
+    request("optimizationStatus", {})
+      .then(
+        (r) =>
+          live && setStates(Object.fromEntries(r.map((x) => [x.id, x.state]))),
+      )
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [journal, available, data.mode]);
+  // The journal row that applied an item and can still undo it (newest first).
+  const appliedBy = (id: OperationId) =>
+    data.activity.find(
+      (a) => a.status === "success" && a.rollback && a.ids.includes(id),
+    );
+  const flip = (id: OperationId, on: boolean) => {
+    const next = { ...queued };
+    if (queued[id]) {
+      // Flipping back cancels; an undo covers everything its journal row covered.
+      for (const x of queued[id] === "off"
+        ? (appliedBy(id)?.ids ?? [id])
+        : [id])
+        delete next[x];
+    } else if (on) next[id] = "on";
+    else for (const x of appliedBy(id)?.ids ?? [id]) next[x] = "off";
+    pendingStore.set(next);
+  };
+  const queuedIds = Object.keys(queued) as OperationId[];
+  const needAdmin = queuedIds.filter(
+    (id) => catalogue.find((o) => o.id === id)?.admin,
+  ).length;
+  const save = () => {
+    const rows = new Map<string, OperationId[]>();
+    for (const id of queuedIds.filter((x) => queued[x] === "off")) {
+      const a = appliedBy(id);
+      if (a) rows.set(a.id, a.ids);
+    }
+    const offs = [...rows].map(([activityId, ids]) => ({ activityId, ids }));
+    const ons = queuedIds.filter((id) => queued[id] === "on");
+    if (review) review(ons, offs);
+    else preview(ons);
+  };
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<"All" | Category>("All");
   const [availability, setAvailability] = useState("All");
@@ -71,6 +131,52 @@ export function Optimizations({ data, preview, run, pending }: ViewProps) {
       `${o.name} ${o.description} ${o.impact}`.toLowerCase().includes(needle),
   );
   const shown = categories.filter((c) => list.some((o) => o.category === c));
+  const switchFor = (o: Optimization) => {
+    const can = data.capabilities.includes(o.id);
+    const real = states[o.id] ?? "unknown";
+    const want = queued[o.id];
+    const applied = appliedBy(o.id);
+    const checked = want ? want === "on" : real === "on";
+    const why = !can
+      ? o.supported
+        ? missingHere(data)
+          ? "Not available on this PC"
+          : "Needs the desktop helper"
+        : "Review only: Frameforge never changes this"
+      : want
+        ? undefined
+        : real === "unknown"
+          ? "Can't read without administrator; open Details"
+          : real === "on" && !applied
+            ? "Windows already had this; nothing to undo"
+            : undefined;
+    const caption = want
+      ? `Will turn ${want}`
+      : !can
+        ? why
+        : real === "on"
+          ? applied
+            ? "On — applied by Frameforge, can undo"
+            : "On — already set in Windows"
+          : real === "off"
+            ? "Off"
+            : "State unknown";
+    return (
+      <span className="opt-switch">
+        <span className={`opt-state ${want ? "queued" : ""}`}>{caption}</span>
+        <Switch.Root
+          className={`switch ${want ? "queued" : ""} ${real === "unknown" && !want ? "indeterminate" : ""}`}
+          aria-label={o.name}
+          checked={checked}
+          disabled={pending || !!why}
+          title={why}
+          onCheckedChange={(v) => flip(o.id, v)}
+        >
+          <Switch.Thumb className="switch-thumb" />
+        </Switch.Root>
+      </span>
+    );
+  };
   const card = (o: Optimization) => (
     <article className="optimization opt-row" key={o.id}>
       <div className="opt-main">
@@ -84,19 +190,11 @@ export function Optimizations({ data, preview, run, pending }: ViewProps) {
           >
             {o.risk} risk
           </Badge>
-          <Badge tone={data.capabilities.includes(o.id) ? "cyan" : "neutral"}>
-            {data.capabilities.includes(o.id)
-              ? "Available"
-              : o.supported
-                ? missingHere(data)
-                  ? "Not available on this PC"
-                  : "Desktop helper required"
-                : "Review only"}
-          </Badge>
-          {o.restart !== "none" && <Badge tone="amber">Restart needed</Badge>}
-          {o.tier === "advanced" && <Badge tone="amber">Advanced</Badge>}
-          {o.tier === "security" && <Badge tone="red">Lowers security</Badge>}
-          {o.admin && <Badge tone="neutral">Administrator</Badge>}
+          {o.restart !== "none" ? (
+            <Badge tone="amber">Restart needed</Badge>
+          ) : (
+            o.admin && <Badge tone="neutral">Administrator</Badge>
+          )}
         </span>
       </div>
       <span className="opt-actions">
@@ -109,12 +207,13 @@ export function Optimizations({ data, preview, run, pending }: ViewProps) {
             <Plus size={16} /> Create plan…
           </Button>
         )}
+        {switchFor(o)}
         <Button
+          variant="ghost"
           aria-label={`Details for ${o.name}`}
           onClick={() => setDetail(o)}
         >
           Details
-          <ArrowUpRight size={16} />
         </Button>
       </span>
     </article>
@@ -223,6 +322,25 @@ export function Optimizations({ data, preview, run, pending }: ViewProps) {
           description="Try another search or filter."
         />
       )}
+      {queuedIds.length > 0 && (
+        <div className="pending-bar" role="region" aria-label="Pending changes">
+          <span>
+            <strong>
+              {queuedIds.length} change{queuedIds.length === 1 ? "" : "s"}{" "}
+              pending
+            </strong>{" "}
+            ({needAdmin} need administrator)
+          </span>
+          <span className="pending-actions">
+            <Button disabled={pending} onClick={() => pendingStore.clear()}>
+              Discard
+            </Button>
+            <Button variant="primary" disabled={pending} onClick={save}>
+              Review &amp; save
+            </Button>
+          </span>
+        </div>
+      )}
       {planDialog && (
         <PowerPlanDialog
           run={run}
@@ -277,6 +395,24 @@ export function Optimizations({ data, preview, run, pending }: ViewProps) {
               {detail.risk} risk
             </Badge>
             {detail.tier === "advanced" && <Badge tone="amber">Advanced</Badge>}
+            {detail.tier === "security" && (
+              <Badge tone="red">Lowers security</Badge>
+            )}
+            {detail.restart !== "none" && (
+              <Badge tone="amber">Restart needed</Badge>
+            )}
+            {detail.admin && <Badge tone="neutral">Administrator</Badge>}
+            <Badge
+              tone={data.capabilities.includes(detail.id) ? "cyan" : "neutral"}
+            >
+              {data.capabilities.includes(detail.id)
+                ? "Available"
+                : detail.supported
+                  ? missingHere(data)
+                    ? "Not available on this PC"
+                    : "Desktop helper required"
+                  : "Review only"}
+            </Badge>
             {detail.admin && (
               <p className="muted">
                 Needs a Windows administrator prompt. Frameforge asks only for
