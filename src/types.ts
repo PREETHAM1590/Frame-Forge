@@ -15,6 +15,7 @@ export type Page =
   | "Restore & backups"
   | "System"
   | "Monitor"
+  | "Startup"
   | "Activity"
   | "Settings"
   | "Health Check";

@@ -9,6 +9,7 @@ if (OperatingSystem.IsWindows() && args is ["--elevated", ..]) Environment.Exit(
 if (OperatingSystem.IsWindows() && args is ["--elevated-services", ..]) Environment.Exit(ServiceCommands.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--elevated-timer", ..]) Environment.Exit(TimerGlobalSetting.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--elevated-optimize", ..]) Environment.Exit(WindowsAdminGateway.RunChild(args[1..], value => JsonSerializer.Serialize(value, options)));
+if (OperatingSystem.IsWindows() && args is ["--elevated-startup", ..]) Environment.Exit(StartupApproved.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--elevated-fps", ..]) Environment.Exit(FpsChild.RunElevated(args[1..]));
 if (OperatingSystem.IsWindows() && args is ["--elevated-broker", ..]) Environment.Exit(BrokerInstaller.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--broker-uninstall"]) Environment.Exit(BrokerInstaller.UninstallDirect());
@@ -63,6 +64,9 @@ try
         // Reads the machine-wide timer setting, or changes it through one administrator prompt (enable/restore, with the prior value Frameforge saved).
         "timer-global" when request.Timer is not null => new { ok = true, message = "Timer setting checked.", timerGlobal = TimerGlobalSetting.Run(request.Timer, Environment.OSVersion.Version.Build, new WindowsKernelTimerSetting()) },
         "launch-setting" when request.Launch is not null => new { ok = true, message = "Launch setting checked.", launch = LaunchSettings.Run(request.Launch, new WindowsRegistryAccess(), new WindowsGpuInfo()) },
+        // Startup apps: read-only listing, or one StartupApproved switch (Task Manager's own value). Machine-wide items use one administrator prompt.
+        "startup-list" when request.Startup is null => new { ok = true, message = "Startup programs read.", startup = StartupLister.Build(new WindowsStartupSources(), new WindowsStartupApprovedStore()) },
+        "startup-set" when request.Startup is not null => new { ok = true, message = "Startup setting checked.", startupResult = StartupApproved.Run(request.Startup, new WindowsStartupApprovedStore()) },
         "network-check" when request.Host is not null => new { ok = true, message = "Network check completed.", network = NetworkCheck.Run(request.Host, request.Count, new WindowsPinger(), new WindowsResolver()) },
         // Cleanup: ids are category names from a fixed table, never paths. Preview deletes nothing.
         "cleanup-preview" when ids.Length == 0 && request.Snapshot is null => new { ok = true, message = "Cleanup preview read. Nothing was deleted.", cleanup = Cleanup.Preview(CleanupFacts.FromEnvironment(), RestoreCommands.IsElevated(), DateTime.UtcNow) },
@@ -89,4 +93,4 @@ Console.WriteLine(JsonSerializer.Serialize(response, options));
 static object CreatePlan(Guid destination) { BoostSessionEngine.CreatePlan(new WindowsPowerStore(), destination); return new { ok = true, message = "Frameforge High performance plan created and verified. The active plan was not changed.", powerPlan = destination.ToString() }; }
 static object Apply(Optimizations engine, string[] ids, OptimizationSnapshot snapshot) { var verified = engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written.", verified }; }
 static object Restore(Optimizations engine, OptimizationSnapshot snapshot) { var note = engine.Restore(snapshot); return new { ok = true, message = note is null ? "Snapshot restored and verified." : "Snapshot restored and verified. " + note }; }
-record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null, bool Elevate = true, string? Host = null, int Count = 0, LaunchRequest? Launch = null, TimerRequest? Timer = null, bool TimerRestartPending = false, bool BrokerOnly = false);
+record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null, bool Elevate = true, string? Host = null, int Count = 0, LaunchRequest? Launch = null, TimerRequest? Timer = null, bool TimerRestartPending = false, bool BrokerOnly = false, StartupRequest? Startup = null);

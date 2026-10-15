@@ -15,6 +15,7 @@ import {
   RefreshCw,
   AlertTriangle,
   HeartPulse,
+  Power,
 } from "lucide-react";
 import { onEvent, request } from "./api";
 import { UpdateCard } from "./components/UpdatePanel";
@@ -61,6 +62,9 @@ const Monitor = lazy(() =>
 const HealthCheck = lazy(() =>
   import("./views/HealthCheck").then((m) => ({ default: m.HealthCheck })),
 );
+const Startup = lazy(() =>
+  import("./views/Startup").then((m) => ({ default: m.Startup })),
+);
 // These can sit behind a Windows administrator prompt for minutes, so they must not lock the rest of the app.
 const elevatedMethods: ReadonlySet<Method> = new Set([
   "createRestorePoint",
@@ -68,6 +72,8 @@ const elevatedMethods: ReadonlySet<Method> = new Set([
   "enableSystemProtection",
   "recoverRestoreFrequency",
   "openSystemRestore",
+  "startupSet",
+  "startupUndo",
 ]);
 // Eight rail entries; Presets and Activity sit under their parent so every page stays one click away.
 const navigation: readonly RailItem<Page>[] = [
@@ -96,6 +102,7 @@ const navigation: readonly RailItem<Page>[] = [
     icon: HeartPulse,
     index: "08",
   },
+  { page: "Startup", label: "Startup apps", icon: Power, index: "09" },
 ];
 const settingsItem: RailItem<Page> = {
   page: "Settings",
@@ -310,6 +317,7 @@ export default function App() {
     System: <System {...props} />,
     Monitor: <Monitor {...props} />,
     "Health Check": <HealthCheck {...props} />,
+    Startup: <Startup {...props} />,
     Activity: <ActivityLog {...props} />,
     Settings: <Settings {...props} />,
   };

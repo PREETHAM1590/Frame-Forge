@@ -11,6 +11,7 @@
 @import "./styles/applyflow.css";
 @import "./styles/monitor.css";
 @import "./styles/health.css";
+@import "./styles/startup.css";
 @theme {
   --font-sans: "Space Grotesk", sans-serif;
 }
