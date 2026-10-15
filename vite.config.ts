@@ -19,6 +19,8 @@ export default defineConfig({
     },
   ],
   build: {
+    // Second tiny entry for the in-game overlay window (no React, no router).
+    rollupOptions: { input: { main: "index.html", overlay: "overlay.html" } },
     // The CSP is font-src 'self': a font inlined as a data: URI is blocked, so fonts always ship as files.
     assetsInlineLimit: (file) => (/\.woff2?$/.test(file) ? false : undefined),
   },

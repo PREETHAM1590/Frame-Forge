@@ -243,9 +243,48 @@ try {
   );
   assert.equal(priority(first.pid), "High", "boost raised the game priority");
   assert.equal(await call("windows"), 0, "still no window while boosting");
+  // Overlay: off by default; "Show overlay" during a live boost creates a transparent, click-through, non-focusable window.
+  assert.equal(await call("overlay"), null, "no overlay unless enabled");
+  await call("overlayOn", true);
+  await until(async () => (await call("overlay")) !== null, "overlay created");
+  const flags = await call("overlay");
+  assert.equal(flags.alwaysOnTop, true);
+  assert.equal(flags.level, "screen-saver");
+  assert.equal(flags.ignoreMouse, true);
+  assert.equal(flags.focusable, false);
+  assert.equal(await call("windows"), 0, "overlay is not a main window");
+  if (process.env.FRAMEFORGE_OVERLAY_SHOT) {
+    // Show the main window under the overlay and capture the screen.
+    await call("fakeFps", 144);
+    await call("openWindow");
+    await until(async () => (await call("windows")) === 1, "window for shot");
+    await new Promise((r) => setTimeout(r, 2500));
+    await mkdir("artifacts", { recursive: true });
+    execFileSync("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height; $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); $bmp.Save('${path.resolve("artifacts/overlay-over-window.png")}')`,
+    ]);
+    await call("closeWindow");
+    await until(
+      async () => (await call("windows")) === 0,
+      "shot window closed",
+    );
+  }
+  await call("overlayOn", false);
+  await until(
+    async () => (await call("overlay")) === null,
+    "overlay destroyed",
+  );
+  await call("overlayOn", true);
+  await until(async () => (await call("overlay")) !== null, "overlay back");
   // Stop restores the live process.
   await call("stop");
   await until(async () => (await call("active")) === false, "boost stopped");
+  await until(
+    async () => (await call("overlay")) === null,
+    "overlay destroyed when the boost ended",
+  );
   assert.equal(priority(first.pid), "Normal", "stop restored the priority");
   // A new launch starts a new session; the game exiting ends it by itself.
   first.kill();

@@ -23,6 +23,7 @@ import {
 import type { ViewProps } from "../types";
 import { UpdateCard } from "../components/UpdatePanel";
 import { AdminAccess } from "../components/AdminAccess";
+import { OverlaySettings } from "../components/OverlaySettings";
 import { useUpdate } from "../useUpdate";
 import { Cleanup } from "./system/Cleanup";
 import { DriverCheck } from "./system/DriverCheck";
@@ -319,6 +320,11 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
         />
         <UpdateCard always />
       </section>
+      <OverlaySettings
+        saved={settings.overlay}
+        disabled={pending}
+        save={(overlay) => update({ overlay })}
+      />
       <section className="settings-section">
         <h2>
           <Play size={20} />

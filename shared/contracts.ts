@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { HotkeysSchema, defaultHotkeys, hotkeyIds } from "./hotkeys.js";
 export * from "./hotkeys.js";
+import { OverlayConfigSchema } from "./overlay.js";
 
 export const OperationId = z.enum([
   "mouse-precision",
@@ -90,6 +91,8 @@ export const SettingsSchema = z
     closeAction: z.enum(["ask", "tray", "quit"]).default("ask"),
     /** Global hotkeys (registered by the main process, work from the tray). */
     hotkeys: HotkeysSchema.default(defaultHotkeys),
+    /** In-game overlay (Settings > Overlay). Missing means defaults, off. */
+    overlay: OverlayConfigSchema.optional(),
   })
   .strict();
 export type Settings = z.infer<typeof SettingsSchema>;
