@@ -746,9 +746,11 @@ function reboot(f: HealthFacts): HealthCheck {
     id: "pending-reboot",
     title: "Restart pending",
     status: real.length ? "warn" : "good",
-    summary: f.pendingReboot.length
-      ? `Waiting for ${f.pendingReboot.join(" and ")}`
-      : "No restart pending",
+    summary: real.length
+      ? `Waiting for ${real.join(" and ")}`
+      : f.pendingReboot.length
+        ? "Only a pending file replace (common and usually harmless)"
+        : "No restart pending",
     explanation: real.length
       ? "Windows has changes that finish only after a restart. Until then installers or drivers may run in a half-updated state."
       : "Nothing is waiting for a restart.",

@@ -81,12 +81,25 @@ public static class HealthFacts
     [
         ("NitroSense", "NitroSense"), ("PredatorSense", "PredatorSense"), ("LenovoVantage", "Lenovo Vantage"), ("LenovoVantageService", "Lenovo Vantage"), ("ArmouryCrate.UserSessionHelper", "Armoury Crate"),
         ("ArmouryCrate.Service", "Armoury Crate"), ("ArmouryCrateService", "Armoury Crate"), ("MSI Center", "MSI Center"), ("MSI.CentralServer", "MSI Center"), ("OmenCommandCenterBackground", "OMEN Gaming Hub"),
-        ("OmenCap", "OMEN Gaming Hub"), ("AWCC", "Alienware Command Center"), ("AlienFXSubAgent", "Alienware Command Center"), ("GigabyteControlCenter", "GIGABYTE Control Center"), ("Razer Synapse 3", "Razer Synapse")
+        ("OmenCap", "OMEN Gaming Hub"), ("AWCC", "Alienware Command Center"), ("AlienFXSubAgent", "Alienware Command Center"), ("GigabyteControlCenter", "GIGABYTE Control Center"), ("Razer Synapse 3", "Razer Synapse"),
+        // Acer ships its system services under these names even when the NitroSense window is closed.
+        ("AcerSystemCentralService", "Acer system software"), ("AcerCentralService", "Acer system software")
     ];
     public static string? DetectVendorApp(IEnumerable<string> images)
     {
         var set = images.ToHashSet(StringComparer.OrdinalIgnoreCase);
         return VendorApps.FirstOrDefault(v => set.Contains(v.Image)).App;
+    }
+    // Store apps installed for this user (package names), which find a laptop control app that is not running right now.
+    static readonly (string Pattern, string App)[] VendorPackages =
+    [
+        ("NitroSense", "NitroSense"), ("PredatorSense", "PredatorSense"), ("LenovoVantage", "Lenovo Vantage"), ("LenovoSettings", "Lenovo Vantage"), ("ArmouryCrate", "Armoury Crate"),
+        ("MSICenter", "MSI Center"), ("OmenCommandCenter", "OMEN Gaming Hub"), ("AlienwareCommandCenter", "Alienware Command Center")
+    ];
+    public static string? DetectVendorPackage(IEnumerable<string> packages)
+    {
+        var list = packages.ToArray();
+        return VendorPackages.FirstOrDefault(v => list.Any(p => p.Contains(v.Pattern, StringComparison.OrdinalIgnoreCase))).App;
     }
     public static string[] DetectOverlays(IEnumerable<string> images) => [.. OverlayImages.Where(o => images.Contains(o, StringComparer.OrdinalIgnoreCase)).OrderBy(o => o, StringComparer.OrdinalIgnoreCase)];
 
@@ -105,7 +118,7 @@ public static class HealthFacts
         var nvidia = ReadNvidia();
         return new(ReadBattery(), ReadPowerMode(), ReadGpus(), ReadPreferences(games), nvidia, ReadDisplay(), memory, CpuName(), perf, ReadDrives(),
             GameMode(), Dword(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode"), Vbs(out var hvci), hvci, PendingReboot(), StartupApps(),
-            DetectOverlays(images), DetectVendorApp(images),
+            DetectOverlays(images), DetectVendorPackage(InstalledPackages()) ?? DetectVendorApp(images),
             [.. byMemory.Select(p => new Consumer(p.Name, p.Count, p.CpuPercent, p.WorkingSetBytes))], [.. byCpu.Select(p => new Consumer(p.Name, p.Count, p.CpuPercent, p.WorkingSetBytes))]);
     }
 
@@ -277,6 +290,15 @@ public static class HealthFacts
         using var session = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager", false);
         if (session?.GetValue("PendingFileRenameOperations") is string[] { Length: > 0 }) found.Add("a pending file replace");
         return [.. found];
+    }
+    private static string[] InstalledPackages()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages", false);
+            return key?.GetSubKeyNames() ?? [];
+        }
+        catch (Exception error) when (error is System.Security.SecurityException or UnauthorizedAccessException or IOException) { return []; }
     }
     private static int StartupApps()
     {

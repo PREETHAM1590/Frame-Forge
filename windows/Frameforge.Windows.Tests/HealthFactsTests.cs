@@ -64,5 +64,8 @@ public class HealthFactsTests
         Assert.Equal(["Discord", "steamwebhelper"], HealthFacts.DetectOverlays(["chrome", "steamwebhelper", "discord", "Discord"]));
         Assert.Equal("NitroSense", HealthFacts.DetectVendorApp(["explorer", "NitroSense"]));
         Assert.Null(HealthFacts.DetectVendorApp(["explorer"]));
+        Assert.Equal("NitroSense", HealthFacts.DetectVendorPackage(["Microsoft.WindowsStore_1", "ULICTekInc.NitroSenseforNotebook_3.0.1_x64__abc"]));
+        Assert.Null(HealthFacts.DetectVendorPackage(["Microsoft.WindowsStore_1"]));
+        Assert.Equal("Acer system software", HealthFacts.DetectVendorApp(["AcerCentralService"]));
     }
 }

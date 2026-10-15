@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0 (unreleased)
+
+- **PC Health Check.** A read-only page (and a Dashboard card with the score and the top three issues) that checks power source and Battery Saver, the Windows power mode and plan, the laptop maker's performance mode, which GPU runs your games, graphics driver age, refresh rate, memory channels and speed, GPU heat and power limits, disk space and type, memory use, background CPU, Game Mode, HAGS, Memory Integrity, a pending restart, startup apps, overlays and whether a before/after FPS measurement exists. Every check says what it means and the expected impact, and offers a reversible fix through the existing paths (reviewed apply flow, per-game GPU preference, Windows Settings links) or exact steps.
+- **Smart mode.** A new default for new installs that works for any game. It watches the first minute (CPU, per-core load, GPU load and clocks, memory), classifies the limit (CPU, GPU, memory, heat or power, frame cap), applies only the mechanisms that help that case, shows its reasoning under "This session changed", and saves a per-game profile that is reused next launch and re-checked when the hardware or graphics driver changes. It never changes Windows Game Mode, never claims an FPS gain and only purges the standby list when memory is tight and the game's memory keeps growing. A fullscreen program that is not in the library and keeps the GPU busy for 30 seconds is offered as "Add to library?"; nothing is added or boosted until you say yes.
+- **Close or pause apps while gaming.** Running apps grouped by program with icon, memory and CPU, with heavy non-essential ones suggested and pre-ticked (browsers, cloud sync, updaters, launcher web helpers, chat and heavy desktop apps). Voice chat, audio, input, overlay, security, anti-cheat and the game's own launcher are never suggested. The choice is saved for all games or one game; until you save your own list, Smart mode uses the suggested set. Add programs that are not running with "Add app...".
+- **More services can be paused for a session** (Windows Update, Update Orchestrator, Delivery Optimization, Office Click-to-Run, Inventory, Data Usage, Imaging). They are stopped only for the session and started again afterwards; start types are never changed.
+- **USB selective suspend is switched off on the Frameforge power plan** while it is the active plan, and put back at the end of the session.
+- Helper additions: `health` (read-only PC facts), `foreground` (foreground fullscreen program), working set, CPU and path in the process list, and the CPU clock percentage in the monitor sample.
+
 ## 1.3.0
 
 - Optional update checks at startup, every six hours, or from Settings and the tray. Downloads happen when requested. Installation waits until a boost has ended and the app quits; closing to the tray keeps it running.

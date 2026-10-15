@@ -79,6 +79,7 @@
 .health-check dl,
 .health-diff {
   display: grid;
+  grid-template-columns: 1fr;
   gap: var(--sp-1);
   margin: 0;
   font-size: var(--fs-sm);
