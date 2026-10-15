@@ -10,6 +10,7 @@ import {
   type Response,
   type Game,
   type Settings,
+  type HotkeyId,
   type UpdateStatus,
   type Hardware,
   type Bootstrap,
@@ -77,6 +78,8 @@ export interface DesktopServices {
     download(): Promise<UpdateStatus>;
     install(when: "now" | "onQuit"): UpdateStatus;
   };
+  /** Hotkeys Windows refused to register; absent where global hotkeys do not exist. */
+  hotkeyStatus?: () => { failed: string[] };
   analyticsAvailable?: boolean;
   /** Anonymous, allowlisted usage event; the callee drops it unless the user opted in. */
   track?: (event: string, props?: Record<string, string>) => void;
@@ -779,6 +782,13 @@ export class AppService {
           throw new Error("The driver page could not be opened.");
         return true;
       },
+      hotkeyStatus: async () => {
+        const s = this.desktop.hotkeyStatus?.();
+        return {
+          supported: !!s,
+          failed: (s?.failed ?? []) as HotkeyId[],
+        };
+      },
     };
   }
   private dismissed() {
@@ -1097,6 +1107,7 @@ export class AppService {
             "benchData",
             "boostHistory",
             "gpuDrivers",
+            "hotkeyStatus",
           ].includes(key)
         )
           this.log(

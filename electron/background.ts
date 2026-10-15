@@ -7,9 +7,6 @@ export const hiddenArg = "--hidden";
 /** Started by "Launch at sign-in" (or by hand with --hidden): stay in the tray when Frameforge can keep running there. */
 export const startsHidden = (argv: readonly string[], keepRunning: boolean) =>
   keepRunning && argv.includes(hiddenArg);
-/** Closing the window destroys it (renderer memory is freed) and leaves the main process in the tray. */
-export const closeToTray = (keepRunning: boolean, quitting: boolean) =>
-  keepRunning && !quitting;
 /** Test hooks (tray, dummy game) exist only in test mode; a packaged build also needs FRAMEFORGE_TEST_HOOKS=1. */
 export const testHooksEnabled = (
   env: Record<string, string | undefined>,
@@ -28,7 +25,19 @@ export function migrateLoginItem(login: {
   }
   return false;
 }
-export const trayNotice = "Frameforge is still running in the tray";
+export const trayNotice =
+  "Frameforge is still running in the tray so auto-boost keeps working. To exit, right-click the tray icon and choose Quit Frameforge.";
+/** Closing the window: ask the first time, then follow the saved choice. */
+export const closeDecision = (
+  keepRunning: boolean,
+  closeAction: "ask" | "tray" | "quit",
+  quitting: boolean,
+): "leave" | "tray" | "ask" | "quit" =>
+  quitting
+    ? "leave"
+    : !keepRunning || closeAction === "quit"
+      ? "quit"
+      : closeAction;
 
 export interface TrayItem {
   label?: string;

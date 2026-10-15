@@ -253,6 +253,8 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
         installOnQuit: false,
         analyticsAvailable: false,
       };
+    case "hotkeyStatus":
+      return { supported: false, failed: [] };
     case "trackUsage":
       return true;
     case "updateCheck":

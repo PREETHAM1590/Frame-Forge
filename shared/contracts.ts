@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { HotkeysSchema, defaultHotkeys, hotkeyIds } from "./hotkeys.js";
+export * from "./hotkeys.js";
 
 export const OperationId = z.enum([
   "mouse-precision",
@@ -84,6 +86,10 @@ export const SettingsSchema = z
     keepRunning: z.boolean().default(true),
     /** Let auto-boost open a Windows administrator prompt in the background. Off: those steps are skipped. */
     autoBoostAdmin: z.boolean().default(false),
+    /** What closing the window does: ask once (default), minimize to the tray, or quit. */
+    closeAction: z.enum(["ask", "tray", "quit"]).default("ask"),
+    /** Global hotkeys (registered by the main process, work from the tray). */
+    hotkeys: HotkeysSchema.default(defaultHotkeys),
   })
   .strict();
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -362,6 +368,8 @@ export const defaultState: AppState = {
     autoScanHours: 24,
     keepRunning: true,
     autoBoostAdmin: false,
+    closeAction: "ask",
+    hotkeys: defaultHotkeys,
   },
   games: [],
   presets: [],
@@ -1632,6 +1640,8 @@ export const requests = {
   gpuDrivers: Empty,
   // Opens the vendor's official driver page (fixed list, chosen in the main process).
   openDriverPage: z.object({ vendor: DriverVendor }).strict(),
+  // Which hotkeys Windows refused (another app owns them); Settings marks those as conflicts.
+  hotkeyStatus: Empty,
 };
 export const responses = {
   bootstrap: BootstrapSchema,
@@ -1702,6 +1712,9 @@ export const responses = {
   cleanupRun: CleanupResultSchema,
   gpuDrivers: GpuDriversSchema,
   openDriverPage: z.boolean(),
+  hotkeyStatus: z
+    .object({ supported: z.boolean(), failed: z.array(z.enum(hotkeyIds)) })
+    .strict(),
 };
 export type Method = keyof typeof requests;
 export type Request<M extends Method> = z.infer<(typeof requests)[M]>;
