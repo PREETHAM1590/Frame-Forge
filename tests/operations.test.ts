@@ -217,6 +217,41 @@ describe("Windows helper lifecycle", () => {
     await rejection;
     expect(settled).toBe(true);
   });
+  it("sends turn-ons and turn-offs to the helper as ONE apply call", async () => {
+    const child = helper();
+    let written = "";
+    child.stdin.on("data", (d: Buffer) => (written += d));
+    const before = vi.mocked(spawn).mock.calls.length;
+    const undo = {
+      values: [
+        {
+          operation: "hibernate-off" as const,
+          path: "p",
+          name: "n",
+          kind: "DWord" as const,
+          existed: true,
+          value: 1,
+        },
+      ],
+    };
+    const result = new WindowsPlatform("test-helper").apply(
+      ["boot-logo-off"],
+      new AbortController().signal,
+      { values: [] },
+      undo,
+    );
+    child.stdout.write(
+      JSON.stringify({
+        ok: true,
+        message: "Preferences written. Windows had changed X.",
+        verified: true,
+      }) + "\n",
+    );
+    child.emit("close", 0);
+    expect(await result).toBe("Windows had changed X.");
+    expect(vi.mocked(spawn).mock.calls.length - before).toBe(1);
+    expect(JSON.parse(written)).toMatchObject({ command: "apply", undo });
+  });
   it("waits for close even when the signal was already aborted", async () => {
     const child = helper();
     const controller = new AbortController();

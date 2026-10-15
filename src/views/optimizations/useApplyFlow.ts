@@ -203,10 +203,14 @@ export function useApplyFlow({
           token = fresh.token;
         }
         setPhase("apply");
+        // Turn-offs ride along in the same request, so the machine-level work asks for administrator approval once.
         output = await run("confirm", {
           token,
           confirmed: true,
           acknowledged: preview.security,
+          ...(offs?.length
+            ? { undo: offs.map((o) => ({ id: o.activityId, ids: o.ids })) }
+            : {}),
         });
         if (!output) {
           // Keep the preview and the typed confirmation; the message is already shown. Retrying re-checks Windows first.
@@ -215,41 +219,23 @@ export function useApplyFlow({
         }
       }
       let offDone: Activity[] | undefined;
-      const notApplied =
-        output?.status === "cancelled" &&
-        output.message.startsWith("Not applied");
-      const extra: string[] = [];
-      if (offs?.length) {
-        if (notApplied)
-          extra.push(
-            "Turning items off was not attempted: administrator approval for the turn-ons was not given. Nothing was changed.",
-          );
-        else {
-          setPhase("apply");
-          offDone = await run("rollbackBatch", {
-            ids: offs.map((o) => o.activityId),
-            confirmed: true,
-          });
-          if (!offDone) {
-            extra.push(
-              "Turning items off did not finish (see the message). Nothing was assumed; the switches show what Windows reports.",
-            );
-            if (!output) {
-              setStale(true);
-              return;
-            }
-          }
+      if (!preview.token && offs?.length) {
+        setPhase("apply");
+        offDone = await run("rollbackBatch", {
+          items: offs.map((o) => ({ id: o.activityId, ids: o.ids })),
+          confirmed: true,
+        });
+        if (!offDone) {
+          setStale(true);
+          return;
         }
       }
       setStale(false);
       if (offs) {
+        // What the switches settle to is what Windows reports, not what was asked.
         const want = [
-          ...(output && !notApplied ? applicable() : []).map(
-            (id) => [id, "on"] as const,
-          ),
-          ...(offDone ? offs.flatMap((o) => o.ids) : []).map(
-            (id) => [id, "off"] as const,
-          ),
+          ...applicable().map((id) => [id, "on"] as const),
+          ...offs.flatMap((o) => o.ids).map((id) => [id, "off"] as const),
         ];
         const read = await request("optimizationStatus", {}).catch(() => []);
         setRows(
@@ -260,7 +246,7 @@ export function useApplyFlow({
           })),
         );
       }
-      setNotes(extra);
+      setNotes([]);
       setResult(output ?? offDone![0]!);
     } catch (e) {
       notify(e instanceof Error ? e.message : "Preview failed.", true);

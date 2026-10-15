@@ -1596,6 +1596,10 @@ export const DiagnosticsResultSchema = z
     files: z.number().int().nonnegative(),
   })
   .strict();
+/** Some items of one journal row to turn off (not the whole row). */
+export const UndoItemSchema = z
+  .object({ id: Id, ids: z.array(OperationId).min(1).max(24) })
+  .strict();
 export const requests = {
   bootstrap: Empty,
   refresh: Empty,
@@ -1607,13 +1611,15 @@ export const requests = {
       confirmed: z.literal(true),
       // Optimizations that lower security must be named here; the engine refuses a confirm without them.
       acknowledged: z.array(OperationId).max(64).optional(),
+      // Items turned off in the same save, each from its own journal row; their restore shares the apply's one administrator step.
+      undo: z.array(UndoItemSchema).max(24).optional(),
     })
     .strict(),
   cancel: Empty,
   rollback: z.object({ id: Id, confirmed: z.literal(true) }).strict(),
   rollbackBatch: z
     .object({
-      ids: z.array(Id).min(1).max(24),
+      items: z.array(UndoItemSchema).min(1).max(24),
       confirmed: z.literal(true),
     })
     .strict(),

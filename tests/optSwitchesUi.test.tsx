@@ -51,6 +51,19 @@ function install(
     declined: false,
   };
   const log = (method: string, input: unknown) => calls.push({ method, input });
+  // Turning items off removes just those items from their journal row; a row with none left is closed.
+  const undo = (items: { id: string; ids: OperationId[] }[]) => {
+    for (const { id, ids } of items) {
+      for (const x of ids) world.states[x] = "off";
+      world.activity = world.activity.map((a) => {
+        if (a.id !== id) return a;
+        const left = a.ids.filter((x) => !ids.includes(x));
+        return left.length
+          ? { ...a, ids: left }
+          : { ...a, ids: left, status: "rolled-back", rollback: false };
+      });
+    }
+  };
   window.frameforge = {
     bootstrap: async () => ({
       state: defaultState,
@@ -104,7 +117,10 @@ function install(
         security: input.ids.filter((id) => id === "uac-off"),
       };
     },
-    confirm: async (input: { token: string }) => {
+    confirm: async (input: {
+      token: string;
+      undo?: { id: string; ids: OperationId[] }[];
+    }) => {
       log("confirm", input);
       if (world.declined)
         return {
@@ -114,21 +130,18 @@ function install(
           message:
             "Not applied — administrator approval was declined. Nothing was changed.",
         };
+      undo(input.undo ?? []);
       const row = applied(crypto.randomUUID(), ["capture-off"]);
       world.activity = [row, ...world.activity];
       world.states["capture-off"] = "on";
       return row;
     },
-    rollbackBatch: async (input: { ids: string[] }) => {
+    rollbackBatch: async (input: {
+      items: { id: string; ids: OperationId[] }[];
+    }) => {
       log("rollbackBatch", input);
-      for (const a of world.activity.filter((x) => input.ids.includes(x.id)))
-        for (const id of a.ids) world.states[id] = "off";
-      world.activity = world.activity.map((a) =>
-        input.ids.includes(a.id)
-          ? { ...a, status: "rolled-back" as const, rollback: false }
-          : a,
-      );
-      return world.activity.filter((a) => input.ids.includes(a.id));
+      undo(input.items);
+      return world.activity as never;
     },
   } as unknown as FrameforgeApi;
   return { calls, world };
@@ -243,14 +256,11 @@ describe("pending changes and Review & save", () => {
     });
     expect(rows).toHaveTextContent(`${nm("mouse-precision")}: Off (verified)`);
     expect(rows).toHaveTextContent(`${nm("capture-off")}: On (verified)`);
-    expect(calls.map((c) => c.method)).toEqual([
-      "preview",
-      "confirm",
-      "rollbackBatch",
-    ]);
-    expect(
-      calls.find((c) => c.method === "rollbackBatch")?.input,
-    ).toMatchObject({ ids: [A1], confirmed: true });
+    // One request does both: the turn-off rides along with the apply, so Windows asks for approval once.
+    expect(calls.map((c) => c.method)).toEqual(["preview", "confirm"]);
+    expect(calls.find((c) => c.method === "confirm")?.input).toMatchObject({
+      undo: [{ id: A1, ids: ["mouse-precision"] }],
+    });
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(off).not.toBeChecked());
     expect(on).toBeChecked();
@@ -315,7 +325,7 @@ describe("pending changes and Review & save", () => {
     expect(pendingStore.count()).toBe(0);
     await screen.findByRole("heading", { name: "Presets", level: 1 });
   });
-  it("a declined administrator step skips the turn-offs and lists the failure per row", async () => {
+  it("a declined administrator step leaves the turn-offs undone too", async () => {
     const { calls, world } = await open(
       ["capture-off", "mouse-precision"],
       { "capture-off": "off", "mouse-precision": "on" },
@@ -334,11 +344,42 @@ describe("pending changes and Review & save", () => {
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Confirm & apply" }),
     );
-    await within(dialog).findByText(/Turning items off was not attempted/);
+    await within(dialog).findByRole("heading", { name: "Not applied" });
     expect(calls.map((c) => c.method)).toEqual(["preview", "confirm"]);
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     // Switches settle to what Windows reports: unchanged.
     await waitFor(() => expect(on).not.toBeChecked());
     expect(off).toBeChecked();
+  });
+  it("turning one item off marks only that item, and saves only that item", async () => {
+    const { calls } = await open(
+      ["mouse-precision", "capture-off"],
+      { "mouse-precision": "on", "capture-off": "on" },
+      [applied(A1, ["mouse-precision", "capture-off"])],
+    );
+    const mouse = await sw(nm("mouse-precision"));
+    const capture = await sw(nm("capture-off"));
+    await waitFor(() => expect(mouse).toBeChecked());
+    fireEvent.click(mouse);
+    expect(
+      screen.getByRole("region", { name: "Pending changes" }),
+    ).toHaveTextContent("1 change pending");
+    // The row it was applied with is untouched.
+    expect(capture).toBeChecked();
+    expect(screen.queryByText("Will turn off")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Review & save" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(await within(dialog).findByRole("checkbox"));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Confirm & apply" }),
+    );
+    await within(dialog).findByRole("list", { name: "Result for each switch" });
+    expect(
+      calls.find((c) => c.method === "rollbackBatch")?.input,
+    ).toMatchObject({ items: [{ id: A1, ids: ["mouse-precision"] }] });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(mouse).not.toBeChecked());
+    expect(capture).toBeChecked();
+    expect(capture).toBeEnabled(); // still applied by Frameforge, still undoable
   });
 });

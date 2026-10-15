@@ -368,6 +368,87 @@ public class OptimizationCatalogTests
         Assert.Equal("restore", Assert.Single(gateway.Requests).Command);
     }
 
+    // Turn-ons and turn-offs saved together: ONE administrator request applies the ons and then restores the offs.
+    private static (Optimizations Engine, Gateway Gateway, Memory Machine, OptimizationSnapshot Undo) MixedWorld(string[] offs)
+    {
+        var machine = new Memory();
+        var inner = new RegistryOperations(machine, new Facts());
+        var gateway = new Gateway(request => AdminCommands.Execute(request, inner));
+        var engine = new Optimizations(new RegistryOperations(new Memory(), new Facts()), new NoPower(), null, gateway, false);
+        var before = engine.Capture(offs);
+        Assert.True(engine.Apply(offs, before)); // these are "on" now; `before` is what undoing them restores
+        gateway.Requests.Clear();
+        return (engine, gateway, machine, before);
+    }
+
+    [Fact]
+    public void TurnOnsAndTurnOffsShareOneAdministratorRequestEvenWithASecurityItem()
+    {
+        string[] offs = ["lock-screen-blur-off", "uac-off"], ons = ["boot-logo-off"];
+        var (engine, gateway, machine, undo) = MixedWorld(offs);
+        var snapshot = engine.Capture(ons);
+        gateway.Requests.Clear();
+        Assert.True(engine.Apply(ons, snapshot, undo));
+        var one = Assert.Single(gateway.Requests);
+        Assert.Equal("batch", one.Command);
+        Assert.Equal(ons.Concat(offs).OrderBy(i => i), one.Ids.OrderBy(i => i));
+        // The request names the security item, so it is routed to its own Windows prompt (never the broker), once.
+        Assert.True(BrokerAllowlist.NamesSecurityItem([JsonSerializer.Serialize(one, HelperJson.Options)]));
+        Assert.NotNull(BrokerAllowlist.Reject("--elevated-optimize", "run", [JsonSerializer.Serialize(one, HelperJson.Options)]));
+        // Ons are written, offs are back to what they were before they were turned on.
+        foreach (var setting in OptimizationTable.Settings.Where(x => ons.Contains(x.Operation)))
+            Assert.True(machine.Read(setting).Existed);
+        // Nothing existed before the offs were turned on, so restoring removes exactly what they wrote.
+        foreach (var setting in OptimizationTable.Settings.Where(x => offs.Contains(x.Operation)))
+            Assert.False(machine.Read(setting).Existed);
+    }
+
+    [Fact]
+    public void AMixedRequestWithoutASecurityItemMayUseTheBrokerAndIsOneAllowedCall()
+    {
+        string[] offs = ["lock-screen-blur-off"], ons = ["boot-logo-off"];
+        var (engine, gateway, _, undo) = MixedWorld(offs);
+        var snapshot = engine.Capture(ons);
+        gateway.Requests.Clear();
+        engine.Apply(ons, snapshot, undo);
+        var json = JsonSerializer.Serialize(Assert.Single(gateway.Requests), HelperJson.Options);
+        Assert.False(BrokerAllowlist.NamesSecurityItem([json]));
+        Assert.Null(BrokerAllowlist.Reject("--elevated-optimize", "run", [json]));
+    }
+
+    [Fact]
+    public void ABatchMustNameEveryOperationItCarriesAndCannotOverlap()
+    {
+        var registry = new RegistryOperations(new Memory(), new Facts());
+        var a = new RegistryOperations(new Memory(), new Facts()).Capture(["boot-logo-off"]).Values;
+        var b = new RegistryOperations(new Memory(), new Facts()).Capture(["lock-screen-blur-off"]).Values;
+        // Restore values of an operation the request does not name (the way a security value could be smuggled past an ids-only check).
+        Assert.Throws<InvalidOperationException>(() => AdminCommands.Execute(new("batch", ["boot-logo-off"], a, b), registry));
+        // The same operation cannot be both applied and restored.
+        Assert.Throws<InvalidOperationException>(() => AdminCommands.Execute(new("batch", ["boot-logo-off"], a, a), registry));
+        // Missing halves are refused: a plain apply or restore is used for those.
+        Assert.Throws<InvalidOperationException>(() => AdminCommands.Execute(new("batch", ["boot-logo-off"], a, null), registry));
+        Assert.Throws<InvalidOperationException>(() => AdminCommands.Execute(new("restore", ["boot-logo-off"], null, b), registry));
+    }
+
+    [Fact]
+    public void ADeclinedMixedStepChangesNothingAndLeavesTheTurnOffsUndone()
+    {
+        var store = new Memory(); var machine = new Memory();
+        var inner = new RegistryOperations(machine, new Facts());
+        var gateway = new Gateway(request => request.Command == "batch" ? throw new InvalidOperationException("Administrator approval was declined. Nothing was changed.") : AdminCommands.Execute(request, inner));
+        var engine = new Optimizations(new RegistryOperations(store, new Facts()), new NoPower(), null, gateway, false);
+        string[] offs = ["lock-screen-blur-off"];
+        var undo = engine.Capture(offs); engine.Apply(offs, undo);
+        var local = new RegistryOperations(store, new Facts()).Capture(["transparency-off"]);
+        var ons = new[] { "transparency-off", "boot-logo-off" };
+        var snapshot = engine.Capture(ons);
+        Assert.Throws<InvalidOperationException>(() => engine.Apply(ons, snapshot, undo));
+        Assert.Empty(store.Values); // the current-user turn-on was undone again
+        Assert.NotEmpty(machine.Values); // the turn-off was not restored: the one machine step never ran
+        _ = local;
+    }
+
     [Fact]
     public void DecliningTheAdministratorPromptLeavesEverythingUntouched()
     {

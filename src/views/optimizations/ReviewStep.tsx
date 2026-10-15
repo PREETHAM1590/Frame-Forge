@@ -79,9 +79,7 @@ export function ReviewStep({
           </div>
           {offs.length > 0 && (
             <>
-              <span className="af-kicker">
-                Turning off ({offs.length} undo)
-              </span>
+              <span className="af-kicker">Turning off</span>
               <div className="change-list">
                 {offs.map((o) => (
                   <div key={o.activityId}>
@@ -91,10 +89,8 @@ export function ReviewStep({
                         .join(", ")}
                     </code>
                     <span>
-                      Puts the exact values captured before back
-                      {o.ids.length > 1
-                        ? ` (this undoes all ${o.ids.length} items applied together)`
-                        : ""}
+                      Puts the exact values captured before back, for this item
+                      only
                     </span>
                   </div>
                 ))}
@@ -114,12 +110,10 @@ export function ReviewStep({
             {flow.restoreOffer && flow.createPoint
               ? "Creating the restore point shows a Windows administrator prompt. "
               : ""}
-            {preview.admin
+            {preview.admin ||
+            offs.some((o) => o.ids.some((id) => adminIds.includes(id)))
               ? "Saving shows one Windows administrator prompt for the machine settings above. "
               : "No administrator prompt for these settings. "}
-            {preview.token &&
-              offs.some((o) => o.ids.some((id) => adminIds.includes(id))) &&
-              "Turning items off asks for administrator approval separately. "}
             {restartText[preview.restart]}
           </p>
           {flow.restoreOffer && (

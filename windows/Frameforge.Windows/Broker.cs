@@ -69,7 +69,7 @@ public static class BrokerAllowlist
 {
     public static readonly string[] Ops = ["--elevated", "--elevated-services", "--elevated-timer", "--elevated-optimize", "--elevated-fps", "--elevated-startup"];
     public const int MaxArgs = 64, MaxArg = 24000;
-    public static readonly string[] OptimizeCommands = ["capture", "apply", "verify", "restore"];
+    public static readonly string[] OptimizeCommands = ["capture", "apply", "verify", "restore", "batch"];
 
     // Null when allowed; otherwise a stable code ("not-allowed" or "invalid-arguments").
     public static string? Reject(string? op, string? action, string[]? args)

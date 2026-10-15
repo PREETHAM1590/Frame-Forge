@@ -267,9 +267,9 @@ export class AppService {
         return state;
       },
       preview: async ({ ids }) => this.engine.preview(ids),
-      confirm: async ({ token, acknowledged }) => {
+      confirm: async ({ token, acknowledged, undo }) => {
         noRestoreInFlight();
-        const activity = await this.engine.confirm(token, acknowledged);
+        const activity = await this.engine.confirm(token, acknowledged, undo);
         if (activity.status === "success") {
           for (const id of activity.ids)
             this.desktop.track?.("optimization_applied", { id });
@@ -305,9 +305,9 @@ export class AppService {
         noRestoreInFlight();
         return this.engine.rollback(id);
       },
-      rollbackBatch: async ({ ids }) => {
+      rollbackBatch: async ({ items }) => {
         noRestoreInFlight();
-        return this.engine.rollbackBatch(ids);
+        return this.engine.rollbackBatch(items);
       },
       optimizationStatus: async () => this.engine.status(),
       backup: async ({ name }) => {

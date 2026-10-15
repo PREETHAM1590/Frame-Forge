@@ -187,6 +187,25 @@ export class Repository {
     if (!row) throw new Error("Operation not found");
     return row.activity;
   }
+  /** Part of a row was undone: it keeps the items that are still applied, and only those stay restorable. */
+  shrink(
+    id: string,
+    ids: OperationId[],
+    snapshot: unknown,
+    message: string,
+  ): Activity {
+    this.db
+      .prepare("UPDATE operations SET ids=?,snapshot=?,message=? WHERE id=?")
+      .run(
+        JSON.stringify(ids),
+        JSON.stringify(snapshot),
+        message.slice(0, 1000),
+        id,
+      );
+    const row = this.operation(id);
+    if (!row) throw new Error("Operation not found");
+    return row.activity;
+  }
   log(
     label: string,
     message: string,

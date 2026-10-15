@@ -71,6 +71,39 @@ const alreadySet = (snapshot: Snapshot) =>
   (!snapshot.scheme || alreadyOnTarget(snapshot));
 const targetLabel = (snapshot: Snapshot) =>
   planName(targetPlan(snapshot), snapshot.targetName);
+// Per-item undo: a journal row keeps one snapshot for everything applied together, and every value names its item, so an
+// item's slice (and what is left for the others) is derived from it. Rows saved before this existed split the same way.
+const planFields = (snapshot: Snapshot) => ({
+  ...(snapshot.scheme ? { scheme: snapshot.scheme } : {}),
+  ...(snapshot.target ? { target: snapshot.target } : {}),
+  ...(snapshot.schemeName ? { schemeName: snapshot.schemeName } : {}),
+  ...(snapshot.targetName ? { targetName: snapshot.targetName } : {}),
+});
+const sliceOf = (snapshot: Snapshot, ids: OperationId[]): Snapshot => ({
+  values: snapshot.values.filter((v) => ids.includes(v.operation)),
+  ...(ids.includes("power-plan") ? planFields(snapshot) : {}),
+});
+const restOf = (snapshot: Snapshot, ids: OperationId[]): Snapshot => ({
+  values: snapshot.values.filter((v) => !ids.includes(v.operation)),
+  ...(ids.includes("power-plan") ? {} : planFields(snapshot)),
+});
+/** Which items of one journal row to turn off. */
+export interface UndoItem {
+  id: string;
+  ids: OperationId[];
+}
+interface UndoPart {
+  activity: Activity;
+  ids: OperationId[];
+  slice: Snapshot;
+  /** What stays restorable on the row; null when the whole row is being undone. */
+  rest: Snapshot | null;
+  left: OperationId[];
+}
+interface UndoPlan {
+  parts: UndoPart[];
+  merged: Snapshot;
+}
 export class OperationEngine {
   private previews = new Map<
     string,
@@ -182,9 +215,14 @@ export class OperationEngine {
     this.controller.abort();
     return true;
   }
+  /**
+   * Applies a preview and, in the same save, turns off `undo` items. The machine-level halves of both go to the helper as ONE
+   * request, so the person approves once.
+   */
   async confirm(
     token: string,
     acknowledged: OperationId[] = [],
+    undo: UndoItem[] = [],
   ): Promise<Activity> {
     if (this.busy) throw new Error("Another operation is running.");
     const preview = this.previews.get(token);
@@ -202,10 +240,21 @@ export class OperationEngine {
       throw new Error(
         `Acknowledge that this lowers your PC's security first: ${missing.map((id) => itemOf(id).name).join(", ")}.`,
       );
+    const plan = undo.length ? this.planUndo(undo) : null;
+    if (plan?.parts.some((p) => p.ids.some((id) => preview.ids.includes(id))))
+      throw new Error("An item cannot be turned on and off in the same save.");
     this.busy = true;
     this.controller = new AbortController();
     let record: Activity | undefined;
     let notKept = false;
+    let undoRan = false;
+    let undoNote: string | void = undefined;
+    const undoText = plan
+      ? ` Turned off: ${plan.parts
+          .flatMap((p) => p.ids)
+          .map((id) => itemOf(id).name)
+          .join(", ")}.`
+      : "";
     try {
       const current = await this.platform.capture(preview.ids, true);
       if (JSON.stringify(current) !== JSON.stringify(preview.snapshot))
@@ -214,6 +263,7 @@ export class OperationEngine {
         );
       // Nothing to write: no backup, and no rollback entry that could ever change anything.
       if (alreadySet(current)) {
+        if (plan) await this.runUndo(plan);
         const row = this.repo.beginOperation(preview.ids, current, "");
         return this.repo.finish(
           row.id,
@@ -225,7 +275,13 @@ export class OperationEngine {
       const backup = this.repo.backup("Before Windows preferences");
       record = this.repo.beginOperation(preview.ids, current, backup.id);
       if (this.controller.signal.aborted) throw new Error("Cancelled");
-      await this.platform.apply(preview.ids, this.controller.signal, current);
+      undoNote = await this.platform.apply(
+        preview.ids,
+        this.controller.signal,
+        current,
+        plan?.merged,
+      );
+      undoRan = true;
       if (this.controller.signal.aborted) throw new Error("Cancelled");
       if (!(await this.platform.verify(preview.ids))) {
         notKept = true;
@@ -235,15 +291,20 @@ export class OperationEngine {
       const after = preview.ids.includes("defender-off")
         ? await this.platform.defenderStatus?.().catch(() => null)
         : null;
+      if (plan) this.finishUndo(plan, undoNote);
       return this.repo.finish(
         record.id,
         "success",
-        alreadyOnTarget(current)
+        (alreadyOnTarget(current)
           ? `Windows settings re-read and verified. ${targetLabel(current)} was already active, so the power plan was not changed.`
-          : `Windows settings re-read and verified.${after ? ` Windows Defender now: ${after} Only the policy values are verified, not that Defender is off.` : ""} ${restartText[highestRestart(preview.ids)]}`,
+          : `Windows settings re-read and verified.${after ? ` Windows Defender now: ${after} Only the policy values are verified, not that Defender is off.` : ""} ${restartText[highestRestart(preview.ids)]}`) +
+          undoText,
       );
     } catch (e) {
       if (!record) throw e;
+      // The helper did the turn-offs in the same step; they stand even when the turn-ons did not stick.
+      if (plan && undoRan) this.finishUndo(plan, undoNote);
+      else if (plan && !(e instanceof NotApplied)) this.markUndoUnsure(plan);
       // The administrator step never ran (declined, not approved in time, or another prompt was open): nothing was written, so
       // restoring would only open a second prompt for a change that never happened.
       if (e instanceof NotApplied)
@@ -276,7 +337,11 @@ export class OperationEngine {
     }
   }
   async rollback(id: string): Promise<Activity> {
-    return (await this.rollbackBatch([id]))[0]!;
+    if (this.busy) throw new Error("Another operation is running.");
+    const row = this.repo.operation(id);
+    if (!row || !row.activity.rollback)
+      throw new Error("No restorable snapshot for this operation.");
+    return (await this.rollbackBatch([{ id, ids: row.activity.ids }]))[0]!;
   }
   /**
    * Read-only, never opens an administrator prompt: whether Windows currently has each available optimization's target values.
@@ -320,20 +385,36 @@ export class OperationEngine {
     return ids.map((id) => ({ id, state: state.get(id)! }));
   }
   /**
-   * Restores several applied operations through ONE platform restore, so a machine-wide batch opens one administrator prompt.
-   * Each operation keeps its own journal row.
+   * Validates turn-offs before anything is written: each item must belong to its still-restorable journal row. One merged
+   * snapshot of just those items' values is what gets restored, so the rest of a batch or preset stays as it is.
    */
-  async rollbackBatch(activityIds: string[]): Promise<Activity[]> {
-    if (this.busy) throw new Error("Another operation is running.");
-    if (!activityIds.length || new Set(activityIds).size !== activityIds.length)
+  private planUndo(items: UndoItem[]): UndoPlan {
+    if (!items.length || new Set(items.map((i) => i.id)).size !== items.length)
       throw new Error("No restorable snapshot for this operation.");
-    const rows = activityIds.map((id) => {
+    const parts = items.map(({ id, ids }): UndoPart => {
       const row = this.repo.operation(id);
       if (!row || !row.activity.rollback)
         throw new Error("No restorable snapshot for this operation.");
-      return row;
+      if (
+        !ids.length ||
+        new Set(ids).size !== ids.length ||
+        ids.some((i) => !row.activity.ids.includes(i))
+      )
+        throw new Error("Those items are not part of this change.");
+      const snapshot = SnapshotSchema.parse(row.snapshot);
+      const whole = row.activity.ids.every((i) => ids.includes(i));
+      const slice = whole ? snapshot : sliceOf(snapshot, ids);
+      if (!slice.values.length && !slice.scheme)
+        throw new Error("Nothing was saved to restore for these items.");
+      return {
+        activity: row.activity,
+        ids,
+        slice,
+        rest: whole ? null : restOf(snapshot, ids),
+        left: row.activity.ids.filter((i) => !ids.includes(i)),
+      };
     });
-    const all = rows.flatMap((r) => r.activity.ids);
+    const all = parts.flatMap((p) => p.ids);
     if (all.includes("capture-off")) this.noBoost(["capture-off"]);
     this.noBoost(all.filter((id) => serviceOpIds.includes(id)));
     // The probe hides power-plan when High performance is missing, but going back to the prior plan needs only the helper.
@@ -345,30 +426,52 @@ export class OperationEngine {
       )
     )
       throw new Error("This operation is unavailable on this installation.");
-    const snapshots = rows.map((r) => SnapshotSchema.parse(r.snapshot));
     // Two rows that touch the same item would fight over one value; they must be undone one at a time.
     if (
       new Set(all).size !== all.length ||
-      snapshots.filter((s) => s.scheme).length > 1
+      parts.filter((p) => p.slice.scheme).length > 1
     )
       throw new Error(
         "Some of these changes overlap. Undo them one at a time from Activity.",
       );
-    const merged: Snapshot = {
-      ...(snapshots.find((s) => s.scheme) ?? {}),
-      values: snapshots.flatMap((s) => s.values),
+    return {
+      parts,
+      merged: {
+        ...(parts.find((p) => p.slice.scheme)?.slice ?? {}),
+        values: parts.flatMap((p) => p.slice.values),
+      },
     };
-    this.busy = true;
-    try {
-      const note = await this.platform.restore(merged, false);
-      return activityIds.map((id) =>
-        this.repo.finish(
-          id,
-          "rolled-back",
-          `The captured Windows state was restored and verified.${note ? ` ${note}` : ""}`,
-          false,
-        ),
+  }
+  /** Journal after a verified restore: a fully undone row is closed; a partly undone row keeps the items still on. */
+  private finishUndo(plan: UndoPlan, note: string | void): Activity[] {
+    return plan.parts.map((p) =>
+      p.rest
+        ? this.repo.shrink(
+            p.activity.id,
+            p.left,
+            p.rest,
+            `${p.activity.message} Turned off since: ${p.ids.map((id) => itemOf(id).name).join(", ")}.`,
+          )
+        : this.repo.finish(
+            p.activity.id,
+            "rolled-back",
+            `The captured Windows state was restored and verified.${note ? ` ${note}` : ""}`,
+            false,
+          ),
+    );
+  }
+  private markUndoUnsure(plan: UndoPlan) {
+    for (const p of plan.parts)
+      this.repo.finish(
+        p.activity.id,
+        "recovery-needed",
+        "Rollback could not finish. Settings may have been changed externally; review the Windows preferences before retrying.",
       );
+  }
+  private async runUndo(plan: UndoPlan): Promise<Activity[]> {
+    try {
+      const note = await this.platform.restore(plan.merged, false);
+      return this.finishUndo(plan, note);
     } catch (e) {
       // Declined, not approved or blocked by another prompt: nothing was restored and nothing is in doubt. The rows stay restorable.
       if (e instanceof NotApplied) {
@@ -376,13 +479,19 @@ export class OperationEngine {
         this.repo.log("Rollback not done", text, "failed");
         throw Object.assign(new Error(text), { logged: true });
       }
-      return activityIds.map((id) =>
-        this.repo.finish(
-          id,
-          "recovery-needed",
-          "Rollback could not finish. Settings may have been changed externally; review the Windows preferences before retrying.",
-        ),
+      this.markUndoUnsure(plan);
+      return plan.parts.map(
+        (p) => this.repo.operation(p.activity.id)!.activity,
       );
+    }
+  }
+  /** Turns off items (each from its own journal row) through ONE platform restore, so a machine-wide batch asks once. */
+  async rollbackBatch(items: UndoItem[]): Promise<Activity[]> {
+    if (this.busy) throw new Error("Another operation is running.");
+    const plan = this.planUndo(items);
+    this.busy = true;
+    try {
+      return await this.runUndo(plan);
     } finally {
       this.busy = false;
     }

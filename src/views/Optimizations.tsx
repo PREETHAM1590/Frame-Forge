@@ -60,7 +60,9 @@ export function Optimizations({
   const queued = usePending();
   const [states, setStates] = useState<Record<string, Real>>({});
   // Re-read what Windows has on load and whenever the journal changes (after any apply or rollback).
-  const journal = data.activity.map((a) => `${a.id}${a.status}`).join();
+  const journal = data.activity
+    .map((a) => `${a.id}${a.status}${a.ids.join()}`)
+    .join();
   const available = data.capabilities.join();
   useEffect(() => {
     if (data.mode !== "desktop" || !available) return;
@@ -82,14 +84,9 @@ export function Optimizations({
     );
   const flip = (id: OperationId, on: boolean) => {
     const next = { ...queued };
-    if (queued[id]) {
-      // Flipping back cancels; an undo covers everything its journal row covered.
-      for (const x of queued[id] === "off"
-        ? (appliedBy(id)?.ids ?? [id])
-        : [id])
-        delete next[x];
-    } else if (on) next[id] = "on";
-    else for (const x of appliedBy(id)?.ids ?? [id]) next[x] = "off";
+    // Flipping back cancels. Turning off restores only this item, not the rest of what was applied with it.
+    if (queued[id]) delete next[id];
+    else next[id] = on ? "on" : "off";
     pendingStore.set(next);
   };
   const queuedIds = Object.keys(queued) as OperationId[];
@@ -100,7 +97,7 @@ export function Optimizations({
     const rows = new Map<string, OperationId[]>();
     for (const id of queuedIds.filter((x) => queued[x] === "off")) {
       const a = appliedBy(id);
-      if (a) rows.set(a.id, a.ids);
+      if (a) rows.set(a.id, [...(rows.get(a.id) ?? []), id]);
     }
     const offs = [...rows].map(([activityId, ids]) => ({ activityId, ids }));
     const ons = queuedIds.filter((id) => queued[id] === "on");

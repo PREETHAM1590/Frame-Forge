@@ -50,7 +50,10 @@ const inputs: { [M in Method]: () => Request<M> } = {
   confirm: () => ({ token: id(), confirmed: true }),
   cancel: () => ({}),
   rollback: () => ({ id: id(), confirmed: true }),
-  rollbackBatch: () => ({ ids: [id()], confirmed: true }),
+  rollbackBatch: () => ({
+    items: [{ id: id(), ids: ["mouse-precision"] }],
+    confirmed: true,
+  }),
   optimizationStatus: () => ({}),
   backup: () => ({ name: "Demo test" }),
   restore: () => ({ id: backupId, confirmed: true }),

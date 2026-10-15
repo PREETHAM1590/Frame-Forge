@@ -204,11 +204,16 @@ export interface Platform {
   hardware(): Promise<Hardware>;
   /** reuse: the confirm step may reuse the preview's capture of the boot store instead of asking for administrator approval again. */
   capture(ids: OperationId[], reuse?: boolean): Promise<Snapshot>;
+  /**
+   * undo: values to put back in the same step (turn-offs saved with these turn-ons); the machine-level halves share one
+   * administrator request. Resolves with a note when Windows had changed a security value to a third value that was set back.
+   */
   apply(
     ids: OperationId[],
     signal: AbortSignal,
     snapshot: Snapshot,
-  ): Promise<void>;
+    undo?: Snapshot,
+  ): Promise<string | void>;
   verify(ids: OperationId[]): Promise<boolean>;
   /** Resolves with a note when Windows had changed security settings to a third value that were set back anyway. */
   restore(snapshot: Snapshot, force: boolean): Promise<string | void>;
@@ -540,12 +545,20 @@ export class WindowsPlatform implements Platform {
       this.bootCapture.set(key, { at: Date.now(), snapshot: result.snapshot });
     return result.snapshot;
   }
-  async apply(ids: OperationId[], signal: AbortSignal, snapshot: Snapshot) {
-    const machine = ids.some((id) => adminIds.includes(id));
+  async apply(
+    ids: OperationId[],
+    signal: AbortSignal,
+    snapshot: Snapshot,
+    undo?: Snapshot,
+  ) {
+    const machine =
+      ids.some((id) => adminIds.includes(id)) ||
+      !!undo?.values.some((v) => adminIds.includes(v.operation));
     this.appliedCheck = null;
+    if (undo) this.bootCapture.clear();
     const ask = () =>
       this.call(
-        { command: "apply", ids, snapshot, ownedPlan: this.ownedPlan },
+        { command: "apply", ids, snapshot, undo, ownedPlan: this.ownedPlan },
         signal,
         machine ? WindowsPlatform.elevatedTimeout : 20000,
       );
@@ -562,6 +575,10 @@ export class WindowsPlatform implements Platform {
         key: WindowsPlatform.key(ids),
         verified: result.verified,
       };
+    const plain = "Preferences written.";
+    return result.message.startsWith(plain)
+      ? result.message.slice(plain.length).trim() || undefined
+      : undefined;
   }
   async verify(ids: OperationId[]) {
     const check = this.appliedCheck;
@@ -1052,8 +1069,16 @@ export class MockPlatform implements Platform {
       })),
     };
   }
-  async apply(ids: OperationId[], signal: AbortSignal) {
+  /** The turn-offs of the last apply (tests). */
+  undone: Snapshot | undefined;
+  async apply(
+    ids: OperationId[],
+    signal: AbortSignal,
+    _snapshot?: Snapshot,
+    undo?: Snapshot,
+  ) {
     if (signal.aborted) throw new Error("Cancelled");
+    this.undone = undo;
     this.applied = [...ids];
   }
   async verify() {

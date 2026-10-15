@@ -14,8 +14,8 @@ public record OptimizationSnapshot(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SchemeName = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TargetName = null);
 
-/// <summary>One machine-level request handed to the administrator step: capture, apply (writes then re-reads), verify or restore.</summary>
-public record AdminRequest(string Command, string[] Ids, CapturedValue[]? Values);
+/// <summary>One machine-level request handed to the administrator step: capture, apply (writes then re-reads), verify, restore, or batch (apply Values, then restore RestoreValues, in one approval).</summary>
+public record AdminRequest(string Command, string[] Ids, CapturedValue[]? Values, CapturedValue[]? RestoreValues = null);
 public record AdminResult(CapturedValue[]? Values, bool Verified, string? Note = null);
 /// <summary>Runs an <see cref="AdminRequest"/> with administrator rights (one approval per call) or throws InvalidOperationException.</summary>
 public interface IAdminGateway { AdminResult Run(AdminRequest request); }
@@ -76,13 +76,32 @@ public sealed class Optimizations(RegistryOperations registry, IPowerStore power
         return new(CaptureRegistry(registryIds), scheme, target, schemeName, targetName);
     }
     /// <summary>Applies the selection. Returns the administrator step's own post-write re-read when one ran, otherwise null.</summary>
-    public bool? Apply(string[] ids, OptimizationSnapshot expected)
+    /// <summary>The "Windows had already changed ..." note of the undo half of the last <see cref="Apply"/>, if any.</summary>
+    public string? Note { get; private set; }
+    public bool? Apply(string[] ids, OptimizationSnapshot expected, OptimizationSnapshot? undo = null)
     {
+        Note = null;
         var registryIds = Registry(Check(ids));
         var plans = Plans(expected);
         if (ids.Contains(PowerPlan) != plans.HasValue || (registryIds.Length == 0) != (expected.Values.Length == 0)) throw new InvalidOperationException("Snapshot selection mismatch.");
         if (plans is { } expect && (power.Active() != expect.Prior || BoostSessionEngine.PlanTarget(power, ownedPlan) != expect.Target))
             throw new InvalidOperationException("Settings changed after preview. Create a new preview.");
+        // Turn-offs saved together with turn-ons: everything is checked before the first write, and the machine-level halves
+        // share ONE administrator request (apply the ons, then restore the offs) so the person approves once.
+        var notes = new List<string>();
+        var undoPlans = undo is null ? null : Plans(undo);
+        var undoMachine = Array.Empty<CapturedValue>(); var undoLocal = Array.Empty<CapturedValue>();
+        if (undo is not null)
+        {
+            if (undoPlans is null && undo.Values.Length == 0) throw new InvalidOperationException("Empty or invalid snapshot.");
+            if ((undoPlans.HasValue && ids.Contains(PowerPlan)) || undo.Values.Any(v => ids.Contains(v.Operation))) throw new InvalidOperationException("An item cannot be turned on and off in the same save.");
+            if (undoPlans is { } saved && power.Active() is var now && now != saved.Prior && now != saved.Target)
+                throw new InvalidOperationException("The power plan changed externally. Rollback stopped to preserve it.");
+            if (undo.Values.Length > 0) registry.Validate(new Snapshot(undo.Values));
+            undoMachine = Remote ? undo.Values.Where(v => OptimizationTable.IsAdmin(v.Operation)).ToArray() : [];
+            undoLocal = undo.Values.Except(undoMachine).ToArray();
+        }
+        var undoOps = undoMachine.Select(v => v.Operation).Distinct().ToArray();
         var machine = Remote ? registryIds.Where(OptimizationTable.IsAdmin).ToArray() : [];
         var local = registryIds.Except(machine).ToArray();
         bool? verified = null;
@@ -94,16 +113,30 @@ public sealed class Optimizations(RegistryOperations registry, IPowerStore power
             if (local.Length > 0) { registry.Apply(local, new Snapshot(Of(expected.Values, local))); localApplied = true; }
             // Already on the target plan: nothing to write, and rollback has nothing to undo.
             if (plans is { } change && change.Prior != change.Target) { power.SetActive(change.Target); planSwitched = true; }
-            if (machine.Length > 0) verified = admin!.Run(new("apply", machine, Of(expected.Values, machine))).Verified;
+            if (machine.Length > 0 && undoOps.Length > 0)
+            {
+                var both = admin!.Run(new("batch", [.. machine, .. undoOps], Of(expected.Values, machine), undoMachine));
+                verified = both.Verified; notes.AddRange(Split(both.Note));
+            }
+            else if (machine.Length > 0) verified = admin!.Run(new("apply", machine, Of(expected.Values, machine))).Verified;
+            else if (undoOps.Length > 0) notes.AddRange(Split(admin!.Run(new("restore", undoOps, undoMachine)).Note));
         }
         catch (Exception error) when (error is InvalidOperationException or Win32Exception && (localApplied || planSwitched))
         {
             var undone = new List<string>();
             try { if (planSwitched) power.SetActive(plans!.Value.Prior); if (localApplied) registry.Restore(new Snapshot(Of(expected.Values, local))); }
-            catch (Exception undo) when (undo is InvalidOperationException or Win32Exception) { undone.Add(undo.Message); }
+            catch (Exception failed) when (failed is InvalidOperationException or Win32Exception) { undone.Add(failed.Message); }
             var tail = undone.Count == 0 ? "The current-user changes made before it were undone." : $"The current-user changes made before it could not be undone ({undone[0]}); use Rollback to restore them.";
             throw new InvalidOperationException($"The machine-level step did not complete: {error.Message} {tail}");
         }
+        // The current-user half of the turn-offs runs last: nothing else is left that could still fail and need these undone.
+        if (undoLocal.Length > 0) notes.AddRange(registry.Restore(new Snapshot(undoLocal)));
+        if (undoPlans is { } back && power.Active() != back.Prior)
+        {
+            power.SetActive(back.Prior);
+            if (power.Active() != back.Prior) throw new InvalidOperationException("Rollback verification failed.");
+        }
+        Note = notes.Count == 0 ? null : $"Windows had already changed {string.Join(", ", notes.Distinct())} to something else; it was set back to the value captured before.";
         return verified;
     }
     /// <summary>Read-only: which of these applied optimizations no longer match what Frameforge wrote (checked on the registry values only).</summary>
@@ -149,8 +182,22 @@ public static class AdminCommands
     public static AdminResult Execute(AdminRequest request, RegistryOperations registry)
     {
         if (request is null || request.Ids is null || request.Ids.Length is 0 or > 24 || !request.Ids.All(OptimizationTable.IsAdmin)) throw new InvalidOperationException("Unsupported administrator request.");
+        // Every value named must belong to an operation the request names, so a request that is checked by its ids (the broker, the
+        // security rule) cannot carry values of anything else.
+        if ((request.Values ?? []).Concat(request.RestoreValues ?? []).Any(v => !request.Ids.Contains(v.Operation))) throw new InvalidOperationException("Unsupported administrator request.");
         switch (request.Command)
         {
+            case "batch":
+            {
+                var apply = (request.Values ?? throw new InvalidOperationException("Missing snapshot.")).Select(v => v.Operation).Distinct().ToArray();
+                var restoring = (request.RestoreValues ?? throw new InvalidOperationException("Missing snapshot.")).Select(v => v.Operation).Distinct().ToArray();
+                if (apply.Length == 0 || restoring.Length == 0 || apply.Intersect(restoring).Any() || request.Ids.Distinct().Count() != request.Ids.Length || request.Ids.Except(apply.Concat(restoring)).Any()) throw new InvalidOperationException("Unsupported administrator request.");
+                // In order: write the turn-ons and re-read them, then put the turn-offs back.
+                registry.Apply(apply, new Snapshot(request.Values));
+                var verified = registry.Verify(apply);
+                var again = registry.Restore(new Snapshot(request.RestoreValues));
+                return new(null, verified, again.Length == 0 ? null : string.Join('|', again));
+            }
             case "capture": return new(registry.Capture(request.Ids).Values, true);
             case "apply":
                 registry.Apply(request.Ids, new Snapshot(request.Values ?? throw new InvalidOperationException("Missing snapshot.")));
