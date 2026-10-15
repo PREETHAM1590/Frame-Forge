@@ -39,6 +39,48 @@ export const closeDecision = (
       ? "quit"
       : closeAction;
 
+export interface CloseChoice {
+  action: "tray" | "quit" | "cancel";
+  remember: boolean;
+}
+/**
+ * Asks the renderer (in-app modal) whether to keep running in the tray. The renderer first confirms the modal is on screen
+ * ("shown"); with no confirmation within waitMs (crashed or still loading renderer) ask() resolves null so the caller can
+ * fall back to a native box. After "shown" there is no time limit: the user may take as long as they like.
+ */
+export class CloseAsker {
+  private pending: {
+    resolve: (choice: CloseChoice | null) => void;
+    timer: ReturnType<typeof setTimeout>;
+  } | null = null;
+  constructor(
+    /** Sends the event; false when there is no usable renderer. */
+    private send: () => boolean,
+    private waitMs = 3000,
+  ) {}
+  ask(): Promise<CloseChoice | null> {
+    if (this.pending || !this.send()) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pending = null;
+        resolve(null);
+      }, this.waitMs);
+      this.pending = { resolve, timer };
+    });
+  }
+  reply(r: {
+    action: "shown" | "tray" | "quit" | "cancel";
+    remember: boolean;
+  }) {
+    if (!this.pending) return;
+    if (r.action === "shown") return clearTimeout(this.pending.timer);
+    clearTimeout(this.pending.timer);
+    const { resolve } = this.pending;
+    this.pending = null;
+    resolve({ action: r.action, remember: r.remember });
+  }
+}
+
 export interface TrayItem {
   label?: string;
   type?: "separator";

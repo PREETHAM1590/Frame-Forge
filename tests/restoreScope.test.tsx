@@ -11,11 +11,16 @@ import {
 import "@testing-library/jest-dom/vitest";
 import App from "../src/App";
 import {
-  defaultState,
+  defaultState as unansweredState,
   type AppState,
   type FrameforgeApi,
   type RestorePoints,
 } from "../shared/contracts";
+// These tests are about the app after the first-run welcome has been answered.
+const defaultState = {
+  ...unansweredState,
+  settings: { ...unansweredState.settings, privacyAsked: true },
+};
 const status = {
   protection: "enabled" as const,
   policyDisabled: false,

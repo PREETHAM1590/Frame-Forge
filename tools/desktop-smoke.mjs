@@ -35,7 +35,23 @@ try {
     )
       violations.push(m.text());
   });
+  // A fresh profile starts with the in-app welcome (never a native box): walk it, then the app loads.
+  await page.getByRole("heading", { name: "Welcome to Frameforge" }).waitFor();
+  assert.equal(
+    (await page.evaluate(() => window.frameforge.bootstrap({}))).state.settings
+      .privacyAsked,
+    undefined,
+    "nothing is saved until the welcome is answered",
+  );
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("heading", { name: "Privacy and updates" }).waitFor();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Get started" }).click();
   await page.getByText("Your setup, in focus.").waitFor();
+  const asked = (await page.evaluate(() => window.frameforge.bootstrap({})))
+    .state.settings;
+  assert.equal(asked.privacyAsked, true);
+  assert.equal(asked.analytics, false, "statistics stay off by default");
   const info = await page.evaluate(async () => window.frameforge.bootstrap({}));
   assert.equal(info.mode, "desktop");
   assert.equal(info.hardware.source, "windows");
@@ -169,17 +185,19 @@ try {
   console.log(
     `Electron smoke passed: admin access reads ${broker.state}; startup list has ${startup.items.length} item(s).`,
   );
-  // A remembered choice, so closing does not open the first-close question.
-  await page.evaluate(async () => {
-    const { state } = await window.frameforge.bootstrap({});
-    await window.frameforge.settings({
-      ...state.settings,
-      closeAction: "tray",
-    });
-  });
+  // Closing with "ask" opens the in-app question (not a native box); the answer is remembered.
   await hooks("closeWindow");
+  await page
+    .getByRole("dialog", { name: "Keep Frameforge running in the tray?" })
+    .waitFor();
+  await page.getByRole("button", { name: "Minimize to tray" }).click();
   await until(async () => (await hooks("windows")) === 0, "window destroyed");
   assert.equal(await hooks("tray"), true, "tray survives the closed window");
+  assert.equal(
+    await hooks("closeAction"),
+    "tray",
+    "the remembered choice was saved",
+  );
   assert.equal(
     await hooks("monitoring"),
     false,

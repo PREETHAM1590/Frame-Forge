@@ -12,6 +12,7 @@
 @import "./styles/monitor.css";
 @import "./styles/health.css";
 @import "./styles/startup.css";
+@import "./styles/welcome.css";
 @theme {
   --font-sans: "Space Grotesk", sans-serif;
 }

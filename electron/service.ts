@@ -93,6 +93,11 @@ export interface DesktopServices {
   /** Hotkeys Windows refused to register; absent where global hotkeys do not exist. */
   hotkeyStatus?: () => { failed: string[] };
   analyticsAvailable?: boolean;
+  /** The renderer's reply to the in-app close prompt. */
+  closeAnswer?: (reply: {
+    action: "shown" | "tray" | "quit" | "cancel";
+    remember: boolean;
+  }) => void;
   /** Settings > Diagnostics: redaction, save dialog, logs folder and the fixed issue page. Absent in the browser demo. */
   diagnostics?: DiagnosticsHost;
   /** Anonymous, allowlisted usage event; the callee drops it unless the user opted in. */
@@ -861,6 +866,12 @@ export class AppService {
         return this.diagnosticsHost().openIssue(url);
       },
       openLogsFolder: async () => this.diagnosticsHost().openLogs(),
+      closeAnswer: async (reply) => {
+        if (!this.desktop.closeAnswer)
+          throw new Error("Windows operations require the desktop app.");
+        this.desktop.closeAnswer(reply);
+        return true;
+      },
     };
   }
   private diagnosticsHost(): DiagnosticsHost {

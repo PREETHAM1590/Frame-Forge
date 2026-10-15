@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.1
+
+- **In-app welcome and close dialogs.** The first-run question is now a Frameforge welcome screen (what it does, privacy and updates, running in the background) instead of a Windows message box. Update checks default to on, anonymous statistics to off, with a "What's shared" explanation. Upgrades that never answered see it too. Nothing is checked or sent until it is answered, and a hidden (tray) start shows it when the window first opens. The first-close question ("Keep Frameforge running in the tray?") is an in-app dialog too; the Windows box remains only as a fallback if the window does not answer within 3 seconds.
+
 ## 1.4.0
 
 - **PC Health Check.** A read-only page, with a Dashboard card showing the score and the top three issues. It checks power source and Battery Saver, the Windows power mode and plan, the laptop maker's performance mode, which GPU runs your games, graphics driver age, refresh rate, memory channels and speed, GPU heat and power limits, disk space and type, memory use, background CPU, Game Mode, hardware-accelerated GPU scheduling, Memory Integrity, a pending restart, startup apps, overlays and whether a before and after FPS measurement exists. Each check says what it means and the expected effect, and offers a reversible fix through the existing paths or exact steps.

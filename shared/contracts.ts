@@ -78,7 +78,7 @@ export const SettingsSchema = z
     /** Scan for installed games in the background at app start, at most once per interval. */
     autoScan: z.boolean().default(true),
     autoScanHours: z.number().int().min(1).max(720).default(24),
-    /** Privacy: all opt-in. Missing means off; privacyAsked missing means the first-run dialog has not been answered. */
+    /** Privacy: all opt-in. Missing means off; privacyAsked missing means the first-run welcome screen has not been answered. */
     updateCheck: z.boolean().optional(),
     updateAutoInstall: z.boolean().optional(),
     analytics: z.boolean().optional(),
@@ -1796,6 +1796,13 @@ export const requests = {
     .strict(),
   reportProblem: Empty,
   openLogsFolder: Empty,
+  // Reply to the "close-ask" event: "shown" = the modal is on screen, the others are the user's choice.
+  closeAnswer: z
+    .object({
+      action: z.enum(["shown", "tray", "quit", "cancel"]),
+      remember: z.boolean().default(false),
+    })
+    .strict(),
 };
 export const responses = {
   bootstrap: BootstrapSchema,
@@ -1876,6 +1883,7 @@ export const responses = {
   diagnosticsExport: DiagnosticsResultSchema,
   reportProblem: z.boolean(),
   openLogsFolder: z.boolean(),
+  closeAnswer: z.boolean(),
 };
 export type Method = keyof typeof requests;
 export type Request<M extends Method> = z.infer<(typeof requests)[M]>;
@@ -1895,6 +1903,8 @@ export const EventSchema = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("boost"), session: BoostSessionSchema }).strict(),
   z.object({ type: z.literal("update"), status: UpdateStatusSchema }).strict(),
+  // The window was asked to close while closeAction is "ask": the renderer shows its own modal and answers with closeAnswer.
+  z.object({ type: z.literal("close-ask") }).strict(),
   // Saved state changed outside the window (tray menu): reload it.
   z.object({ type: z.literal("state") }).strict(),
   z

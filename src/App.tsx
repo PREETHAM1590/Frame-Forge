@@ -19,8 +19,17 @@ import {
 } from "lucide-react";
 import { onEvent, request } from "./api";
 import { UpdateCard } from "./components/UpdatePanel";
+import { Welcome } from "./components/Welcome";
+import type { WelcomeChoices } from "./components/Welcome";
+import { CloseDialog } from "./components/CloseDialog";
 import { useScan } from "./useScan";
-import type { Bootstrap, Method, Request, Response } from "../shared/contracts";
+import type {
+  Bootstrap,
+  Method,
+  Request,
+  Response,
+  Settings,
+} from "../shared/contracts";
 import type { Page, ViewProps } from "./types";
 import {
   Button,
@@ -118,6 +127,7 @@ export default function App() {
   const [restoreRequests, setRestoreRequests] = useState(0);
   const [timerRequests, setTimerRequests] = useState(0);
   const scan = useScan(data);
+  const [closeAsk, setCloseAsk] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(
     null,
   );
@@ -164,6 +174,10 @@ export default function App() {
               .then(setData)
               .catch(() => undefined);
           }
+          return;
+        }
+        if (event.type === "close-ask") {
+          setCloseAsk(true);
           return;
         }
         if (event.type === "state") {
@@ -264,6 +278,21 @@ export default function App() {
       setCount((n) => n - 1);
     }
   }
+  const shown = useCallback(
+    () =>
+      void request("closeAnswer", { action: "shown", remember: false }).catch(
+        () => undefined,
+      ),
+    [],
+  );
+  async function finishWelcome(c: WelcomeChoices, settings: Settings) {
+    const saved = await run("settings", {
+      ...settings,
+      ...c,
+      privacyAsked: true,
+    });
+    if (saved && c.updateCheck) void request("updateCheck", {}).catch(() => 0);
+  }
   function navigate(next: Page) {
     if (next !== page)
       void request("trackUsage", { event: "feature_opened", page: next }).catch(
@@ -295,6 +324,36 @@ export default function App() {
           <Busy label="Reading local configuration" />
         )}
       </div>
+    );
+  const closeModal = closeAsk && (
+    <CloseDialog
+      onShown={shown}
+      onReply={(action, remember) => {
+        setCloseAsk(false);
+        void request("closeAnswer", { action, remember }).catch(
+          () => undefined,
+        );
+      }}
+    />
+  );
+  // First run (also an upgrade that never answered): the welcome flow replaces the app until it is saved.
+  if (data.mode === "desktop" && !data.state.settings.privacyAsked)
+    return (
+      <>
+        <Welcome
+          keepRunning={data.state.settings.keepRunning}
+          busy={requestsPending > 0}
+          onFinish={(c) => void finishWelcome(c, data.state.settings)}
+        />
+        {closeModal}
+        {notice && (
+          <Toast
+            text={notice.text}
+            error={notice.error}
+            onDismiss={() => setNotice(null)}
+          />
+        )}
+      </>
     );
   const props: ViewProps = {
     data,
@@ -434,6 +493,7 @@ export default function App() {
           onDismiss={() => setNotice(null)}
         />
       )}
+      {closeModal}
       <ApplyFlowDialog
         flow={flow}
         run={run}

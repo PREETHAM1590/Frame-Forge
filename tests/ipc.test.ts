@@ -132,6 +132,7 @@ const inputs: { [M in Method]: () => Request<M> } = {
   diagnosticsExport: () => ({ groups: ["app"] }),
   reportProblem: () => ({}),
   openLogsFolder: () => ({}),
+  closeAnswer: () => ({ action: "shown" as const, remember: false }),
 };
 describe("IPC surface", () => {
   it("has identical request, response and handler sets", () => {
@@ -199,6 +200,7 @@ describe("IPC surface", () => {
       "diagnosticsExport",
       "reportProblem",
       "openLogsFolder",
+      "closeAnswer",
       "updateCheck",
       "updateDownload",
       "updateInstall",

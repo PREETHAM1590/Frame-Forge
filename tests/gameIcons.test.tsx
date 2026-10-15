@@ -12,10 +12,15 @@ import "@testing-library/jest-dom/vitest";
 import App from "../src/App";
 import { clearGameIcons, GameIcon } from "../src/components/GameIcon";
 import {
-  defaultState,
+  defaultState as unansweredState,
   type AppEvent,
   type FrameforgeApi,
 } from "../shared/contracts";
+// These tests are about the app after the first-run welcome has been answered.
+const defaultState = {
+  ...unansweredState,
+  settings: { ...unansweredState.settings, privacyAsked: true },
+};
 
 const png = "data:image/png;base64,iVBORw0KGgo=";
 const base = {

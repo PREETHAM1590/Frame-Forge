@@ -1,0 +1,87 @@
+/* First-run welcome: replaces the app until answered. */
+.welcome {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-6) 16px;
+  background: var(--c-canvas);
+}
+.welcome-card {
+  width: min(560px, 100%);
+  padding: var(--sp-6);
+  background: var(--c-cell);
+  border: var(--bw) solid var(--c-border);
+  border-top: var(--bw-strong) solid var(--c-primary);
+}
+.welcome-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-5);
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.welcome-brand svg {
+  color: var(--c-primary);
+}
+.welcome-count {
+  margin-left: auto;
+  font: 500 var(--fs-2xs) var(--font-mono);
+  color: var(--c-muted);
+  text-transform: uppercase;
+}
+.welcome-step {
+  min-height: 250px;
+  animation: welcome-in var(--dur-base) var(--ease-out);
+}
+.welcome-step h1 {
+  margin: 0 0 var(--sp-3);
+  font-size: 28px;
+}
+.welcome-step h1:focus-visible {
+  outline: var(--bw-strong) solid var(--c-focus);
+  outline-offset: 4px;
+}
+.welcome-lead {
+  font-size: 17px;
+  margin: 0 0 var(--sp-3);
+}
+.welcome-shared {
+  margin-top: var(--sp-3);
+}
+.welcome-shared summary {
+  cursor: pointer;
+  color: var(--c-info);
+  width: fit-content;
+}
+.welcome-shared summary:focus-visible {
+  outline: var(--bw-strong) solid var(--c-focus);
+  outline-offset: 3px;
+}
+.welcome-shared ul {
+  margin: var(--sp-2) 0;
+  padding-left: var(--sp-5);
+  list-style: disc;
+  color: var(--c-muted);
+}
+.welcome-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
+}
+@keyframes welcome-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-step {
+    animation: none;
+  }
+}

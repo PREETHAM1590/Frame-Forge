@@ -13,12 +13,17 @@ import { outcomeOf } from "../src/views/optimizations/ResultStep";
 import { LaunchSettings } from "../src/views/gamemode/LaunchSettings";
 import {
   GameSchema,
-  defaultState,
+  defaultState as unansweredState,
   type Activity,
   type Bootstrap,
   type FrameforgeApi,
   type OperationId,
 } from "../shared/contracts";
+// These tests are about the app after the first-run welcome has been answered.
+const defaultState = {
+  ...unansweredState,
+  settings: { ...unansweredState.settings, privacyAsked: true },
+};
 
 const row = (
   id: string,

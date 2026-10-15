@@ -12,7 +12,7 @@ Frameforge runs locally on Windows. Core desktop features work offline. This pag
 
 ## The two optional network uses
 
-Frameforge contacts the network in exactly two optional ways. Both are chosen on first run (one dialog: statistics default to off, and updates are a plain Yes/No) and can be changed at any time in **Settings > Privacy and updates**.
+Frameforge contacts the network in exactly two optional ways. Both are chosen on first run (a welcome screen in the app: update checks start switched on, statistics start switched off, and nothing is checked or sent until you continue) and can be changed at any time in **Settings > Privacy and updates**.
 
 ### 1. Update checks (your choice: on or off)
 

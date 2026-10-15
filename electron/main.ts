@@ -59,6 +59,7 @@ import {
 } from "./hotkeys.js";
 import {
   BoostNotices,
+  CloseAsker,
   closeDecision,
   hiddenArg,
   migrateLoginItem,
@@ -99,6 +100,14 @@ const analyticsOn = !testMode && validAppKey(appKey);
 // Must run before the app is ready. It only registers local handlers; nothing is sent until an allowlisted event passes the opt-in check.
 if (analyticsOn) void aptabaseInit(appKey!).catch(() => {});
 let window: BrowserWindow | null = null;
+// The close prompt is an in-app modal; this resolves null (native box instead) if the renderer does not confirm within 3 s.
+const closeAsker = new CloseAsker(() => {
+  if (!window || window.isDestroyed()) return false;
+  const web = window.webContents;
+  if (web.isLoading() || web.isCrashed()) return false;
+  web.send("frameforge:event", { type: "close-ask" });
+  return true;
+});
 let updates: UpdateManager | undefined;
 let updater: { autoInstallOnAppQuit: boolean } | undefined;
 let repo: Repository;
@@ -242,6 +251,7 @@ if (!app.requestSingleInstanceLock()) {
       const service = new AppService(repo, platform, {
         version: app.getVersion(),
         analyticsAvailable: analytics.available,
+        closeAnswer: (reply) => closeAsker.reply(reply),
         get updates() {
           return updates;
         },
@@ -443,40 +453,7 @@ if (!app.requestSingleInstanceLock()) {
         });
       }
       await service.refresh();
-      // First run: one native dialog; both choices default to off and live in Settings > Privacy.
-      if (!testMode && !repo.state().settings.privacyAsked) {
-        const answer = await dialog.showMessageBox({
-          type: "question",
-          title: "Frameforge",
-          message: "Check for updates automatically?",
-          detail:
-            "Update checks contact github.com only. You choose when to download and install. You can change this in Settings > Privacy and updates." +
-            (analytics.available
-              ? "\n\nAnonymous usage statistics are never sent unless you tick the box below."
-              : ""),
-          buttons: ["Yes", "No"],
-          defaultId: 1,
-          cancelId: 1,
-          noLink: true,
-          ...(analytics.available
-            ? {
-                checkboxLabel:
-                  "Share anonymous usage statistics to help improve Frameforge",
-                checkboxChecked: false,
-              }
-            : {}),
-        });
-        const state = repo.state();
-        repo.updateState({
-          ...state,
-          settings: {
-            ...state.settings,
-            privacyAsked: true,
-            updateCheck: answer.response === 0,
-            analytics: analytics.available && answer.checkboxChecked,
-          },
-        });
-      }
+      // First run: the renderer shows its welcome screen; updates and statistics stay off (unset) until it is answered.
       if (analytics.available) {
         const file = path.join(app.getPath("userData"), "last-version.txt");
         const last = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
@@ -635,21 +612,30 @@ if (!app.requestSingleInstanceLock()) {
         if (asking || !window) return;
         asking = true;
         try {
-          const answer = await dialog.showMessageBox(window, {
-            type: "question",
-            title: "Frameforge",
-            message:
-              "Keep Frameforge running in the tray so auto-boost can start when you launch a game?",
-            detail: "You can change this in Settings > General.",
-            buttons: ["Minimize to tray", "Quit Frameforge"],
-            defaultId: 0,
-            cancelId: 0,
-            noLink: true,
-            checkboxLabel: "Remember my choice",
-            checkboxChecked: true,
-          });
-          const toTray = answer.response === 0;
-          if (answer.checkboxChecked) {
+          let choice = await closeAsker.ask();
+          if (!choice) {
+            // Renderer gone or not answering: the native box keeps the window closable.
+            const answer = await dialog.showMessageBox(window, {
+              type: "question",
+              title: "Frameforge",
+              message:
+                "Keep Frameforge running in the tray so auto-boost can start when you launch a game?",
+              detail: "You can change this in Settings > General.",
+              buttons: ["Minimize to tray", "Quit Frameforge"],
+              defaultId: 0,
+              cancelId: 0,
+              noLink: true,
+              checkboxLabel: "Remember my choice",
+              checkboxChecked: true,
+            });
+            choice = {
+              action: answer.response === 0 ? "tray" : "quit",
+              remember: answer.checkboxChecked,
+            };
+          }
+          if (choice.action === "cancel") return;
+          const toTray = choice.action === "tray";
+          if (choice.remember) {
             const current = repo.state();
             repo.updateState({
               ...current,
@@ -1004,6 +990,7 @@ function exposeTestHooks(
           : null;
       },
       tray: () => !tray.isDestroyed(),
+      closeAction: () => repo.state().settings.closeAction,
       windows: () =>
         BrowserWindow.getAllWindows().filter((w) => !overlayInfo.has(w)).length,
       active: () => service.booster.active,
