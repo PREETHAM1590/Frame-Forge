@@ -221,7 +221,6 @@ export function Benchmark({ data }: { data: Bootstrap }) {
           </Button>
         ) : (
           <Button
-            variant="primary"
             disabled={busy || !running || !!mismatch}
             onClick={() =>
               void act(() =>

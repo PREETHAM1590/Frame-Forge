@@ -170,22 +170,22 @@
   padding: var(--sp-4);
   background: var(--c-cell);
   border: var(--bw) solid var(--c-border);
-  border-left: var(--bw-strong) solid var(--c-dim);
+  border-top: var(--bw-strong) solid var(--c-dim);
 }
 .af-result.applied {
-  border-left-color: var(--c-primary);
+  border-top-color: var(--c-primary);
 }
 .af-result.partial,
 .af-result.cancelled {
-  border-left-color: var(--c-caution);
+  border-top-color: var(--c-caution);
 }
 .af-result.failed,
 .af-result.recovery {
-  border-left-color: var(--c-error);
+  border-top-color: var(--c-error);
 }
 .af-result.reverted,
 .af-result.unchanged {
-  border-left-color: var(--c-info);
+  border-top-color: var(--c-info);
 }
 .af-result-head {
   display: flex;

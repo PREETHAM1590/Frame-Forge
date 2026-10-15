@@ -13,11 +13,11 @@
 }
 .panel.warn {
   border-color: var(--c-caution);
-  border-left: var(--bw-strong) solid var(--c-caution);
+  border-top: var(--bw-strong) solid var(--c-caution);
 }
 .panel.danger {
   border-color: var(--c-error);
-  border-left: var(--bw-strong) solid var(--c-error);
+  border-top: var(--bw-strong) solid var(--c-error);
 }
 .panel.flush {
   padding: 0;
@@ -551,7 +551,7 @@
   gap: var(--sp-3);
   background: var(--c-container);
   border: var(--bw) solid var(--c-border-strong);
-  border-left: var(--bw-strong) solid var(--c-primary);
+  border-top: var(--bw-strong) solid var(--c-primary);
   border-radius: 0;
   padding: var(--sp-4);
   max-width: min(480px, calc(100vw - 32px));
@@ -562,7 +562,7 @@
   color: var(--c-primary);
 }
 .toast.error {
-  border-left-color: var(--c-error);
+  border-top-color: var(--c-error);
 }
 .toast.error > svg {
   color: var(--c-error);
@@ -873,7 +873,7 @@ main:focus {
   padding: var(--sp-4);
   background: color-mix(in srgb, var(--c-caution) 7%, var(--c-cell));
   border: var(--bw) solid var(--c-border);
-  border-left: var(--bw-strong) solid var(--c-caution);
+  border-top: var(--bw-strong) solid var(--c-caution);
   color: var(--c-muted);
   font-size: var(--fs-sm);
   line-height: 1.7;

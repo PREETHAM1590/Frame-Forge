@@ -60,18 +60,18 @@ tbody tr:hover {
   background: var(--c-cell);
   padding: var(--sp-4) var(--sp-5);
   border: 0;
-  border-left: var(--bw-strong) solid var(--c-border-strong);
+  border-top: var(--bw-strong) solid var(--c-border-strong);
   align-items: center;
   flex-wrap: wrap;
 }
 .activity-list article.ledger-lime {
-  border-left-color: var(--c-primary);
+  border-top-color: var(--c-primary);
 }
 .activity-list article.ledger-red {
-  border-left-color: var(--c-error);
+  border-top-color: var(--c-error);
 }
 .activity-list article.ledger-amber {
-  border-left-color: var(--c-caution);
+  border-top-color: var(--c-caution);
 }
 .activity-list h3 {
   font-size: var(--fs-md);

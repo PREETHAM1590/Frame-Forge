@@ -72,7 +72,7 @@
   margin: var(--sp-2) 0 var(--sp-3);
 }
 .security-banner {
-  border-left-color: var(--c-error);
+  border-top-color: var(--c-error);
   background: color-mix(in srgb, var(--c-error) 8%, var(--c-cell));
 }
 .security-banner > svg {

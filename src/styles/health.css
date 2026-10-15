@@ -48,17 +48,17 @@
   gap: var(--sp-2);
   padding: var(--sp-4);
   border: var(--bw) solid var(--c-border);
-  border-left: var(--bw-strong) solid var(--c-border-strong);
+  border-top: var(--bw-strong) solid var(--c-border-strong);
   background: var(--c-cell);
 }
 .health-check.bad {
-  border-left-color: var(--c-error);
+  border-top-color: var(--c-error);
 }
 .health-check.warn {
-  border-left-color: var(--c-caution);
+  border-top-color: var(--c-caution);
 }
 .health-check.good {
-  border-left-color: var(--c-primary);
+  border-top-color: var(--c-primary);
 }
 .health-check header {
   display: flex;
@@ -153,7 +153,7 @@
   transition: width var(--dur-meter) var(--ease-out);
 }
 .smart-verdict {
-  border-left: var(--bw-strong) solid var(--c-primary);
+  border-top: var(--bw-strong) solid var(--c-primary);
   padding-left: var(--sp-3);
 }
 .smart-offer {

@@ -458,7 +458,7 @@ export function Backups(props: ViewProps) {
           restored from their operation snapshots in Activity.
         </p>
         <div className="restore-actions">
-          <Button variant="primary" onClick={() => setCreating(true)}>
+          <Button onClick={() => setCreating(true)}>
             <Plus size={17} />
             Create backup
           </Button>
