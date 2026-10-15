@@ -36,6 +36,7 @@ import {
   type AppEvent,
   type BoostSession,
   type FpsStatus,
+  type HotkeyId,
   type MonitorSample,
 } from "../shared/contracts.js";
 import { OverlayManager } from "./overlay.js";
@@ -727,6 +728,8 @@ if (!app.requestSingleInstanceLock()) {
         overlay.toggle();
         refreshTray();
       };
+      // The "Toggle overlay" hotkey goes through the same function as the tray item.
+      overlayHook.toggle = () => toggleOverlay();
       refreshTray = () => {
         const state = repo.state();
         const session = service.booster.active
@@ -1016,6 +1019,7 @@ function exposeTestHooks(
           ),
         ),
       }),
+      pressHotkey: (id: HotkeyId) => hotkeys?.press(id),
       monitoring: () => service.monitor.active,
       closeWindow: () =>
         BrowserWindow.getAllWindows()

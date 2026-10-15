@@ -122,7 +122,7 @@ public static class StartupApproved
         };
         var location = LocationOf(request.Id);
         if (!location.Machine || (elevated ?? RestoreCommands.IsElevated())) return Write(store, location, request.Expect, next, clock);
-        var outcome = ElevatedCall.Run(launcher ?? new WindowsElevatedLauncher(), "--elevated-startup", "write", [request.Id, request.Expect, next], approval ?? Approval, ChildWait, default, grace);
+        var outcome = ElevatedCall.Run(launcher ?? ElevatedLaunchers.Default(), "--elevated-startup", "write", [request.Id, request.Expect, next], approval ?? Approval, ChildWait, default, grace);
         var unchanged = "Nothing was changed.";
         return outcome.Status switch
         {

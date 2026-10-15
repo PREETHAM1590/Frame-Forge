@@ -155,6 +155,20 @@ try {
   console.log(
     "Electron smoke passed: global hotkeys register, unregister when disabled and report conflicts.",
   );
+  // Admin access: read-only status, never a prompt. Startup apps: the read-only list.
+  const broker = await page.evaluate(() => window.frameforge.brokerStatus({}));
+  assert.ok(
+    ["not-installed", "ready", "needs-update", "unhealthy"].includes(
+      broker.state,
+    ),
+    `broker status is ${broker.state}`,
+  );
+  const startup = await page.evaluate(() => window.frameforge.startupList({}));
+  assert.ok(Array.isArray(startup.items), "startup list has items");
+  assert.ok(Array.isArray(startup.warnings), "startup list has warnings");
+  console.log(
+    `Electron smoke passed: admin access reads ${broker.state}; startup list has ${startup.items.length} item(s).`,
+  );
   // A remembered choice, so closing does not open the first-close question.
   await page.evaluate(async () => {
     const { state } = await window.frameforge.bootstrap({});
@@ -278,6 +292,17 @@ try {
   );
   await call("overlayOn", true);
   await until(async () => (await call("overlay")) !== null, "overlay back");
+  // The "Toggle overlay" hotkey goes through the overlay's own toggle (same as the tray item).
+  await call("pressHotkey", "toggleOverlay");
+  await until(
+    async () => (await call("overlay")) === null,
+    "hotkey hid the overlay",
+  );
+  await call("pressHotkey", "toggleOverlay");
+  await until(
+    async () => (await call("overlay")) !== null,
+    "hotkey showed the overlay",
+  );
   // Stop restores the live process.
   await call("stop");
   await until(async () => (await call("active")) === false, "boost stopped");

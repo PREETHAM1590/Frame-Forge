@@ -283,12 +283,32 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           </div>
         )}
       </section>
-      <AdminAccess disabled={pending || data.mode === "demo"} />
+      <section className="settings-section">
+        <h2>
+          <Play size={20} />
+          Booster
+        </h2>
+        <div className="setting-row">
+          <div>
+            <strong>Game Mode</strong>
+            <p className="muted">
+              Booster options and sessions live on the Game Mode page.
+            </p>
+          </div>
+          <Button onClick={() => navigate("Game Mode")}>Open Game Mode</Button>
+        </div>
+      </section>
       <HotkeysSection
         hotkeys={settings.hotkeys}
         pending={pending}
         save={(hotkeys) => update({ hotkeys })}
       />
+      <OverlaySettings
+        saved={settings.overlay}
+        disabled={pending}
+        save={(overlay) => update({ overlay })}
+      />
+      <AdminAccess disabled={pending || data.mode === "demo"} />
       <section className="settings-section">
         <h2>
           <ShieldCheck size={20} />
@@ -320,26 +340,6 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           onChange={(analytics) => update({ analytics })}
         />
         <UpdateCard always />
-      </section>
-      <OverlaySettings
-        saved={settings.overlay}
-        disabled={pending}
-        save={(overlay) => update({ overlay })}
-      />
-      <section className="settings-section">
-        <h2>
-          <Play size={20} />
-          Booster
-        </h2>
-        <div className="setting-row">
-          <div>
-            <strong>Game Mode</strong>
-            <p className="muted">
-              Booster options and sessions live on the Game Mode page.
-            </p>
-          </div>
-          <Button onClick={() => navigate("Game Mode")}>Open Game Mode</Button>
-        </div>
       </section>
       <section className="settings-section">
         <h2>

@@ -261,7 +261,7 @@ public sealed class ChildExecutor(string exe, string runDirectory, IBrokerLog lo
     private static readonly Dictionary<string, TimeSpan> Budgets = new()
     {
         ["--elevated"] = TimeSpan.FromSeconds(140), ["--elevated-services"] = TimeSpan.FromSeconds(190), ["--elevated-timer"] = TimeSpan.FromSeconds(25),
-        ["--elevated-optimize"] = TimeSpan.FromSeconds(140), ["--elevated-fps"] = FpsChild.HardLimit + TimeSpan.FromMinutes(1)
+        ["--elevated-optimize"] = TimeSpan.FromSeconds(140), ["--elevated-startup"] = TimeSpan.FromSeconds(25), ["--elevated-fps"] = FpsChild.HardLimit + TimeSpan.FromMinutes(1)
     };
     public async Task<BrokerOutcome> RunAsync(BrokerJob job, Action<string> line, CancellationToken stop)
     {

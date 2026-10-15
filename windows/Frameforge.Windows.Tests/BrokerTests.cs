@@ -13,11 +13,11 @@ public class BrokerTests
     private const string Sid = "S-1-5-21-111-222-333-1001";
     private static readonly string[] Dword = ["1", "0"];
 
-    // ---- allowlist: exactly the five existing elevated children, with their own argument rules ----
+    // ---- allowlist: exactly the six existing elevated children, with their own argument rules ----
     [Fact]
-    public void AllowlistCoversExactlyTheFiveElevatedChildren()
+    public void AllowlistCoversExactlyTheSixElevatedChildren()
     {
-        Assert.Equal(["--elevated", "--elevated-services", "--elevated-timer", "--elevated-optimize", "--elevated-fps"], BrokerAllowlist.Ops);
+        Assert.Equal(["--elevated", "--elevated-services", "--elevated-timer", "--elevated-optimize", "--elevated-fps", "--elevated-startup"], BrokerAllowlist.Ops);
         foreach (var other in new[] { "--elevated-broker", "--broker-service", "--session", "--monitor", "cmd.exe", "", "--ELEVATED" })
             Assert.Equal("not-allowed", BrokerAllowlist.Reject(other, "restore-list", []));
         Assert.Equal("not-allowed", BrokerAllowlist.Reject(null, "x", []));
@@ -36,6 +36,9 @@ public class BrokerTests
         Assert.Null(BrokerAllowlist.Reject("--elevated-timer", "restore", ["1", "0"]));
         Assert.Null(BrokerAllowlist.Reject("--elevated-optimize", "run", [JsonSerializer.Serialize(new AdminRequest("capture", ["sysmain-off"], null), HelperJson.Options)]));
         Assert.Null(BrokerAllowlist.Reject("--elevated-fps", "capture", ["1234", "2026-10-14T10:00:00.0000000Z", "50"]));
+        Assert.Null(BrokerAllowlist.Reject("--elevated-startup", "write", ["hklm-run|OneDrive", "-", "disable"]));
+        Assert.Null(BrokerAllowlist.Reject("--elevated-startup", "write", ["hklm-folder|Tool.lnk", "030000000000000000000000", "enable"]));
+        Assert.Null(BrokerAllowlist.Reject("--elevated-startup", "write", ["hklm-run32|Updater", "020000000000000000000000", "030000000000000000000000"]));
     }
 
     [Theory]
@@ -56,6 +59,13 @@ public class BrokerTests
     [InlineData("--elevated-fps", "capture", new[] { "12", "yesterday", "50" })]
     [InlineData("--elevated-fps", "capture", new[] { @"C:\x.json", "2026-10-14T10:00:00.0000000Z", "50" })]
     [InlineData("--elevated-fps", "capture", new[] { "12", "2026-10-14T10:00:00.0000000Z" })]
+    [InlineData("--elevated-startup", "write", new[] { "hkcu-run|Per user", "-", "disable" })] // only machine-wide switches need administrator
+    [InlineData("--elevated-startup", "write", new[] { "hklm-runonce|Task", "-", "disable" })] // listed only, not switchable
+    [InlineData("--elevated-startup", "write", new[] { @"HKLM\Software\Run|Evil", "-", "disable" })]
+    [InlineData("--elevated-startup", "write", new[] { "hklm-run|App", "zz", "disable" })]
+    [InlineData("--elevated-startup", "write", new[] { "hklm-run|App", "-", "delete" })]
+    [InlineData("--elevated-startup", "write", new[] { "hklm-run|App", "-" })]
+    [InlineData("--elevated-startup", "delete", new[] { "hklm-run|App", "-", "disable" })]
     public void BadArgumentsAreRefusedBeforeAnythingRuns(string op, string action, string[] args) =>
         Assert.Equal("invalid-arguments", BrokerAllowlist.Reject(op, action, args));
 

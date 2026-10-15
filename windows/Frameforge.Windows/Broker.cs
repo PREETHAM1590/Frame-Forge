@@ -8,7 +8,7 @@ using System.Text.Json;
 
 namespace Frameforge.Windows;
 
-// "Approve admin once": an optional LocalSystem service (FrameforgeBroker) that runs the same five elevated child entry points
+// "Approve admin once": an optional LocalSystem service (FrameforgeBroker) that runs the same six elevated child entry points
 // the helper otherwise starts with a UAC prompt each time. This file is the pure part: wire format, allowlist, replay and rate
 // guard, client admission, install paths and the status decision. docs/SECURITY.md explains the trust model.
 
@@ -61,13 +61,13 @@ public static class BrokerProtocol
     }
 }
 
-// The only things the broker will ever do: the five existing elevated child entry points, each with the arguments its own child
+// The only things the broker will ever do: the six existing elevated child entry points, each with the arguments its own child
 // accepts. The same validators the child runs (RestoreCommands.Parse, ServiceCommands.ValidNames, OptimizationTable.IsAdmin ...) run here
 // first, so a bad request is refused before a process starts. There is no free-form path, command line or registry key in any request:
 // the broker also picks the result file itself, in a directory only SYSTEM and Administrators can write.
 public static class BrokerAllowlist
 {
-    public static readonly string[] Ops = ["--elevated", "--elevated-services", "--elevated-timer", "--elevated-optimize", "--elevated-fps"];
+    public static readonly string[] Ops = ["--elevated", "--elevated-services", "--elevated-timer", "--elevated-optimize", "--elevated-fps", "--elevated-startup"];
     public const int MaxArgs = 64, MaxArg = 24000;
     public static readonly string[] OptimizeCommands = ["capture", "apply", "verify", "restore"];
 
@@ -87,6 +87,7 @@ public static class BrokerAllowlist
                 "--elevated-services" => ServiceCommands.ValidAction(action) && ServiceCommands.ValidNames(action, args),
                 "--elevated-timer" => TimerArguments(action, args),
                 "--elevated-optimize" => OptimizeArguments(action, args),
+                "--elevated-startup" => StartupArguments(action, args),
                 _ => FpsArguments(action, args)
             };
             return valid ? null : "invalid-arguments";
@@ -99,6 +100,11 @@ public static class BrokerAllowlist
         int? value = args[1] == "-" ? null : TimerGlobalSetting.ParseDword(args[1]);
         return args[0] == "1" ? value is not null : value is null;
     }
+    // Startup apps: one machine-wide StartupApproved switch (Task Manager's own value). Nothing here lowers Windows security, and the id can only
+    // address the five switchable StartupApproved places, so it is not a free-form registry path.
+    private static bool StartupArguments(string action, string[] args) =>
+        action == "write" && args.Length == 3 && StartupApproved.LocationOf(args[0]).Machine && StartupApproved.ValidToken(args[1]) &&
+        (args[2] is "enable" or "disable" || StartupApproved.ValidToken(args[2]));
     public static bool NamesSecurityItem(string[] args)
     {
         try { return args.Length == 1 && JsonSerializer.Deserialize<AdminRequest>(args[0], HelperJson.Options) is { Ids: { } ids } && ids.Any(OptimizationTable.IsSecurity); }

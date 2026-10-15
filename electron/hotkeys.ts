@@ -47,6 +47,10 @@ export class HotkeyManager {
       else this.failed.push(id);
     }
   }
+  /** Runs a hotkey's action as if its keys were pressed (the desktop smoke test uses this). */
+  press(id: HotkeyId) {
+    this.actions[id]();
+  }
   dispose() {
     for (const accelerator of this.active.values()) {
       try {

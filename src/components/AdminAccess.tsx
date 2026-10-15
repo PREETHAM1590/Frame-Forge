@@ -66,13 +66,13 @@ export function AdminAccess({ disabled = false }: { disabled?: boolean }) {
           <p className="muted">
             Off by default. Without it, each step that needs administrator
             rights (restore points, pausing services, clearing the standby list,
-            machine-wide optimizations, FPS capture; items that lower Windows
-            security always ask) asks Windows for approval every time. Turning
-            it on installs a small Windows service, run by Windows as the
-            system, after one approval. It does only those allowlisted steps and
-            only for Frameforge on your account, but it is a privileged
-            component that stays installed until you remove it. Removing it is
-            one approval too.
+            machine-wide optimizations, FPS capture, switching machine-wide
+            startup apps; items that lower Windows security always ask) asks
+            Windows for approval every time. Turning it on installs a small
+            Windows service, run by Windows as the system, after one approval.
+            It does only those allowlisted steps and only for Frameforge on your
+            account, but it is a privileged component that stays installed until
+            you remove it. Removing it is one approval too.
           </p>
           {error && <p role="alert">{error}</p>}
         </div>
