@@ -286,7 +286,7 @@ public sealed class WindowsServiceElevator(TimeSpan? childWait = null, IElevated
         if (elevated ?? RestoreCommands.IsElevated()) return ServiceCommands.Execute(action, names, new WindowsServiceStore(), new WindowsControllerProbe(), new WindowsMemoryPurger());
         var budget = approvalBudget ?? ApprovalBudget;
         if (cancel.IsCancellationRequested) return Withdrawn(ElevationStatus.Cancelled, budget);
-        var outcome = ElevatedCall.Run(launcher ?? new WindowsElevatedLauncher(), "--elevated-services", action, names, budget, wait, cancel, grace);
+        var outcome = ElevatedCall.Run(launcher ?? ElevatedLaunchers.Default(), "--elevated-services", action, names, budget, wait, cancel, grace);
         return outcome.Status switch
         {
             ElevationStatus.Declined => new(true, [], "Administrator approval was declined.", ServiceCodes.ElevationCancelled),

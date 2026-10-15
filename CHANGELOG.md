@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased (1.4.0)
+
+- **Approve admin once.** Settings > Administrator access can install an optional Windows service, FrameforgeBroker, after one Windows approval. While it is running, restore points, System Protection, service pausing, standby-list clearing, the timer setting, machine-wide optimizations and FPS capture no longer ask Windows each time, and auto-boost does its administrator steps silently. It is off by default, does only those allowlisted steps for the one Windows account that approved it, and is removed from the same page (one approval) or by uninstalling Frameforge. If it is not running, every step asks Windows as before. Background work never falls back to a prompt: it skips the step. See the trade-offs in `docs/SECURITY.md`.
+
 ## 1.3.0
 
 - Optional update checks at startup, every six hours, or from Settings and the tray. Downloads happen when requested. Installation waits until a boost has ended and the app quits; closing to the tray keeps it running.

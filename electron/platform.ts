@@ -23,7 +23,9 @@ import {
   type RunningProcess,
   type Snapshot,
   type PowerPlanEntry,
+  type BrokerStatus,
 } from "../shared/contracts.js";
+import { BrokerController } from "./broker.js";
 import { adminIds, applicableIds, bootStoreIds } from "../shared/catalogue.js";
 // A live `Frameforge.Windows.exe --session` process: emits "event" (one parsed JSON line) and "exit".
 export interface SessionChannel {
@@ -38,8 +40,9 @@ export interface GameWatch {
 }
 export type RunningGame = { gameId: string; target: ProcessTarget };
 export type ElevationUse =
-  "restore" | "boost" | "recover" | "timer" | "optimize" | "fps";
+  "restore" | "boost" | "recover" | "timer" | "optimize" | "fps" | "broker";
 const waitingFor: Record<ElevationUse, string> = {
+  broker: "The admin access request is waiting for administrator approval.",
   fps: "FPS capture is waiting for administrator approval.",
   restore: "A System Restore request is waiting for administrator approval.",
   boost:
@@ -81,8 +84,23 @@ const notChanged = (error: unknown): NotApplied | null => {
 /** One Windows administrator prompt at a time: restore points, recovery, the timer setting and the booster's services step never overlap. */
 export class ElevationGate {
   private holder: ElevationUse | null = null;
+  private brokerReady: () => boolean = () => false;
   get current() {
     return this.holder;
+  }
+  /**
+   * The helper routes each administrator step to the FrameforgeBroker service when it is ready and to a Windows prompt otherwise.
+   * "Silent" means the first route is available right now: background work (auto-boost, startup recovery) may then run its
+   * administrator steps without asking, and must skip them (never prompt) if the service stops answering.
+   */
+  get silent() {
+    return this.brokerReady();
+  }
+  get route(): "broker" | "uac" {
+    return this.silent ? "broker" : "uac";
+  }
+  useBroker(ready: () => boolean) {
+    this.brokerReady = ready;
   }
   /** Takes the gate or throws; taking it again as the same user is allowed. */
   hold(use: ElevationUse) {
@@ -221,6 +239,10 @@ export interface Platform {
   spawnFps?(): SessionChannel;
   /** Withdraws an administrator request whose prompt is still open; false when none is waiting. */
   cancelElevated?(): boolean;
+  /** Settings > Administrator access: read-only status, then the two actions that each open one Windows prompt. */
+  brokerStatus?(): Promise<BrokerStatus>;
+  brokerInstall?(): Promise<BrokerStatus>;
+  brokerRemove?(): Promise<BrokerStatus>;
   /** Re-checks per-machine prerequisites and updates `capabilities`; returns a warning when the check itself failed. */
   probe?(): Promise<string | null>;
   /** The Frameforge-created plan GUID (from SQLite); optimizations treat it like a Windows performance plan. */
@@ -280,7 +302,27 @@ export class WindowsPlatform implements Platform {
   boostAvailable = true;
   readonly elevation = new ElevationGate();
   private ownedPlan: string | null = null;
-  constructor(private executable: string) {}
+  readonly broker = new BrokerController(async (command) => {
+    const result = await this.call(
+      { command },
+      undefined,
+      command === "broker-status" ? 10000 : elevatedTimeout,
+    );
+    if (!result.broker) throw new Error("Missing admin service status");
+    return result.broker;
+  });
+  constructor(private executable: string) {
+    this.elevation.useBroker(() => this.broker.silent);
+  }
+  brokerStatus() {
+    return this.broker.refresh();
+  }
+  brokerInstall() {
+    return this.broker.install();
+  }
+  brokerRemove() {
+    return this.broker.remove();
+  }
   setOwnedPlan(guid: string | null) {
     this.ownedPlan = guid;
   }
@@ -383,6 +425,7 @@ export class WindowsPlatform implements Platform {
   }
   // power-plan needs a performance plan (High performance, Ultimate or the owned copy); a read-only capture tells.
   async probe(): Promise<string | null> {
+    await this.broker.refresh().catch(() => undefined);
     let absent = false;
     let warning: string | null = null;
     try {
@@ -580,7 +623,14 @@ export class WindowsPlatform implements Platform {
   ) {
     // Restarting paused services opens one administrator prompt, which can outlast the usual 20 s budget.
     const result = await this.call(
-      { command: "boost-recover", captured, ownedPlan, elevate: interactive },
+      {
+        command: "boost-recover",
+        captured,
+        ownedPlan,
+        // Automatic recovery never opens a prompt; with the admin service ready it may still restart paused services through it.
+        elevate: interactive || this.elevation.silent,
+        brokerOnly: !interactive,
+      },
       undefined,
       captured.some((c) => c.mechanism === "pauseServices")
         ? elevatedTimeout

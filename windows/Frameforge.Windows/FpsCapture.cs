@@ -295,7 +295,7 @@ public static class FpsHost
         try { start = JsonSerializer.Deserialize<FpsStart>(line, HelperJson.Options); } catch (JsonException) { return; }
         if (start is not { Command: "start", GamePid: > 0, ParentPid: > 0, GameStartTime: { } }) return;
         using var sampler = TryUsage(start.GamePid);
-        Run(Console.In, Write, new WindowsElevatedLauncher(), start, Check, sampler is null ? null : sampler.Sample);
+        Run(Console.In, Write, ElevatedLaunchers.Default(), start, Check, sampler is null ? null : sampler.Sample);
     }
     private static GameUsageSampler? TryUsage(int pid) { try { return new GameUsageSampler(pid); } catch (InvalidOperationException) { return null; } }
 

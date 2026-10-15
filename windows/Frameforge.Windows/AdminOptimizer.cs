@@ -26,7 +26,7 @@ public sealed class WindowsAdminGateway(TimeSpan? childWait = null, IElevatedLau
         var json = JsonSerializer.Serialize(request, HelperJson.Options);
         if (json.Length > MaxArgument) throw new InvalidOperationException("The administrator request is too large.");
         // The request-file freshness guard (ElevatedCall) makes a late or stale approval change nothing.
-        var outcome = ElevatedCall.Run(launcher ?? new WindowsElevatedLauncher(), "--elevated-optimize", "run", [json], approval, wait, default, grace);
+        var outcome = ElevatedCall.Run(launcher ?? ElevatedLaunchers.Default(), "--elevated-optimize", "run", [json], approval, wait, default, grace);
         var unchanged = "Nothing was changed.";
         switch (outcome.Status)
         {

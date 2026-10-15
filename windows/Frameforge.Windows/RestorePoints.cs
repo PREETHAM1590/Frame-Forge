@@ -260,7 +260,7 @@ public static class RestoreCommands
         var action = Parse(request);
         if (elevated ?? IsElevated()) return action(new RestorePoints(new WindowsRestoreStore()));
         // The shared guard: an unanswered prompt is withdrawn after the approval budget (or on Cancel), so a late approval changes nothing.
-        var outcome = ElevatedCall.Run(launcher ?? new WindowsElevatedLauncher(), "--elevated", request.Action, request.Args ?? [], approvalBudget ?? ApprovalBudget, childWait ?? ParentWait, cancel ?? RequestCancel.Token);
+        var outcome = ElevatedCall.Run(launcher ?? ElevatedLaunchers.Default(), "--elevated", request.Action, request.Args ?? [], approvalBudget ?? ApprovalBudget, childWait ?? ParentWait, cancel ?? RequestCancel.Token);
         switch (outcome.Status)
         {
             case ElevationStatus.Declined: return new RestoreResult(true, "Administrator approval was declined. Nothing was changed.", "elevation-cancelled");

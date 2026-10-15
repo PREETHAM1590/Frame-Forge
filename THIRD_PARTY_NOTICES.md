@@ -37,6 +37,7 @@ Space Grotesk is copyright 2020 The Space Grotesk Project Authors (https://githu
 | .NET 8 runtime (self-contained)                                           | MIT     |
 | System.Management 8.0.0                                                   | MIT     |
 | System.Diagnostics.EventLog 8.0.1                                         | MIT     |
+| System.ServiceProcess.ServiceController 8.0.1                             | MIT     |
 | Microsoft.Diagnostics.Tracing.TraceEvent 3.2.8 and FastSerialization      | MIT     |
 | System.Text.Json, System.Text.Encodings.Web and System.IO.Pipelines 9.0.8 | MIT     |
 

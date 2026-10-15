@@ -216,6 +216,37 @@ describe("auto-boost watcher", () => {
     opted.engine.dispose();
   });
 
+  it("does its administrator steps silently, through the admin service only, once admin was approved once", async () => {
+    const approved = seed();
+    approved.platform.elevation.useBroker(() => true);
+    approved.engine.configure();
+    approved.platform.report([{ gameId: approved.game.id, target }]);
+    await settle();
+    // Not unattended (the steps run) and broker-only (a service that stops answering skips the step, never a prompt).
+    expect(approved.platform.helpers[0]!.sent[0]).toMatchObject({
+      command: "start",
+      unattended: false,
+      brokerOnly: true,
+    });
+    approved.engine.dispose();
+    // The user's own opt-in to prompts keeps working as before and is not broker-only.
+    const both = seed();
+    both.platform.elevation.useBroker(() => true);
+    const state = both.repo.state();
+    both.repo.updateState({
+      ...state,
+      settings: { ...state.settings, autoBoostAdmin: true },
+    });
+    both.engine.configure();
+    both.platform.report([{ gameId: both.game.id, target }]);
+    await settle();
+    expect(both.platform.helpers[0]!.sent[0]).toMatchObject({
+      unattended: false,
+      brokerOnly: false,
+    });
+    both.engine.dispose();
+  });
+
   it("starts a game that launched during another session once that one ends", async () => {
     vi.useFakeTimers();
     try {
