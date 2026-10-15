@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.2.8" />
     <PackageReference Include="System.Management" Version="8.0.0" />
     <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.1" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
   </ItemGroup>
   <!-- PreserveNewest can leave an older assembly with a newer timestamp in a reused publish folder.
        Always uses the SDK's size/timestamp comparison, so dependency changes actually replace it. -->

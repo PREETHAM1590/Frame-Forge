@@ -161,6 +161,7 @@ public static class OptimizationTable
     ];
 
     /// <summary>Optimizations that lower security. The app asks for an explicit acknowledgement before applying them.</summary>
+    public static bool IsSecurity(string id) => Security.Contains(id, StringComparer.Ordinal);
     public static readonly string[] Security = ["defender-off", "mitigations-off", "vbs-hyperv-off", "uac-off", "smartscreen-off", "windows-updates-off", "driver-updates-off", "browser-updates-off", "security-questions-off", "ucpd-off", "win11-checks-bypass"];
 
     public static readonly Dictionary<string, OpRule> Rules = new(ServiceOps.ToDictionary(p => p.Key, p => new OpRule(RequiresKey: @"SYSTEM\CurrentControlSet\Services\" + p.Value, Why: $"The {p.Value} service is not installed on this PC.", Service: p.Value)))

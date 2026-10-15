@@ -263,6 +263,14 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
       throw new Error("Opening Windows Settings requires the desktop app.");
     case "restartExplorer":
       throw new Error("Restarting Explorer requires the desktop app.");
+    case "brokerStatus":
+      return responses.brokerStatus.parse({
+        state: "unsupported",
+        message: "Admin access is available in the installed Windows app.",
+      });
+    case "brokerInstall":
+    case "brokerRemove":
+      throw new Error("Admin access requires the desktop app.");
     case "boostStart":
     case "boostStop":
     case "boostRecover":

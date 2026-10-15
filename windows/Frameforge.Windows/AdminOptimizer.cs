@@ -26,7 +26,7 @@ public sealed class WindowsAdminGateway(TimeSpan? childWait = null, IElevatedLau
         var json = JsonSerializer.Serialize(request, HelperJson.Options);
         if (json.Length > MaxArgument) throw new InvalidOperationException("The administrator request is too large.");
         // The request-file freshness guard (ElevatedCall) makes a late or stale approval change nothing.
-        var outcome = ElevatedCall.Run(launcher ?? new WindowsElevatedLauncher(), "--elevated-optimize", "run", [json], approval, wait, default, grace);
+        var outcome = ElevatedCall.Run(launcher ?? ElevatedLaunchers.ForOptimize(request.Ids), "--elevated-optimize", "run", [json], approval, wait, default, grace);
         var unchanged = "Nothing was changed.";
         switch (outcome.Status)
         {
@@ -47,7 +47,7 @@ public sealed class WindowsAdminGateway(TimeSpan? childWait = null, IElevatedLau
     }
 
     // Entry point for `--elevated-optimize run <resultPath> <json>`. Writes exactly one JSON object to the result file.
-    public static int RunChild(string[] argv, Func<object, string> serialize, RegistryOperations? registry = null)
+    public static int RunChild(string[] argv, Func<object, string> serialize, RegistryOperations? registry = null, bool? viaBroker = null)
     {
         if (argv.Length != 3 || argv[2].Length > MaxArgument) return 2;
         using var file = ElevatedCall.OpenResult(argv[1], out var rejected);
@@ -56,6 +56,9 @@ public sealed class WindowsAdminGateway(TimeSpan? childWait = null, IElevatedLau
         try
         {
             var request = JsonSerializer.Deserialize<AdminRequest>(argv[2], HelperJson.Options) ?? throw new InvalidOperationException("Missing request.");
+            // Defence in depth: the broker already refuses these, and a child it started refuses them again. They need their own Windows prompt.
+            if ((viaBroker ?? Environment.GetEnvironmentVariable(ChildExecutor.ViaBrokerVariable) == "1") && request.Ids is { } named && named.Any(OptimizationTable.IsSecurity))
+                throw new InvalidOperationException("Items that lower Windows security need their own Windows approval and cannot use the admin service. Nothing was changed.");
             var result = AdminCommands.Execute(request, registry ?? new RegistryOperations(new WindowsRegistryStore(), new WindowsFacts()));
             reply = new(true, "Done.", result.Values, result.Verified, result.Note);
         }

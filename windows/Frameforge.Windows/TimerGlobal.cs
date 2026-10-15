@@ -85,7 +85,7 @@ public static class TimerGlobalSetting
         if (request.Op is not ("enable" or "restore") || (request.Existed ? request.Value is null : request.Value is not null)) throw new InvalidOperationException("Unsupported timer request.");
         if (build < Windows11Build) return Read(setting, build);
         if (elevated ?? RestoreCommands.IsElevated()) return Apply(request.Op, request.Existed, request.Value, build, setting);
-        var outcome = ElevatedCall.Run(launcher ?? new WindowsElevatedLauncher(), "--elevated-timer", request.Op, [request.Existed ? "1" : "0", request.Value?.ToString(CultureInfo.InvariantCulture) ?? "-"], approval ?? Approval, ChildWait, default, grace);
+        var outcome = ElevatedCall.Run(launcher ?? ElevatedLaunchers.Default(), "--elevated-timer", request.Op, [request.Existed ? "1" : "0", request.Value?.ToString(CultureInfo.InvariantCulture) ?? "-"], approval ?? Approval, ChildWait, default, grace);
         var unchanged = "Nothing was changed.";
         return outcome.Status switch
         {

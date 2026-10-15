@@ -489,8 +489,15 @@ export class BoostEngine {
   ): Promise<BoostSession> {
     const captured: Captured[] = [];
     // Auto-boost runs in the background: it opens an administrator prompt only when the user opted in.
+    // With admin access approved once (FrameforgeBroker ready) auto-boost does its administrator steps silently, through the
+    // service only: the helper is told never to fall back to a prompt, so a service that stops answering skips the step.
+    const silentAdmin =
+      reason === "auto" &&
+      !this.repo.state().settings.autoBoostAdmin &&
+      this.platform.elevation.silent;
     const allowAdmin =
-      reason === "auto" && this.repo.state().settings.autoBoostAdmin;
+      reason === "auto" &&
+      (this.repo.state().settings.autoBoostAdmin || silentAdmin);
     // "Skip steps that need administrator approval": never sent to the helper, so no prompt can open.
     const skipped = skipAdmin
       ? (["pauseServices", "standbyPurge"] as const).filter((id) => wanted[id])
@@ -522,7 +529,7 @@ export class BoostEngine {
           startedAt: new Date().toISOString(),
           endedAt: null,
           status: "preparing",
-          message: `${modeLabels[mode]} mode starting for ${game.name}.${mechanisms.pauseServices && (reason === "manual" || allowAdmin) ? " Windows will ask for administrator approval to pause services." : ""}`,
+          message: `${modeLabels[mode]} mode starting for ${game.name}.${mechanisms.pauseServices && (reason === "manual" || (allowAdmin && !silentAdmin)) ? " Windows will ask for administrator approval to pause services." : ""}`,
           mechanisms: [
             ...skipped.map((id) => ({
               id,
@@ -761,6 +768,7 @@ export class BoostEngine {
         // Xbox and Microsoft Store games need the Xbox services; auto-boost must never open an administrator prompt.
         storeGame: game.source === "xbox" || game.source === "msstore",
         unattended: reason === "auto" && !allowAdmin,
+        brokerOnly: silentAdmin,
         // Presets leave smart core targeting off on Windows 11 hybrid CPUs; Custom, or an explicit enhancer override, forces it.
         preset: mode !== "custom" && config.overrides.smartCores !== true,
         // Turned on by Frameforge but Windows has not restarted since: a timer request cannot reach the game yet.

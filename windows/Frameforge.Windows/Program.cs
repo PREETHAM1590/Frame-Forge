@@ -10,6 +10,9 @@ if (OperatingSystem.IsWindows() && args is ["--elevated-services", ..]) Environm
 if (OperatingSystem.IsWindows() && args is ["--elevated-timer", ..]) Environment.Exit(TimerGlobalSetting.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--elevated-optimize", ..]) Environment.Exit(WindowsAdminGateway.RunChild(args[1..], value => JsonSerializer.Serialize(value, options)));
 if (OperatingSystem.IsWindows() && args is ["--elevated-fps", ..]) Environment.Exit(FpsChild.RunElevated(args[1..]));
+if (OperatingSystem.IsWindows() && args is ["--elevated-broker", ..]) Environment.Exit(BrokerInstaller.RunElevatedChild(args[1..], value => JsonSerializer.Serialize(value, options)));
+if (OperatingSystem.IsWindows() && args is ["--broker-uninstall"]) Environment.Exit(BrokerInstaller.UninstallDirect());
+if (OperatingSystem.IsWindows() && args is ["--broker-service"]) { System.ServiceProcess.ServiceBase.Run(new BrokerService()); return; }
 if (OperatingSystem.IsWindows() && args is ["--monitor"]) { MonitorHost.Host(); return; }
 if (OperatingSystem.IsWindows() && args is ["--fps"]) { FpsHost.Host(); return; }
 if (OperatingSystem.IsWindows() && args is ["--session"]) { SessionRunner.Host(); return; }
@@ -26,6 +29,8 @@ try
     // Frameforge may send a second line, "cancel", while an administrator prompt is still unanswered: the request is withdrawn.
     if (request.Command == "elevated") new Thread(() => { while (input.ReadLine() is { } next) if (next == "cancel") RestoreCommands.RequestCancel.Cancel(); }) { IsBackground = true }.Start();
     Guid? owned = request.OwnedPlan is null ? null : Guid.TryParse(request.OwnedPlan, out var plan) ? plan : throw new InvalidOperationException("Invalid power plan.");
+    // Background steps (auto-boost, startup recovery) use the admin service or skip the step; they never fall back to a prompt.
+    ElevatedLaunchers.BrokerOnly = request.BrokerOnly;
     var ids = request.Ids ?? [];
     var facts = new WindowsFacts();
     var engine = new Optimizations(new RegistryOperations(new WindowsRegistryStore(), facts), new WindowsPowerStore(), owned, new WindowsAdminGateway(), RestoreCommands.IsElevated());
@@ -42,6 +47,9 @@ try
         "verify" when request.Snapshot is null => new { ok = true, message = "Verification completed.", verified = engine.Verify(ids) },
         "restore" when ids.Length == 0 && request.Snapshot is not null && !request.Force => Restore(engine, request.Snapshot),
         "restore-status" when ids.Length == 0 && request.Elevated is null => new RestorePoints(new WindowsRestoreStore()).StatusResult(),
+        "broker-status" when ids.Length == 0 && request.Snapshot is null => BrokerAdmin.Status(),
+        "broker-install" when ids.Length == 0 && request.Snapshot is null => BrokerAdmin.Run("install"),
+        "broker-remove" when ids.Length == 0 && request.Snapshot is null => BrokerAdmin.Run("remove"),
         "elevated" when request.Elevated is not null => RestoreCommands.Run(request.Elevated),
         "elevated-result" when request.ResultPath is not null => RestoreCommands.ReadResult(request.ResultPath),
         "running-games" when request.Games is not null => new { ok = true, message = "Running library games read.", runningGames = WindowsProcesses.RunningGames(request.Games) },
@@ -75,4 +83,4 @@ Console.WriteLine(JsonSerializer.Serialize(response, options));
 static object CreatePlan(Guid destination) { BoostSessionEngine.CreatePlan(new WindowsPowerStore(), destination); return new { ok = true, message = "Frameforge High performance plan created and verified. The active plan was not changed.", powerPlan = destination.ToString() }; }
 static object Apply(Optimizations engine, string[] ids, OptimizationSnapshot snapshot) { var verified = engine.Apply(ids, snapshot); return new { ok = true, message = "Preferences written.", verified }; }
 static object Restore(Optimizations engine, OptimizationSnapshot snapshot) { var note = engine.Restore(snapshot); return new { ok = true, message = note is null ? "Snapshot restored and verified." : "Snapshot restored and verified. " + note }; }
-record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null, bool Elevate = true, string? Host = null, int Count = 0, LaunchRequest? Launch = null, TimerRequest? Timer = null, bool TimerRestartPending = false);
+record Request(string Command, string[]? Ids, OptimizationSnapshot? Snapshot, bool Force = false, GameRef[]? Games = null, Captured[]? Captured = null, string? OwnedPlan = null, ElevatedRequest? Elevated = null, string? ResultPath = null, bool Elevate = true, string? Host = null, int Count = 0, LaunchRequest? Launch = null, TimerRequest? Timer = null, bool TimerRestartPending = false, bool BrokerOnly = false);

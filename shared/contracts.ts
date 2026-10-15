@@ -1040,6 +1040,21 @@ export const GameIconSchema = z
 export const RunningGamesSchema = z.array(
   z.object({ gameId: Id, target: ProcessTargetSchema }).strict(),
 );
+// "Approve admin once": the optional FrameforgeBroker service (see docs/SECURITY.md). "unsupported" outside the Windows desktop build.
+export const BrokerStatusSchema = z
+  .object({
+    state: z.enum([
+      "unsupported",
+      "not-installed",
+      "ready",
+      "needs-update",
+      "unhealthy",
+    ]),
+    message: z.string().max(500),
+    version: z.string().max(40).nullable().optional(),
+  })
+  .strict();
+export type BrokerStatus = z.infer<typeof BrokerStatusSchema>;
 export const requests = {
   bootstrap: Empty,
   refresh: Empty,
@@ -1168,6 +1183,10 @@ export const requests = {
     .strict(),
   // Ends this user's explorer.exe; Windows starts it again. Never called automatically.
   restartExplorer: z.object({ confirmed: z.literal(true) }).strict(),
+  // Settings > Administrator access. Status is read-only (never prompts); install and remove each open one Windows prompt.
+  brokerStatus: Empty,
+  brokerInstall: z.object({ confirmed: z.literal(true) }).strict(),
+  brokerRemove: z.object({ confirmed: z.literal(true) }).strict(),
   // Live counters, read once a second only while the Monitor page is visible; monitorStop ends the helper completely.
   monitorStart: Empty,
   monitorStop: Empty,
@@ -1200,6 +1219,9 @@ export const responses = {
   boostConfig: StateSchema,
   openSettings: z.boolean(),
   restartExplorer: z.boolean(),
+  brokerStatus: BrokerStatusSchema,
+  brokerInstall: BrokerStatusSchema,
+  brokerRemove: BrokerStatusSchema,
   boostStart: BoostSessionSchema,
   boostStop: BoostSessionSchema.nullable(),
   boostRecover: BoostSessionSchema.nullable(),
@@ -1387,6 +1409,7 @@ export const HelperResult = z
     powerPlan: Id.optional(),
     powerPlans: z.array(PowerPlanEntrySchema).max(200).optional(),
     driveCoverage: z.enum(["confirmed", "off", "unknown"]).optional(),
+    broker: BrokerStatusSchema.optional(),
   })
   .strict();
 export const CapturedRegValueSchema = z

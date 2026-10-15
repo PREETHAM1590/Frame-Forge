@@ -18,7 +18,7 @@ public record BackgroundRule(string Image, string Action);
 // StoreGame: the game comes from the Xbox app or Microsoft Store. Unattended: auto-boost, which must not open an administrator prompt.
 // Preset: a preset mode rather than Custom; smart core targeting stays off in presets on Windows 11 hybrid CPUs.
 public record SessionCommand(string Command, int GamePid = 0, string? GameStartTime = null, string? GamePath = null, Mechanisms? Mechanisms = null, BackgroundRule[]? Background = null, int ParentPid = 0, string? OwnedPlan = null,
-    bool StoreGame = false, bool Unattended = false, bool Preset = false, bool TimerRestartPending = false);
+    bool StoreGame = false, bool Unattended = false, bool Preset = false, bool TimerRestartPending = false, bool BrokerOnly = false);
 // Prior state saved before a change. Applied is what Frameforge set, so a revert only happens while it is still in place.
 // Only these optional members omit nulls; registry snapshots keep an explicit `value: null` for absent values.
 public record Captured(string Mechanism, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProcessTarget? Process = null,
@@ -552,6 +552,7 @@ public static class SessionRunner
         if (line is null || line.Length > 65536) return;
         var command = JsonSerializer.Deserialize<SessionCommand>(line, options);
         if (command?.Command != "start") return;
+        ElevatedLaunchers.BrokerOnly = command.BrokerOnly;
         Guid? owned = Guid.TryParse(command.OwnedPlan, out var plan) ? plan : null;
         SafeProcessHandle? game = null, parent = null;
         // Fail closed before any change: the session must be able to watch both the game and Frameforge.

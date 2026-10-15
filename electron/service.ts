@@ -26,6 +26,7 @@ import { MonitorService } from "./monitor.js";
 import { FpsService } from "./fps.js";
 import { within, type DetectionResult } from "./games.js";
 import { fallbackHardware, type Platform } from "./platform.js";
+import { brokerUnsupported } from "./broker.js";
 import {
   dismissGame,
   dismissedKey,
@@ -381,6 +382,32 @@ export class AppService {
         const message = await this.platform.restartExplorer();
         this.log("Windows Explorer restarted", message);
         return true;
+      },
+      // Read-only: never opens a Windows prompt.
+      brokerStatus: async () =>
+        (await this.platform.brokerStatus?.()) ?? brokerUnsupported,
+      // Only after a click. Each opens exactly one Windows prompt (install and remove never go through the service itself).
+      brokerInstall: async () => {
+        guard();
+        noRestoreInFlight();
+        const install = this.platform.brokerInstall;
+        if (!install) throw new Error("Admin access requires the Windows app.");
+        const status = await this.platform.elevation.with("broker", () =>
+          install.call(this.platform),
+        );
+        this.log("Admin access approved", status.message);
+        return status;
+      },
+      brokerRemove: async () => {
+        guard();
+        noRestoreInFlight();
+        const remove = this.platform.brokerRemove;
+        if (!remove) throw new Error("Admin access requires the Windows app.");
+        const status = await this.platform.elevation.with("broker", () =>
+          remove.call(this.platform),
+        );
+        this.log("Admin access removed", status.message);
+        return status;
       },
       boostStatus: async () => this.booster.status(),
       boostConfig: async (booster) => {
@@ -885,6 +912,7 @@ export class AppService {
             "monitorStop",
             "fpsStatus",
             "fpsHistory",
+            "brokerStatus",
           ].includes(key)
         )
           this.log(

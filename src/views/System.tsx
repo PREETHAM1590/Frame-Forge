@@ -22,6 +22,7 @@ import {
 } from "../components/ui";
 import type { ViewProps } from "../types";
 import { UpdateCard } from "../components/UpdatePanel";
+import { AdminAccess } from "../components/AdminAccess";
 import { useUpdate } from "../useUpdate";
 export function System({ data, run, pending }: ViewProps) {
   const h = data.hardware;
@@ -250,6 +251,7 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           </div>
         )}
       </section>
+      <AdminAccess disabled={pending || data.mode === "demo"} />
       <section className="settings-section">
         <h2>
           <ShieldCheck size={20} />
