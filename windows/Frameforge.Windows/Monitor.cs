@@ -180,12 +180,13 @@ public sealed class TemperatureReader
 public sealed class MonitorSampler : IDisposable
 {
     private readonly PdhQuery pdh = new();
-    private readonly IntPtr? cpu, engines, dedicated, shared, diskRead, diskWrite, diskBusy, netRx, netTx, netBandwidth;
+    private readonly IntPtr? cpu, cpuPerformance, engines, dedicated, shared, diskRead, diskWrite, diskBusy, netRx, netTx, netBandwidth;
     private readonly ProcessTracker processes = new();
     private readonly TemperatureReader temperatures = new();
     public MonitorSampler()
     {
         cpu = pdh.Add(@"\Processor(*)\% Processor Time");
+        cpuPerformance = pdh.Add(@"\Processor Information(_Total)\% Processor Performance");
         engines = pdh.Add(@"\GPU Engine(*)\Utilization Percentage");
         dedicated = pdh.Add(@"\GPU Adapter Memory(*)\Dedicated Usage");
         shared = pdh.Add(@"\GPU Adapter Memory(*)\Shared Usage");
@@ -274,7 +275,7 @@ public sealed class MonitorSampler : IDisposable
             @event = "sample",
             at = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
             counters = ok,
-            cpu = new { total, cores = perCore },
+            cpu = new { total, cores = perCore, performance = Read(cpuPerformance).Where(r => r.Name == "_Total").Select(r => (double?)Math.Round(Math.Clamp(r.Value, 0, 1000))).FirstOrDefault() },
             memory = new { totalBytes = (long)memory.TotalPhysical, availableBytes = (long)memory.AvailablePhysical },
             gpu,
             disks,

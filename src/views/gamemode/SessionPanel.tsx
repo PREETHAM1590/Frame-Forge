@@ -4,6 +4,7 @@ import { GameIcon } from "../../components/GameIcon";
 import type { BoostSession, Game } from "../../../shared/contracts";
 import type { ViewProps } from "../../types";
 import { labels, modes, stateText, tones } from "./model";
+import { Verdict } from "./SmartPanel";
 
 type Outcome = { text: string; error: boolean };
 
@@ -118,6 +119,17 @@ export function SessionPanel({
             }
           />
         </div>
+        {session.smart && (
+          <Verdict
+            verdict={session.smart}
+            title={
+              session.smart.profileUsed
+                ? "Smart mode (from what it learned before)"
+                : "Smart mode (watched this game first)"
+            }
+          />
+        )}
+        <h3 className="gm-sub-title">This session changed</h3>
         <ul className="booster-chips" aria-label="Mechanism results">
           {session.mechanisms.map((m, i) => (
             <li key={i} title={m.detail}>

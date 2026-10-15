@@ -16,7 +16,8 @@ export type Page =
   | "System"
   | "Monitor"
   | "Activity"
-  | "Settings";
+  | "Settings"
+  | "Health Check";
 export interface ViewProps {
   data: Bootstrap;
   /** True while any request except an elevated Windows restore request is running. */

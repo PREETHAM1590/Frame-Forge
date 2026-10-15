@@ -46,6 +46,55 @@ export function ModeCards({
             ? plans.filter((p) => p.plan.tone !== "lime")
             : [];
           const selected = config.mode === m.id;
+          if (m.id === "smart")
+            return (
+              <article
+                key={m.id}
+                className={`mode-card ${selected ? "selected" : ""}`}
+                aria-label="Smart on this PC"
+              >
+                <header className="mode-card-head">
+                  <div>
+                    <h3>{m.label}</h3>
+                    <p className="muted">{tagline[m.id]}</p>
+                  </div>
+                  {selected && <Badge tone="lime">selected</Badge>}
+                </header>
+                <ul className="mechanism-list">
+                  <li>
+                    <span>Watches the first minute, changes nothing</span>
+                  </li>
+                  <li>
+                    <span>
+                      CPU-bound: priority, core unparking, finer timer, easing
+                      background apps
+                    </span>
+                  </li>
+                  <li>
+                    <span>
+                      GPU-bound: GPU priority and a performance plan, plus
+                      advice
+                    </span>
+                  </li>
+                  <li>
+                    <span>
+                      Memory or heat limited: light changes and advice
+                    </span>
+                  </li>
+                </ul>
+                <footer className="mode-card-foot">
+                  {!selected && (
+                    <Button
+                      disabled={pending}
+                      onClick={() => onSelect(m.id)}
+                      aria-label="Use Smart"
+                    >
+                      Use this mode
+                    </Button>
+                  )}
+                </footer>
+              </article>
+            );
           const asksAdmin = list.some(
             (e) => e.id === "pauseServices" || e.id === "standbyPurge",
           );

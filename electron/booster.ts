@@ -15,9 +15,11 @@ import {
   type MechanismResult,
   type PowerPlanEntry,
   type ProcessTarget,
+  type SmartVerdict,
   type TimerStatus,
 } from "../shared/contracts.js";
 import type { Repository } from "./repository.js";
+import type { SmartDecision, SmartEngine } from "./smart.js";
 import {
   capabilitiesUnavailable,
   type GameWatch,
@@ -66,6 +68,7 @@ export const modeLabels: Record<BoostMode, string> = {
   performance: "Performance",
   competitive: "Competitive",
   custom: "Custom",
+  smart: "Smart",
 };
 const endReasons = {
   "game-exited": "the game exited",
@@ -104,6 +107,9 @@ export class BoostEngine {
   private disposed = false;
   private lastPollError = "";
   private capabilities: { at: number; value: BoostCapabilities } | undefined;
+  // Smart mode: watches a game, then hands back the plan (electron/smart.ts). Absent in tests that do not use it.
+  private smart: SmartEngine | undefined;
+  private onConfigure: (() => void) | undefined;
   // Process instances already auto-boosted (or stopped), so the watcher never restarts them.
   private seen = new Set<string>();
   constructor(
@@ -120,6 +126,11 @@ export class BoostEngine {
   }
   get isBusy() {
     return this.busy;
+  }
+  attachSmart(smart: SmartEngine, onConfigure?: () => void) {
+    this.smart = smart;
+    this.onConfigure = onConfigure;
+    onConfigure?.();
   }
   get active() {
     return this.live !== null;
@@ -466,6 +477,8 @@ export class BoostEngine {
           ),
           { logged: true },
         );
+      if (mode === "smart")
+        return this.startSmart(game, target, state.booster, reason, skipAdmin);
       const mechanisms = effectiveMechanisms(state.booster, mode);
       return this.run(
         game,
@@ -478,6 +491,86 @@ export class BoostEngine {
       );
     });
   }
+  // Smart mode: a saved profile that still fits this PC starts at once; otherwise the game is watched first and the session starts
+  // when the plan is ready (nothing is held while watching, so Stop and other pages keep working).
+  private async startSmart(
+    game: Game,
+    target: ProcessTarget,
+    config: BoosterConfig,
+    reason: "manual" | "auto",
+    skipAdmin: boolean,
+  ): Promise<BoostSession | null> {
+    const smart = this.smart;
+    if (!smart)
+      throw new Error("Smart mode needs the Windows helper, which is missing.");
+    if (smart.observing)
+      throw Object.assign(
+        new Error(
+          "Smart mode is already watching a game. Wait for it to finish.",
+        ),
+        { logged: true },
+      );
+    const result = await smart.prepare(game, target, config, (decision) => {
+      if (decision)
+        void this.smartReady(game, target, config, decision, reason, skipAdmin);
+    });
+    if (result === "observing") {
+      if (reason === "manual")
+        throw Object.assign(
+          new Error(
+            `Smart mode is watching ${game.name} for about a minute to find what limits it. Nothing has changed yet; it applies only what helps when it is done.`,
+          ),
+          { logged: true },
+        );
+      return null;
+    }
+    smart.used(game.id);
+    return this.run(
+      game,
+      "smart",
+      target,
+      result.mechanisms,
+      { ...config, background: result.background },
+      reason,
+      skipAdmin,
+      result.verdict,
+    );
+  }
+  private async smartReady(
+    game: Game,
+    target: ProcessTarget,
+    config: BoosterConfig,
+    decision: SmartDecision,
+    reason: "manual" | "auto",
+    skipAdmin: boolean,
+  ) {
+    try {
+      await this.exclusive(async () => {
+        if (this.live || this.repo.boostSession()) return;
+        // The game may have closed while it was being watched; the helper checks the identity again, this avoids a failed start.
+        const still = (
+          await this.platform.runningGames([game]).catch(() => [])
+        )[0];
+        if (!still || still.target.pid !== target.pid) return;
+        this.smart?.used(game.id);
+        await this.run(
+          game,
+          "smart",
+          target,
+          decision.mechanisms,
+          { ...config, background: decision.background },
+          reason,
+          skipAdmin,
+          decision.verdict,
+        );
+      });
+    } catch (error) {
+      this.log(
+        `${game.name}: Smart mode could not start the session: ${text(error)}`,
+        "failed",
+      );
+    }
+  }
   private run(
     game: Game,
     mode: BoostMode,
@@ -486,6 +579,7 @@ export class BoostEngine {
     config: BoosterConfig,
     reason: "manual" | "auto",
     skipAdmin = false,
+    verdict?: SmartVerdict,
   ): Promise<BoostSession> {
     const captured: Captured[] = [];
     // Auto-boost runs in the background: it opens an administrator prompt only when the user opted in.
@@ -554,6 +648,7 @@ export class BoostEngine {
           samples: [],
           failed: false,
           abnormal: false,
+          ...(verdict && { smart: verdict }),
         },
         captured,
       );
@@ -854,7 +949,11 @@ export class BoostEngine {
   }
   async stop(): Promise<BoostSession | null> {
     const live = this.live;
-    if (!live) return this.recover();
+    if (!live) {
+      if (this.smart?.cancel("Stopped by you; nothing was changed."))
+        return null;
+      return this.recover();
+    }
     this.seen.add(key(live.session.target));
     this.update(live, {
       status: "restoring",
@@ -954,6 +1053,7 @@ export class BoostEngine {
   // Starts or stops the watcher to match the settings; cheap, so the service calls it after anything that may change them.
   configure() {
     if (this.disposed) return;
+    this.onConfigure?.();
     const games = this.eligible();
     const on =
       this.platform.boostAvailable &&

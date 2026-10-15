@@ -120,10 +120,13 @@ export const GameSchema = z
         "performance",
         "competitive",
         "custom",
+        "smart",
       ])
       .default("global"),
     /** Auto-boost starts this game's mode when it launches (the global Auto-boost switch must be on too). Missing means on. */
     autoBoost: z.boolean().optional(),
+    /** Per-game override of the background apps list (missing: the global list or the suggested set decides). */
+    background: z.lazy(() => BackgroundListSchema).optional(),
   })
   .strict();
 export type Game = z.infer<typeof GameSchema>;
@@ -151,6 +154,22 @@ export const protectedImages = new Set(
 );
 export const isProtectedImage = (image: string) =>
   protectedImages.has(image.toLowerCase().replace(/\.exe$/, ""));
+export const BackgroundListSchema = z
+  .array(
+    z
+      .object({
+        image: z
+          .string()
+          .regex(/^[\w .()-]{1,64}\.exe$/i)
+          .refine(
+            (image) => !isProtectedImage(image),
+            "Protected system, security and anti-cheat processes cannot be changed.",
+          ),
+        action: z.enum(["lower", "suspend", "close"]),
+      })
+      .strict(),
+  )
+  .max(50);
 export const MechanismId = z.enum([
   "gameMode",
   "priority",
@@ -214,6 +233,7 @@ const BoostModeSchema = z.enum([
   "performance",
   "competitive",
   "custom",
+  "smart",
 ]);
 export type BoostMode = z.infer<typeof BoostModeSchema>;
 const noMechanisms: CustomMechanisms = {
@@ -243,6 +263,8 @@ export const modeMechanisms: Record<
   CustomMechanisms
 > = {
   off: noMechanisms,
+  // Smart picks its set per game after watching it (electron/smart.ts); this entry is only the starting point.
+  smart: noMechanisms,
   balanced: {
     ...noMechanisms,
     gameMode: true,
@@ -282,7 +304,7 @@ export function effectiveMechanisms(
   mode: BoostMode = config.mode,
 ): CustomMechanisms {
   if (mode === "custom") return config.custom;
-  if (mode === "off") return noMechanisms;
+  if (mode === "off" || mode === "smart") return noMechanisms;
   return { ...modeMechanisms[mode], ...config.overrides };
 }
 export const BoosterConfigSchema = z
@@ -291,23 +313,9 @@ export const BoosterConfigSchema = z
     autoBoost: z.boolean().default(false),
     custom: CustomMechanismsSchema.default(noMechanisms),
     overrides: MechanismOverridesSchema.default({}),
-    background: z
-      .array(
-        z
-          .object({
-            image: z
-              .string()
-              .regex(/^[\w .()-]{1,64}\.exe$/i)
-              .refine(
-                (image) => !isProtectedImage(image),
-                "Protected system, security and anti-cheat processes cannot be changed.",
-              ),
-            action: z.enum(["lower", "suspend", "close"]),
-          })
-          .strict(),
-      )
-      .max(50)
-      .default([]),
+    background: BackgroundListSchema.default([]),
+    /** True once the user has saved their own list (even an empty one); until then Smart mode uses the suggested apps. */
+    backgroundChosen: z.boolean().optional(),
   })
   .strict();
 export type BoosterConfig = z.infer<typeof BoosterConfigSchema>;
@@ -359,7 +367,7 @@ export const defaultState: AppState = {
   presets: [],
   gameMode: { active: false, gameId: null },
   booster: {
-    mode: "off",
+    mode: "smart",
     autoBoost: false,
     custom: noMechanisms,
     overrides: {},
@@ -494,6 +502,36 @@ export const SampleSchema = z
   })
   .strict();
 export type Sample = z.infer<typeof SampleSchema>;
+/** What Smart mode decided for a session: the bottleneck, why, what it changed and what to do next. */
+export const BottleneckKind = z.enum([
+  "cpu-bound",
+  "gpu-bound",
+  "memory",
+  "thermal",
+  "frame-capped",
+  "unknown",
+]);
+export type BottleneckKind = z.infer<typeof BottleneckKind>;
+export const SmartFlag = z.enum([
+  "memory-pressure",
+  "background-load",
+  "thermal-limited",
+  "igpu-busy",
+]);
+export type SmartFlag = z.infer<typeof SmartFlag>;
+export const SmartVerdictSchema = z
+  .object({
+    classification: BottleneckKind,
+    flags: z.array(SmartFlag).max(4),
+    reasons: z.array(z.string().max(300)).max(12),
+    advice: z.array(z.string().max(300)).max(8),
+    /** The single best next step in plain language. */
+    nextAction: z.string().max(300),
+    chosen: z.array(z.string().max(80)).max(20),
+    profileUsed: z.boolean(),
+  })
+  .strict();
+export type SmartVerdict = z.infer<typeof SmartVerdictSchema>;
 export const BoostSessionSchema = z
   .object({
     id: Id,
@@ -516,6 +554,8 @@ export const BoostSessionSchema = z
     failed: z.boolean().default(false),
     // True when the session ended abnormally (helper crash, rejected report, failed start), whatever else failed earlier.
     abnormal: z.boolean().default(false),
+    /** Smart mode: the verdict and the actions it chose (missing for other modes). */
+    smart: SmartVerdictSchema.optional(),
   })
   .strict();
 export type BoostSession = z.infer<typeof BoostSessionSchema>;
@@ -686,6 +726,10 @@ export const RunningProcessSchema = z
     image: z.string().max(260),
     pid: z.number().int().nonnegative(),
     protected: z.boolean(),
+    /** Working set and CPU share, when the helper could read them. */
+    workingSetBytes: z.number().int().nonnegative().optional(),
+    cpuPercent: z.number().min(0).max(100).optional(),
+    path: z.string().max(520).optional(),
   })
   .strict();
 export type RunningProcess = z.infer<typeof RunningProcessSchema>;
@@ -835,7 +879,14 @@ export const MonitorSampleSchema = z
   .object({
     at: z.string().max(40),
     counters: z.boolean(),
-    cpu: z.object({ total: Gauge, cores: z.array(Gauge).max(256) }).strict(),
+    cpu: z
+      .object({
+        total: Gauge,
+        cores: z.array(Gauge).max(256),
+        /** Windows' % Processor Performance: the current clock as a percent of base (above 100 while boosting). */
+        performance: z.number().min(0).max(1000).nullable().optional(),
+      })
+      .strict(),
     memory: z.object({ totalBytes: Count, availableBytes: Count }).strict(),
     gpu: z
       .object({
@@ -982,6 +1033,238 @@ export const FpsEventSchema = z.union([
   z.object({ event: z.literal("ended"), reason: z.string().max(40) }).strict(),
 ]);
 export type FpsEvent = z.infer<typeof FpsEventSchema>;
+export const SmartProfileSchema = z
+  .object({
+    gameId: Id,
+    gameName: z.string().max(80),
+    /** CPU, GPU, driver and RAM layout; a change re-runs the observation. */
+    fingerprint: z.string().max(400),
+    classification: BottleneckKind,
+    flags: z.array(SmartFlag).max(4),
+    mechanisms: CustomMechanismsSchema,
+    background: BackgroundListSchema,
+    reasons: z.array(z.string().max(300)).max(12),
+    advice: z.array(z.string().max(300)).max(8),
+    nextAction: z.string().max(300),
+    at: z.string().max(40),
+    sessions: z.number().int().nonnegative(),
+  })
+  .strict();
+export type SmartProfile = z.infer<typeof SmartProfileSchema>;
+export const SmartStatusSchema = z
+  .object({
+    observing: z
+      .object({
+        gameId: Id,
+        gameName: z.string().max(80),
+        elapsedSeconds: Count,
+        totalSeconds: Count,
+      })
+      .strict()
+      .nullable(),
+    profiles: z.array(SmartProfileSchema).max(500),
+    /** A game-like program that is not in the library yet; the user decides. */
+    candidate: z
+      .object({ name: z.string().max(80), path: z.string().max(2048) })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+export type SmartStatus = z.infer<typeof SmartStatusSchema>;
+// ---- PC health ----
+const Nullable = <T extends z.ZodType>(schema: T) => schema.nullable();
+export const HealthFactsSchema = z
+  .object({
+    battery: z
+      .object({
+        present: z.boolean(),
+        onAc: z.boolean(),
+        saver: z.boolean(),
+        percent: Nullable(Count),
+      })
+      .strict(),
+    powerMode: z
+      .object({
+        overlay: z.string().max(40),
+        planGuid: Nullable(z.string().max(60)),
+        planName: Nullable(z.string().max(120)),
+      })
+      .strict(),
+    gpus: z
+      .array(
+        z
+          .object({
+            name: z.string().max(120),
+            vendor: z.string().max(20),
+            driverVersion: Nullable(z.string().max(40)),
+            driverDate: Nullable(z.string().max(12)),
+            integrated: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(8),
+    gpuPreferences: z
+      .array(
+        z
+          .object({
+            gameId: Id,
+            exe: z.string().max(260),
+            preference: Nullable(z.string().max(20)),
+          })
+          .strict(),
+      )
+      .max(100),
+    nvidia: Nullable(
+      z
+        .object({
+          name: z.string().max(80),
+          driverVersion: Nullable(z.string().max(40)),
+          temperatureC: Nullable(z.number()),
+          clockMHz: Nullable(z.number()),
+          maxClockMHz: Nullable(z.number()),
+          powerDrawW: Nullable(z.number()),
+          powerLimitW: Nullable(z.number()),
+          pState: Nullable(z.string().max(8)),
+          throttleReasons: z.array(z.string().max(40)).max(8),
+        })
+        .strict(),
+    ),
+    display: Nullable(
+      z
+        .object({
+          width: Count,
+          height: Count,
+          currentHz: Count,
+          maxHz: Count,
+        })
+        .strict(),
+    ),
+    memory: z
+      .object({
+        totalBytes: Count,
+        availableBytes: Count,
+        usedPercent: Count,
+        sticks: z
+          .array(
+            z
+              .object({
+                capacityBytes: Count,
+                speedMTs: Nullable(Count),
+                configuredMTs: Nullable(Count),
+                bank: Nullable(z.string().max(60)),
+                slot: Nullable(z.string().max(60)),
+              })
+              .strict(),
+          )
+          .max(16),
+        slots: Nullable(Count),
+      })
+      .strict(),
+    cpuName: z.string().max(120),
+    cpuPerformancePercent: Nullable(z.number()),
+    drives: z
+      .array(
+        z
+          .object({
+            name: z.string().max(8),
+            totalBytes: Count,
+            freeBytes: Count,
+            system: z.boolean(),
+            mediaType: z.string().max(10),
+          })
+          .strict(),
+      )
+      .max(26),
+    gameMode: Nullable(z.boolean()),
+    hags: Nullable(Count),
+    vbs: Nullable(z.boolean()),
+    hvci: Nullable(z.boolean()),
+    pendingReboot: z.array(z.string().max(60)).max(5),
+    startupApps: Count,
+    overlays: z.array(z.string().max(60)).max(20),
+    vendorApp: Nullable(z.string().max(60)),
+    topRam: z.array(ProcessUseSchema).max(8),
+    topCpu: z.array(ProcessUseSchema).max(8),
+  })
+  .strict();
+export type HealthFacts = z.infer<typeof HealthFactsSchema>;
+export const HealthStatus = z.enum(["good", "warn", "bad", "unknown"]);
+export type HealthStatus = z.infer<typeof HealthStatus>;
+export const healthSettingsPages = [
+  "graphics",
+  "startup",
+  "network",
+  "services",
+  "defender",
+  "power",
+  "display",
+  "windowsUpdate",
+  "storage",
+  "gameMode",
+  "coreIsolation",
+] as const;
+export const HealthFixSchema = z.discriminatedUnion("kind", [
+  // Opens the normal reviewed Apply flow for catalogue items (reversible from Restore & backups).
+  z
+    .object({
+      kind: z.literal("optimization"),
+      ids: z.array(OperationId).min(1).max(4),
+      label: z.string().max(60),
+    })
+    .strict(),
+  // Frameforge's own per-game launch setting (GPU preference), applied and reverted by Frameforge.
+  z
+    .object({
+      kind: z.literal("launchSetting"),
+      gameId: Id,
+      setting: z.literal("gpuPreference"),
+      label: z.string().max(60),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("settings"),
+      page: z.enum(healthSettingsPages),
+      label: z.string().max(60),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("navigate"),
+      page: z.enum(["Game Mode", "Optimizations", "System", "Monitor"]),
+      label: z.string().max(60),
+    })
+    .strict(),
+]);
+export type HealthFix = z.infer<typeof HealthFixSchema>;
+export const HealthCheckSchema = z
+  .object({
+    id: z.string().max(40),
+    title: z.string().max(80),
+    status: HealthStatus,
+    /** What the reading is, in a few words ("Plugged in", "1 of 2 memory slots used"). */
+    summary: z.string().max(200),
+    explanation: z.string().max(500),
+    impact: z.string().max(400),
+    /** A fix Frameforge can apply or open; null when the answer is advice or hardware. */
+    fix: Nullable(HealthFixSchema),
+    steps: z.array(z.string().max(240)).max(8),
+    /** True for a finding that matters before anything else (battery, vendor mode). */
+    top: z.boolean(),
+  })
+  .strict();
+export type HealthCheck = z.infer<typeof HealthCheckSchema>;
+export const HealthReportSchema = z
+  .object({
+    at: z.string().max(40),
+    score: z.number().int().min(0).max(100),
+    headline: z.string().max(200),
+    checks: z.array(HealthCheckSchema).max(40),
+    /** The ids of the (up to three) checks to look at first. */
+    topIssues: z.array(z.string().max(40)).max(3),
+  })
+  .strict();
+export type HealthReport = z.infer<typeof HealthReportSchema>;
 const Empty = z.object({}).strict();
 export const UpdateStatusSchema = z
   .object({
@@ -1019,6 +1302,7 @@ export const featurePages = [
   "Monitor",
   "Activity",
   "Settings",
+  "Health Check",
 ] as const;
 const Selection = z
   .object({
@@ -1102,6 +1386,10 @@ export const requests = {
     .object({ confirmed: z.literal(true), dismiss: z.boolean().optional() })
     .strict(),
   runningProcesses: Empty,
+  // Icon of a running program, by image name; the main process finds the path from the last process list.
+  appIcon: z
+    .object({ image: z.string().regex(/^[\w .()-]{1,64}\.exe$/i) })
+    .strict(),
   // Diagnostics only: pings the host; nothing on the PC is changed.
   networkCheck: z
     .object({
@@ -1145,7 +1433,7 @@ export const requests = {
   // Server-side allowlist; the renderer never sends a URI or path.
   openSettings: z
     .object({
-      page: z.enum(["graphics", "startup", "network", "services", "defender"]),
+      page: z.enum(healthSettingsPages),
     })
     .strict(),
   removeGame: z.object({ id: Id }).strict(),
@@ -1165,6 +1453,8 @@ export const requests = {
       boostMode: GameSchema.shape.boostMode,
       autoBoost: z.boolean().optional(),
       notes: GameSchema.shape.notes,
+      /** Per-game background apps; null removes the override, missing leaves it as it is. */
+      background: BackgroundListSchema.nullable().optional(),
     })
     .strict(),
   // With an id, the saved custom preset is updated in place; without, a new one is added.
@@ -1195,6 +1485,12 @@ export const requests = {
   fpsStart: z.object({ gameId: Id, confirmed: z.literal(true) }).strict(),
   fpsStop: z.object({ confirmed: z.literal(true) }).strict(),
   fpsHistory: z.object({ gameId: Id }).strict(),
+  // PC Health Check: read-only facts evaluated into checks (the page asks; nothing is polled).
+  healthCheck: Empty,
+  // Smart mode: observation state, learned per-game profiles and the new-game offer. add/dismiss answer the offer.
+  smartStatus: Empty,
+  smartCandidate: z.object({ action: z.enum(["add", "dismiss"]) }).strict(),
+  smartForget: z.object({ gameId: Id }).strict(),
 };
 export const responses = {
   bootstrap: BootstrapSchema,
@@ -1226,6 +1522,7 @@ export const responses = {
   boostStop: BoostSessionSchema.nullable(),
   boostRecover: BoostSessionSchema.nullable(),
   runningProcesses: z.array(RunningProcessSchema).max(500),
+  appIcon: z.string().max(400000).nullable(),
   networkCheck: NetworkCheckSchema,
   launchSettings: LaunchStatusSchema,
   launchSettingPreview: LaunchPreviewSchema,
@@ -1251,6 +1548,10 @@ export const responses = {
   fpsStart: FpsStatusSchema,
   fpsStop: FpsStatusSchema,
   fpsHistory: z.array(FpsSummarySchema).max(50),
+  healthCheck: HealthReportSchema,
+  smartStatus: SmartStatusSchema,
+  smartCandidate: SmartStatusSchema,
+  smartForget: SmartStatusSchema,
 };
 export type Method = keyof typeof requests;
 export type Request<M extends Method> = z.infer<(typeof requests)[M]>;
@@ -1276,6 +1577,8 @@ export const EventSchema = z.discriminatedUnion("type", [
     .object({ type: z.literal("monitor"), sample: MonitorSampleSchema })
     .strict(),
   z.object({ type: z.literal("fps"), status: FpsStatusSchema }).strict(),
+  // Smart mode started or finished observing a game, or found a game-like program that is not in the library.
+  z.object({ type: z.literal("smart"), status: SmartStatusSchema }).strict(),
   // A whole-PC game scan began or ended; `added` is the number of new library games.
   z
     .object({
@@ -1380,6 +1683,16 @@ export const TimerGlobalResultSchema = z
   })
   .strict();
 export type TimerGlobalResult = z.infer<typeof TimerGlobalResultSchema>;
+export const ForegroundAppSchema = z
+  .object({
+    pid: z.number().int().positive(),
+    image: z.string().max(260),
+    path: z.string().max(2048),
+    startTime: z.string().max(80),
+    fullscreen: z.boolean(),
+  })
+  .strict();
+export type ForegroundApp = z.infer<typeof ForegroundAppSchema>;
 export const HelperResult = z
   .object({
     ok: z.boolean(),
@@ -1401,6 +1714,8 @@ export const HelperResult = z
     resultPath: z.string().max(2048).optional(),
     runningGames: RunningGamesSchema.optional(),
     backgroundProcesses: z.array(RunningProcessSchema).optional(),
+    health: HealthFactsSchema.optional(),
+    foreground: ForegroundAppSchema.nullable().optional(),
     capabilities: BoostCapabilitiesSchema.optional(),
     network: NetworkCheckSchema.optional(),
     launch: LaunchResultSchema.optional(),
@@ -1443,7 +1758,7 @@ export const CapturedSchema = z
       .optional(),
     /** Power scheme and setting changed by coreParking (prior/applied hold the percentages). */
     scheme: PlanGuid.optional(),
-    setting: z.enum(["cpmincores", "cpmincores1"]).optional(),
+    setting: z.enum(["cpmincores", "cpmincores1", "usbsuspend"]).optional(),
     /** Prior and applied lists: paused service names, or CPU set ids (smartCores). */
     items: z.array(z.string().max(64)).max(256).optional(),
     appliedItems: z.array(z.string().max(64)).max(256).optional(),

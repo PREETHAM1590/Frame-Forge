@@ -10,6 +10,12 @@ import {
 export const modes: { id: BoostMode; label: string; summary: string }[] = [
   { id: "off", label: "Off", summary: "Frameforge changes nothing." },
   {
+    id: "smart",
+    label: "Smart",
+    summary:
+      "Watches the game for its first minute, works out whether the CPU, GPU, memory or heat is the limit and applies only what helps that case. Remembers it for next time. Never changes Windows Game Mode.",
+  },
+  {
     id: "balanced",
     label: "Balanced",
     summary:
@@ -156,7 +162,8 @@ export function onThisPc(
       : {
           tone: "amber",
           label: "not configured",
-          reason: "No apps picked yet. Add them under Background apps.",
+          reason:
+            "No apps picked yet. Smart mode uses the suggested apps; in other modes pick them under Close or pause apps while gaming.",
         };
   }
   if (!cap) return { tone: "neutral", label: "checking", reason: "" };
@@ -233,6 +240,7 @@ export const intensity: Record<BoostMode, number> = {
   performance: 2,
   competitive: 3,
   custom: -1,
+  smart: -1,
 };
 export const scale: BoostMode[] = [
   "off",
@@ -241,6 +249,7 @@ export const scale: BoostMode[] = [
   "competitive",
 ];
 export const tagline: Partial<Record<BoostMode, string>> = {
+  smart: "Finds what limits each game and changes only what helps.",
   balanced: "Smoother gameplay with light, safe tuning of the game itself.",
   performance: "Adds a performance power plan and lowers background apps.",
   competitive:

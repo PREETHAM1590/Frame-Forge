@@ -43,7 +43,10 @@ public record Capability(string Id, bool Available, string Detail, bool Active =
 // Windows 11 only lets a timer request reach other programs when GlobalTimerResolutionRequests is 1. Eligible: this Windows build has the setting.
 public record TimerGlobal(bool Eligible, bool Enabled);
 public record BoostCapabilities(int LogicalCpus, Capability[] Mechanisms, CpuTopology? Topology = null, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TimerGlobal? TimerGlobal = null);
-public record ProcessEntry(string Image, int Pid, bool Protected);
+public record ProcessEntry(string Image, int Pid, bool Protected,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? WorkingSetBytes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? CpuPercent = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Path = null);
 // Reported as code "plan-not-created": the helper verified no plan copy exists, so the recorded GUID can be dropped.
 public sealed class PlanNotCreatedException(string message) : InvalidOperationException(message);
 public static class HelperJson
@@ -244,6 +247,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         if (mechanisms.StandbyPurge) PlanPurge(command);
         if (mechanisms.GameMode) Run("gameMode", GameMode);
         if (mechanisms.PowerPlan) Run("powerPlan", PowerPlan);
+        if (mechanisms.PowerPlan && UsbSuspendOff() is { } usb) emit(new(usb.State, usb.Id, usb.Detail, Code: usb.Code));
         if (mechanisms.TimerResolution) Run("timerResolution", Timer);
         if (mechanisms.Priority != "Normal") Run("priority", () => Rank(game.Priority) >= Rank(mechanisms.Priority)
             ? new("priority", "skipped", $"{game.Name} already runs at {game.Priority}; not lowered.")
@@ -319,6 +323,42 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         return power.Active() == target
             ? new("powerPlan", "applied", $"{PlanName(target)} power plan active and verified.")
             : new("powerPlan", "failed", "Windows did not keep the power plan.");
+    }
+    // Plan-only: while Frameforge's own plan is the active one, its plugged-in USB selective suspend is turned off, so USB devices
+    // (mouse, keyboard, headset) are never put to sleep mid-game. Windows' built-in plans and other plans are never edited.
+    // Returns null when this does not apply (another plan is active), so nothing is reported.
+    private MechanismResult? UsbSuspendOff()
+    {
+        try
+        {
+            if (ownedPlan is not { } owned || extras?.PowerSettings is not { } settings) return null;
+            var scheme = power.Active();
+            if (scheme != owned) return null;
+            if (settings.ReadAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend) is not { } current)
+                return new("powerPlan", "skipped", "Frameforge plan: this PC's plan does not expose USB selective suspend.");
+            if (current == 0) return new("powerPlan", "skipped", "Frameforge plan: USB selective suspend is already off.");
+            Capture(new("powerPlan", Prior: current.ToString(CultureInfo.InvariantCulture), Applied: "0", Scheme: scheme.ToString(), Setting: "usbsuspend"));
+            settings.WriteAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend, 0);
+            if (power.Active() == scheme) power.SetActive(scheme);
+            return settings.ReadAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend) == 0
+                ? new("powerPlan", "applied", "Frameforge plan: USB selective suspend switched off for the session (plan only) and verified.")
+                : new("powerPlan", "failed", "Frameforge plan: Windows did not keep the USB selective suspend value.");
+        }
+        catch (Exception error) { return new("powerPlan", "failed", $"Frameforge plan: {Describe(error)}"); }
+    }
+    private MechanismResult RevertUsbSuspend(Captured item)
+    {
+        if (extras?.PowerSettings is not { } settings) throw new InvalidOperationException("Power setting access is not available in this build.");
+        if (!Guid.TryParse(item.Scheme, out var scheme) || scheme != ownedPlan || !uint.TryParse(item.Prior, NumberStyles.None, CultureInfo.InvariantCulture, out var prior) || prior > 1 || item.Applied != "0")
+            throw new InvalidOperationException("Invalid saved USB selective suspend value.");
+        if (settings.ReadAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend) is not { } current) return new("powerPlan", "reverted", "The plan or setting no longer exists; nothing to restore.");
+        if (current == prior) return new("powerPlan", "reverted", $"USB selective suspend already back to {prior}.");
+        if (current != 0) return new("powerPlan", "conflict", $"USB selective suspend was changed outside Frameforge to {current}; kept.");
+        settings.WriteAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend, prior);
+        if (power.Active() == scheme) power.SetActive(scheme);
+        return settings.ReadAc(scheme, BoosterPaths.SubUsb, BoosterPaths.UsbSuspend) == prior
+            ? new("powerPlan", "reverted", "USB selective suspend restored and verified.")
+            : new("powerPlan", "failed", "Windows did not restore USB selective suspend.");
     }
     private MechanismResult Timer()
     {
@@ -403,7 +443,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
             return id switch
             {
                 "gameMode" => RevertGameMode(item!),
-                "powerPlan" => RevertPower(item!),
+                "powerPlan" => item!.Setting == "usbsuspend" ? RevertUsbSuspend(item) : RevertPower(item),
                 "timerResolution" => RevertTimer(),
                 "priority" or "lowerBackground" => RevertPriority(item!),
                 "affinity" => RevertAffinity(item!),
@@ -709,9 +749,20 @@ public sealed class WindowsProcessControl : IProcessControl
     {
         var session = Process.GetCurrentProcess().SessionId;
         var sid = WindowsIdentity.GetCurrent().User?.Value;
+        // Two reads a moment apart give each program its share of the CPU; memory is the second read.
+        var first = MonitorSampler.Snapshot().ToDictionary(p => p.Pid, p => p.CpuTicks);
+        var started = Stopwatch.GetTimestamp();
+        Thread.Sleep(500);
+        var second = MonitorSampler.Snapshot().ToDictionary(p => p.Pid);
+        var seconds = Math.Max(0.1, (Stopwatch.GetTimestamp() - started) / (double)Stopwatch.Frequency);
+        (long? Ws, double? Cpu) Use(int pid) => second.TryGetValue(pid, out var now)
+            ? (now.WorkingSet, first.TryGetValue(pid, out var before) && now.CpuTicks >= before ? Math.Round(Math.Clamp((now.CpuTicks - before) / 1e7 / seconds / Environment.ProcessorCount * 100, 0, 100), 1) : null)
+            : (null, null);
         return new WindowsProcessControl().List()
-            .Select(p => new ProcessEntry(Path.GetFileName(p.Target.ExecutablePath), p.Target.Pid,
-                p.Critical || p.Sid is null || p.Sid != sid || p.SessionId != session || ProcessSafety.Denied(p.Target.Name) || p.Target.Name.StartsWith("Frameforge", StringComparison.OrdinalIgnoreCase)))
+            .Select(p => (Process: p, Use: Use(p.Target.Pid)))
+            .Select(x => new ProcessEntry(Path.GetFileName(x.Process.Target.ExecutablePath), x.Process.Target.Pid,
+                x.Process.Critical || x.Process.Sid is null || x.Process.Sid != sid || x.Process.SessionId != session || ProcessSafety.Denied(x.Process.Target.Name) || x.Process.Target.Name.StartsWith("Frameforge", StringComparison.OrdinalIgnoreCase),
+                x.Use.Ws, x.Use.Cpu, x.Process.Target.ExecutablePath.Length <= 520 ? x.Process.Target.ExecutablePath : null))
             .Where(e => e.Image.Length <= 64)
             .OrderBy(e => e.Image, StringComparer.OrdinalIgnoreCase).Take(500).ToArray();
     }

@@ -17,5 +17,17 @@ export function settingsTarget(
       return { uri: "windowsdefender://threatsettings" };
     case "services":
       return { file: path.win32.join(systemRoot, "System32", "services.msc") };
+    case "power":
+      return { uri: "ms-settings:powersleep" };
+    case "display":
+      return { uri: "ms-settings:display-advanced" };
+    case "windowsUpdate":
+      return { uri: "ms-settings:windowsupdate" };
+    case "storage":
+      return { uri: "ms-settings:storagesense" };
+    case "gameMode":
+      return { uri: "ms-settings:gaming-gamemode" };
+    case "coreIsolation":
+      return { uri: "windowsdefender://coreisolation" };
   }
 }

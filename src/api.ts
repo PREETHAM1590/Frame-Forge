@@ -271,6 +271,13 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "brokerInstall":
     case "brokerRemove":
       throw new Error("Admin access requires the desktop app.");
+    // Nothing is learned or observed in the browser demo; the page still renders its empty state.
+    case "smartStatus":
+      return { observing: null, profiles: [], candidate: null };
+    case "healthCheck":
+      throw new Error(
+        "The PC Health Check reads this PC and requires the desktop app.",
+      );
     case "boostStart":
     case "boostStop":
     case "boostRecover":

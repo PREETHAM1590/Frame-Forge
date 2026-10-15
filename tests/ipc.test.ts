@@ -107,6 +107,11 @@ const inputs: { [M in Method]: () => Request<M> } = {
   fpsStart: () => ({ gameId: id(), confirmed: true }),
   fpsStop: () => ({ confirmed: true }),
   fpsHistory: () => ({ gameId: id() }),
+  appIcon: () => ({ image: "a.exe" }),
+  healthCheck: () => ({}),
+  smartStatus: () => ({}),
+  smartCandidate: () => ({ action: "dismiss" }),
+  smartForget: () => ({ gameId: id() }),
 };
 describe("IPC surface", () => {
   it("has identical request, response and handler sets", () => {
@@ -140,6 +145,7 @@ describe("IPC surface", () => {
       "boostStop",
       "boostRecover",
       "runningProcesses",
+      "appIcon",
       "networkCheck",
       "launchSettings",
       "launchSettingPreview",
@@ -154,6 +160,9 @@ describe("IPC surface", () => {
       "fpsHistory",
       "brokerInstall",
       "brokerRemove",
+      "healthCheck",
+      "smartCandidate",
+      "smartForget",
       "updateCheck",
       "updateDownload",
       "updateInstall",

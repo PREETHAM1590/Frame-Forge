@@ -24,6 +24,8 @@ import { RestorePointService } from "./restore.js";
 import { LaunchSettingsService } from "./launchSettings.js";
 import { MonitorService } from "./monitor.js";
 import { FpsService } from "./fps.js";
+import { evaluateHealth } from "../shared/health.js";
+import { CandidateTracker, GameFinder, SmartEngine } from "./smart.js";
 import { within, type DetectionResult } from "./games.js";
 import { fallbackHardware, type Platform } from "./platform.js";
 import { brokerUnsupported } from "./broker.js";
@@ -56,6 +58,8 @@ export interface DesktopServices {
   openSettings?: (page: Request<"openSettings">["page"]) => Promise<boolean>;
   /** PNG data URL for a library game's icon, or null. */
   gameIcon?: (game: Game) => Promise<string | null>;
+  /** PNG data URL for the icon of a running program's executable (path from the last process list), or null. */
+  fileIcon?: (file: string) => Promise<string | null>;
   /** Deletes cached icons that no library game uses any more. */
   pruneIcons?: (games: Game[]) => Promise<void>;
   /** Auto-update controller; absent in dev, test mode and the browser demo. */
@@ -74,6 +78,9 @@ export class AppService {
   readonly booster: BoostEngine;
   readonly monitor: MonitorService;
   readonly fps: FpsService;
+  readonly smart: SmartEngine;
+  private finder: GameFinder | undefined;
+  private processPaths = new Map<string, string>();
   private restorePoints: RestorePointService;
   private launch: LaunchSettingsService;
   private hardware: Hardware = fallbackHardware();
@@ -109,6 +116,8 @@ export class AppService {
   async shutdown() {
     this.monitor.stop();
     this.fps.dispose();
+    this.finder?.stop();
+    this.smart.cancel("Frameforge closed.");
     this.booster.dispose();
     if (this.booster.active) await this.booster.stop();
   }
@@ -123,6 +132,40 @@ export class AppService {
     this.booster = new BoostEngine(repo, platform, (session) =>
       this.desktop.notify?.({ type: "boost", session }),
     );
+    this.smart = new SmartEngine(repo, platform, {
+      notify: (event) => this.desktop.notify?.(event),
+      log: (label, message, status) => this.log(label, message, status),
+      fps: () => this.fps.liveStats(),
+    });
+    // Finding games that are not in the library runs only while auto-boost is on (a 15 second foreground check).
+    if (platform.foregroundApp) {
+      const exe = (p: string) => p.toLowerCase();
+      this.finder = new GameFinder(
+        platform,
+        new CandidateTracker(
+          (p) =>
+            this.repo
+              .state()
+              .games.some(
+                (g) => g.executablePath && exe(g.executablePath) === exe(p),
+              ),
+          (p) => this.smart.dismissed().includes(exe(p)),
+        ),
+        (found) => {
+          if (this.smart.offer(found))
+            this.log(
+              "Smart mode",
+              `${found.name} looks like a game that is not in your library. Nothing was added.`,
+            );
+        },
+      );
+    }
+    this.booster.attachSmart(this.smart, () => {
+      const on =
+        this.platform.boostAvailable && this.repo.state().booster.autoBoost;
+      if (on) this.finder?.start();
+      else this.finder?.stop();
+    });
     this.booster.configure();
     this.monitor = new MonitorService(platform, (event) =>
       this.desktop.notify?.(event),
@@ -442,7 +485,20 @@ export class AppService {
         noRestoreInFlight();
         return this.booster.recover(dismiss ?? false);
       },
-      runningProcesses: async () => this.platform.backgroundProcesses(),
+      runningProcesses: async () => {
+        const list = await this.platform.backgroundProcesses();
+        // The renderer asks for icons by image name; the paths stay here.
+        this.processPaths = new Map(
+          list.flatMap((p) =>
+            p.path ? [[p.image.toLowerCase(), p.path] as const] : [],
+          ),
+        );
+        return list;
+      },
+      appIcon: async ({ image }) => {
+        const file = this.processPaths.get(image.toLowerCase());
+        return (file && (await this.desktop.fileIcon?.(file))) || null;
+      },
       launchSettings: async ({ gameId }) => this.launch.status(gameId),
       launchSettingPreview: async ({ gameId, setting, action }) =>
         this.launch.preview(gameId, setting, action),
@@ -551,7 +607,14 @@ export class AppService {
         const game = this.repo.state().games.find((g) => g.id === id);
         return (game && (await this.desktop.gameIcon?.(game))) || null;
       },
-      profile: async ({ id, profile, boostMode, autoBoost, notes }) => {
+      profile: async ({
+        id,
+        profile,
+        boostMode,
+        autoBoost,
+        notes,
+        background,
+      }) => {
         guard();
         const state = this.repo.state();
         if (!state.games.some((g) => g.id === id))
@@ -566,6 +629,12 @@ export class AppService {
                   boostMode,
                   autoBoost: autoBoost ?? g.autoBoost,
                   notes,
+                  // null removes the per-game list; missing leaves it as it is.
+                  ...(background === null
+                    ? { background: undefined }
+                    : background
+                      ? { background }
+                      : {}),
                 }
               : g,
           ),
@@ -598,6 +667,62 @@ export class AppService {
       fpsStart: async ({ gameId }) => this.fps.start(gameId),
       fpsStop: async () => this.fps.stop(),
       fpsHistory: async ({ gameId }) => this.fps.history(gameId),
+      healthCheck: async () => {
+        if (!this.platform.healthFacts)
+          throw new Error("The PC Health Check needs the Windows helper.");
+        const games = this.repo.state().games;
+        const facts = await this.platform.healthFacts(games);
+        // A capture with Game Mode on and one with it off, for any game, is a real before/after pair.
+        const seen = new Set(
+          games.flatMap((g) => this.fps.history(g.id).map((h) => h.boost)),
+        );
+        return evaluateHealth(facts, {
+          games: games.map((g) => ({
+            id: g.id,
+            name: g.name,
+            executablePath: g.executablePath,
+          })),
+          hasAbPair: seen.has("on") && seen.has("off"),
+        });
+      },
+      smartStatus: async () => this.smart.status(),
+      smartCandidate: async ({ action }) => {
+        guard();
+        if (action === "dismiss") {
+          this.smart.dismiss();
+          return this.smart.status();
+        }
+        const found = this.smart.take();
+        if (!found) return this.smart.status();
+        const state = this.repo.state();
+        if (
+          !state.games.some(
+            (g) => g.executablePath?.toLowerCase() === found.path.toLowerCase(),
+          )
+        ) {
+          const game: Game = {
+            id: randomUUID(),
+            name: found.name,
+            path: path.dirname(found.path),
+            source: "custom",
+            executablePath: found.path,
+            profile: "balanced",
+            notes: "Added after Smart mode noticed it running fullscreen.",
+            boostMode: "smart",
+          };
+          this.repo.updateState({ ...state, games: [...state.games, game] });
+          this.log(
+            "Game added",
+            `${found.name} was added to the library (Smart mode).`,
+          );
+        }
+        this.booster.configure();
+        return this.smart.status();
+      },
+      smartForget: async ({ gameId }) => {
+        this.smart.forget(gameId);
+        return this.smart.status();
+      },
     };
   }
   private dismissed() {

@@ -10,6 +10,7 @@
 @import "./styles/safety.css";
 @import "./styles/applyflow.css";
 @import "./styles/monitor.css";
+@import "./styles/health.css";
 @theme {
   --font-sans: "Space Grotesk", sans-serif;
 }
