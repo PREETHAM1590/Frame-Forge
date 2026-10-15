@@ -460,13 +460,15 @@ export function Presets({ data, preview, run, pending }: ViewProps) {
               )}
               {missingHere(data) &&
                 p.ids.some((id) => !data.capabilities.includes(id)) && (
-                  <span className="muted">
-                    Skipped — not available on this PC:{" "}
-                    {p.ids
-                      .filter((id) => !data.capabilities.includes(id))
-                      .map((id) => catalogue.find((o) => o.id === id)?.name)
-                      .join(", ")}
-                    .{" "}
+                  <div className="preset-skip">
+                    <span className="muted">
+                      Skipped — not available on this PC:{" "}
+                      {p.ids
+                        .filter((id) => !data.capabilities.includes(id))
+                        .map((id) => catalogue.find((o) => o.id === id)?.name)
+                        .join(", ")}
+                      .
+                    </span>
                     {p.ids.includes("power-plan") &&
                       !data.capabilities.includes("power-plan") && (
                         <Button
@@ -476,7 +478,7 @@ export function Presets({ data, preview, run, pending }: ViewProps) {
                           <Plus size={16} /> Create High performance plan…
                         </Button>
                       )}
-                  </span>
+                  </div>
                 )}
               <Button
                 variant={p.name === "Recommended" ? "primary" : "secondary"}

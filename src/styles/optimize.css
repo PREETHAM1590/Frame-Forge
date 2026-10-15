@@ -95,9 +95,13 @@
 .preset-list .preset-controls .button {
   flex: none;
 }
-.preset-list .preset-controls > .muted {
+.preset-list .preset-skip {
   flex-basis: 100%;
-  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
 }
 .preset-list .preset-controls {
   margin-top: auto;
