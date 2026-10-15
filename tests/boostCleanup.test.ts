@@ -198,6 +198,9 @@ describe("boost start clean-up in the engine", () => {
     const summary = summarizeSession(session!);
     expect(summary.tray).toContain("Closed 1 app.");
     expect(summary.tray).toContain("Freed 1.2 GB.");
+    const row = summary.items.find((i) => i.id === "freeMemory")!;
+    expect(row.change).toBeNull();
+    expect(row.detail).toContain("Freed 1.2 GB");
     await engine.stop();
   });
   it("says memory was already fine when nothing was tight", () => {

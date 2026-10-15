@@ -119,7 +119,11 @@ export function summarizeSession(
         kind,
         reason,
         detail: m.detail,
-        change: kind === "applied" ? parseChange(m.detail) : null,
+        // The freed-RAM sentence ("Freed 0.4 GB ...") is the point of that row; a from/to pair would hide it.
+        change:
+          kind === "applied" && m.id !== "freeMemory"
+            ? parseChange(m.detail)
+            : null,
         more: 0,
       });
   }
