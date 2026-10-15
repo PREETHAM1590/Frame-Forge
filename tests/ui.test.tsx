@@ -231,7 +231,7 @@ describe("configuration and safety UI", () => {
     const card = await screen.findByRole("article", {
       name: "Performance on this PC",
     });
-    card.querySelectorAll("details").forEach((d) => (d.open = true));
+    document.querySelectorAll("details").forEach((d) => (d.open = true));
     expect(within(card).getByText("Performance power plan")).toBeVisible();
     expect(within(card).getByText("not configured")).toBeVisible();
     expect(screen.getByText("Standby Purge")).toBeInTheDocument();

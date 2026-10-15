@@ -7,7 +7,7 @@ import {
   Disclosure,
   Modal,
   Panel,
-  SectionHeader,
+  Toggle,
 } from "../components/ui";
 import { desktopOnly, onEvent, request } from "../api";
 import { PowerPlanDialog } from "../components/PowerPlanDialog";
@@ -36,7 +36,6 @@ import { SessionHistory } from "./gamemode/SessionChanges";
 import { StartBoost } from "./gamemode/StartBoost";
 import { SmartOffer, SmartPanel } from "./gamemode/SmartPanel";
 import { useSmart } from "../useSmart";
-import { HowItWorks } from "./gamemode/HowItWorks";
 
 let lastPicked = "";
 
@@ -214,9 +213,8 @@ export function GameMode({
   return (
     <div className="gm">
       <PageTitle
-        eyebrow="Kernel profile"
         title="Game Mode"
-        subtitle="Selectable boost modes. Reversible changes are saved first and restored when the game exits; closed apps are not reopened."
+        subtitle="Pick a game and a mode. Changes are saved first and restored when the game exits; closed apps are not reopened."
         action={
           <Badge tone={session ? statusTones[session.status] : "neutral"}>
             {session ? session.status : "Idle"}
@@ -229,10 +227,6 @@ export function GameMode({
           {unavailable}
         </div>
       )}
-      <p className="muted">
-        Frameforge does not measure FPS. Session CPU/RAM snapshots are shown for
-        reference.
-      </p>
       {outcome && (
         <p
           className="notice"
@@ -258,86 +252,71 @@ export function GameMode({
         run={run}
         pending={pending}
       />
-      <div className="gm-grid">
-        <aside className="gm-side">
-          <HowItWorks />
-          <Panel flush>
-            <SectionHeader
-              level={3}
-              title="Game enhancers"
-              aside={<span className="label">Advanced</span>}
-            />
-            <div className="gm-side-body">
-              <Enhancers
-                config={config}
-                status={status}
-                caps={caps}
-                cap={cap}
-                timer={timer}
-                unavailable={unavailable}
-                pending={pending}
-                timerPending={timerPending}
-                session={!!session}
-                run={run}
-                save={save}
-                setStatus={setStatus}
-                onCreatePlan={() => setConfirmPlan(true)}
-                onTimerDialog={setTimerDialog}
-              />
-            </div>
-          </Panel>
-        </aside>
-        <div className="gm-main">
-          {sessionActive && (
-            <SessionPanel
-              session={session}
-              game={sessionGame}
-              minutes={minutes}
-              log={log}
-              run={run}
-              pending={pending}
-              setOutcome={setOutcome}
-            />
+      <StartBoost
+        games={data.state.games}
+        game={game}
+        gameId={gameId}
+        gameMode={gameMode}
+        session={!!session}
+        startReason={startReason}
+        onPick={setGameId}
+        onStart={startHere}
+        onOpenLibrary={() => navigate("Game library")}
+      />
+      <Panel className="gm-auto">
+        <Toggle
+          label="Auto-boost when a library game starts"
+          description={
+            unavailable ||
+            `Starts a library game's mode when it launches, and ends it when the game exits, even with the window closed to the tray. Turn it off per game in the library.${status?.watching ? " Watching now." : ""}`
+          }
+          checked={config.autoBoost}
+          disabled={pending || !!unavailable}
+          onChange={(v) => void save({ autoBoost: v })}
+        />
+      </Panel>
+      {sessionActive && (
+        <SessionPanel
+          session={session}
+          game={sessionGame}
+          minutes={minutes}
+          log={log}
+          run={run}
+          pending={pending}
+          setOutcome={setOutcome}
+        />
+      )}
+      {!sessionActive && <SessionLog log={log} />}
+      {!sessionActive && (
+        <SessionHistory
+          key={session?.status ?? "none"}
+          limit={1}
+          names={Object.fromEntries(
+            data.state.games.map((g) => [g.id, g.name]),
           )}
-          {gameMode === "smart" && (
-            <SmartPanel
-              game={game}
-              settings={data.state.settings}
-              smart={smart.status}
-              setSmart={smart.set}
-              run={run}
-              pending={pending}
-              unavailable={unavailable}
-            />
-          )}
-          <StartBoost
-            games={data.state.games}
-            game={game}
-            gameId={gameId}
-            gameMode={gameMode}
-            session={!!session}
-            startReason={startReason}
-            onPick={setGameId}
-            onStart={startHere}
-            onOpenLibrary={() => navigate("Game library")}
-          />
-          {!sessionActive && <SessionLog log={log} />}
-          {!sessionActive && (
-            <SessionHistory
-              key={session?.status ?? "none"}
-              limit={1}
-              names={Object.fromEntries(
-                data.state.games.map((g) => [g.id, g.name]),
-              )}
-            />
-          )}
-          <ModeSelector
-            mode={config.mode}
-            pending={pending}
-            caps={caps}
-            mechanisms={mechanisms}
-            onSelect={(mode: BoostMode) => void save({ mode })}
-          />
+        />
+      )}
+      <ModeSelector
+        mode={config.mode}
+        pending={pending}
+        caps={caps}
+        mechanisms={mechanisms}
+        onSelect={(mode: BoostMode) => void save({ mode })}
+      />
+      {gameMode === "smart" && (
+        <SmartPanel
+          game={game}
+          settings={data.state.settings}
+          smart={smart.status}
+          setSmart={smart.set}
+          run={run}
+          pending={pending}
+          unavailable={unavailable}
+        />
+      )}
+      <h2 className="gm-more">More control</h2>
+      <div className="gm-stack">
+        <Disclosure title="What each mode changes on this PC" hint="Details">
           <ModeCards
             config={config}
             caps={caps}
@@ -346,36 +325,51 @@ export function GameMode({
             pending={pending}
             onSelect={(mode) => void save({ mode })}
           />
-          <Disclosure
-            title="Close or pause apps while gaming"
-            hint={config.backgroundChosen ? "Your list" : "Suggested"}
-          >
-            <BackgroundApps
-              config={config}
-              game={game}
-              save={save}
-              saveGame={saveGame}
-              pending={pending}
-              unavailable={unavailable}
-              desktop={data.mode === "desktop"}
-            />
-          </Disclosure>
-          <Disclosure title="Launch settings" hint="Advanced">
-            <LaunchSettings
-              data={data}
-              game={game}
-              gameId={gameId}
-              run={run}
-              pending={pending}
-            />
-          </Disclosure>
-          <Disclosure title="Network check" hint="Diagnostics">
-            <NetworkCheck
-              unavailable={unavailable}
-              demo={data.mode === "demo"}
-            />
-          </Disclosure>
-        </div>
+        </Disclosure>
+        <Disclosure title="Choose individual changes" hint="Advanced">
+          <Enhancers
+            config={config}
+            status={status}
+            caps={caps}
+            cap={cap}
+            timer={timer}
+            unavailable={unavailable}
+            pending={pending}
+            timerPending={timerPending}
+            session={!!session}
+            run={run}
+            save={save}
+            setStatus={setStatus}
+            onCreatePlan={() => setConfirmPlan(true)}
+            onTimerDialog={setTimerDialog}
+          />
+        </Disclosure>
+        <Disclosure
+          title="Close or pause apps while gaming"
+          hint={config.backgroundChosen ? "Your list" : "Suggested"}
+        >
+          <BackgroundApps
+            config={config}
+            game={game}
+            save={save}
+            saveGame={saveGame}
+            pending={pending}
+            unavailable={unavailable}
+            desktop={data.mode === "desktop"}
+          />
+        </Disclosure>
+        <Disclosure title="Launch settings" hint="Advanced">
+          <LaunchSettings
+            data={data}
+            game={game}
+            gameId={gameId}
+            run={run}
+            pending={pending}
+          />
+        </Disclosure>
+        <Disclosure title="Network check" hint="Diagnostics">
+          <NetworkCheck unavailable={unavailable} demo={data.mode === "demo"} />
+        </Disclosure>
       </div>
       {confirmPlan && (
         <PowerPlanDialog

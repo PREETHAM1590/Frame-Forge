@@ -1,15 +1,20 @@
-import { Cpu } from "lucide-react";
 import {
   CellGrid,
+  LinkButton,
   SectionHeader,
   StatCell,
   formatBytes,
-  formatTime,
 } from "../../components/ui";
 import type { Hardware } from "../../../shared/contracts";
 
 /** Four real readings from the hardware snapshot; no invented sensors. */
-export function Matrix({ h }: { h: Hardware }) {
+export function Matrix({
+  h,
+  onDetails,
+}: {
+  h: Hardware;
+  onDetails: () => void;
+}) {
   const used = h.memoryBytes - h.freeMemoryBytes;
   const memoryPercent = h.memoryBytes
     ? Math.round((used / h.memoryBytes) * 100)
@@ -18,13 +23,12 @@ export function Matrix({ h }: { h: Hardware }) {
   const free = h.drives.reduce((s, d) => s + d.freeBytes, 0);
   const storagePercent = total ? Math.round(((total - free) / total) * 100) : 0;
   return (
-    <section aria-label="System overview">
+    <section aria-label="System overview" className="dash-card">
       <SectionHeader
-        title="System matrix"
-        icon={<Cpu size={18} />}
-        aside={<span className="label">Read {formatTime(h.collectedAt)}</span>}
+        title="This PC"
+        aside={<LinkButton onClick={onDetails}>Details</LinkButton>}
       />
-      <CellGrid columns="repeat(4, minmax(0, 1fr))" className="matrix" stagger>
+      <CellGrid columns="repeat(2, minmax(0, 1fr))" className="matrix">
         <StatCell
           label="Processor"
           value={<span className="stat-text">{h.cpu}</span>}

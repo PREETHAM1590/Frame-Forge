@@ -76,7 +76,6 @@ export function Monitor({ data }: ViewProps) {
   return (
     <>
       <PageTitle
-        eyebrow="Live / 1 s"
         title="System monitor"
         subtitle="Windows performance counters, read once a second while this page is open. Nothing is saved or sent anywhere."
         action={

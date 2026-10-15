@@ -216,7 +216,6 @@ export function HealthCheck(props: ViewProps) {
   return (
     <div className="health">
       <PageTitle
-        eyebrow="Read-only checks"
         title="PC Health Check"
         subtitle="What may be holding your games back on this PC, why it matters, and what to do. Nothing is changed unless you press a fix button."
         action={

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Copy, ExternalLink, ShieldCheck } from "lucide-react";
-import { Badge, Button, Panel } from "../../components/ui";
+import { Badge, Button } from "../../components/ui";
 import type { Game, Hardware } from "../../../shared/contracts";
 import {
   adviseGame,
@@ -52,16 +52,16 @@ export function RecommendedSettings({
         {advice.tiers.map((t) => tierLabel[t]).join(", ")}
         {advice.bottleneck ? " (measured)" : " (estimated)"}.
       </p>
-      <Panel tone="accent">
+      <p className="notice">
         <ShieldCheck size={18} />
-        <p>
+        <span>
           Guidance only. Frameforge never edits {game.name}&apos;s files. Change
           these in the game&apos;s own menu.
           {advice.entry && advice.entry.antiCheat !== "none"
             ? ` ${advice.entry.antiCheat} anti-cheat is active for this game.`
             : ""}
-        </p>
-      </Panel>
+        </span>
+      </p>
       {!advice.entry && (
         <p className="notice">
           No curated entry for this game yet, so this is general advice.

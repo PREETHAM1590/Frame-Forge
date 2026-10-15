@@ -1,65 +1,65 @@
+/* Dashboard: one primary action (the hero), then two quiet pairs of cards. Tokens only. */
 .dashboard {
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
 }
 .hero {
-  border-top: var(--bw-strong) solid var(--c-primary);
-}
-.hero-copy {
-  padding: var(--sp-6) var(--sp-5);
-  background: var(--c-cell);
-}
-.hero-copy .eyebrow {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--track-label);
-  color: var(--c-primary);
-  margin-bottom: var(--sp-3);
+  display: grid;
+  gap: var(--sp-5);
+  padding: var(--sp-6);
 }
 .hero-copy h1 {
-  font-size: clamp(28px, 4vw, var(--fs-3xl));
-  line-height: 0.98;
-  font-weight: 700;
+  font-size: clamp(28px, 4vw, var(--fs-2xl));
+  line-height: 1;
   letter-spacing: -0.02em;
-  max-width: 16ch;
 }
-.hero-copy p {
-  margin-top: var(--sp-4);
-  max-width: 54ch;
+.hero-tag {
+  margin-top: var(--sp-2);
   color: var(--c-muted);
-  font-family: var(--font-mono);
+}
+.hero-lead {
+  margin-top: var(--sp-3);
+  max-width: 60ch;
+  color: var(--c-text);
+}
+.hero-play {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--c-canvas);
+  border: var(--bw) solid var(--c-border);
+}
+.hero-game {
+  min-width: 0;
+  flex: 1;
+}
+.hero-game h2 {
+  font-size: var(--fs-lg);
+  margin: 2px 0 var(--sp-1);
+  overflow-wrap: anywhere;
+}
+.hero-game p {
   font-size: var(--fs-sm);
 }
-.hero-chips {
-  display: flex;
-  flex-direction: column;
-  min-width: 260px;
-  background: var(--c-canvas);
-}
-.hero-chips .chip {
+.hero-action {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: var(--sp-4) var(--sp-5);
-  flex: 1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
-.hero-chips .chip + .chip {
-  border-top: var(--bw) solid var(--c-border);
+.hero-action .button {
+  min-height: 48px;
+  padding-inline: var(--sp-5);
 }
-.hero-chips .chip svg {
-  color: var(--c-primary);
+.hero-stats .stat {
+  padding: var(--sp-4);
+  background: var(--c-canvas);
 }
-.hero-chips .chip > div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
-}
-.hero-chips strong {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+.hero-stats .stat-value {
+  font-size: var(--fs-lg);
 }
 .alerts {
   display: flex;
@@ -78,63 +78,19 @@
 .security-banner > svg {
   color: var(--c-error);
 }
-.dash-main {
+.dash-pair {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-5);
+  align-items: stretch;
 }
-.boost-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-5);
-  padding: var(--sp-5);
+.dash-card {
+  border: var(--bw) solid var(--c-border);
+  background: var(--c-cell);
+  min-width: 0;
 }
-.boost-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--sp-3);
-  padding-bottom: var(--sp-4);
-  border-bottom: var(--bw) solid var(--c-border);
-}
-.boost-head .label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--c-primary);
-}
-.boost-target {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--sp-5);
-}
-.boost-target h2 {
-  font-size: clamp(24px, 3.4vw, var(--fs-2xl));
-  line-height: 1;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-  margin: var(--sp-2) 0;
-  overflow-wrap: anywhere;
-}
-.boost-target p {
-  font-size: var(--fs-sm);
-}
-.boost-icon {
-  border: var(--bw-strong) solid var(--c-primary);
-  padding: var(--sp-2);
-  background: var(--c-deep);
-  display: inline-flex;
-}
-.boost-stats .stat {
-  padding: var(--sp-4);
-  background: var(--c-canvas);
-}
-.boost-stats .stat-value {
-  font-size: var(--fs-lg);
-}
-.matrix {
-  border-top: 0;
+.dash-card .matrix {
+  border: 0;
 }
 .stat-text {
   font-family: var(--font-display);
@@ -142,28 +98,61 @@
   font-weight: 700;
   line-height: 1.25;
   display: block;
+}
+.health-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+.health-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+}
+.health-card-head h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-md);
   text-transform: uppercase;
 }
-.dash-lower {
+.health-card-head h2 svg {
+  color: var(--c-primary);
+}
+.hc-score {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xl);
+  line-height: 1;
+}
+.hc-score span {
+  font-size: var(--fs-sm);
+  color: var(--c-muted);
+  font-weight: 400;
+}
+.health-card ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: var(--sp-5);
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  width: 100%;
+}
+.health-card li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-3);
   align-items: start;
 }
-.dash-lower > section {
-  border: var(--bw) solid var(--c-border);
-  background: var(--c-cell);
-}
-.dash-main > section[aria-label="System overview"] {
-  border: var(--bw) solid var(--c-border);
-}
-.dash-main .section-header + .matrix {
-  border: 0;
+.health-card .text-button {
+  margin-top: auto;
 }
 .action-list {
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 .action-list > button {
   display: flex;
@@ -187,17 +176,22 @@
   margin-left: auto;
   color: var(--c-primary);
 }
+.action-list > button > div {
+  flex: 1;
+  min-width: 0;
+}
 .action-list > button > .badge {
   margin-left: auto;
+  flex: none;
+  max-width: 45%;
 }
 .action-list strong {
   font-size: var(--fs-base);
   font-weight: 700;
 }
 .action-list p {
-  font-size: var(--fs-xs);
-  margin-top: 4px;
-  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  margin-top: 2px;
 }
 .action-list progress {
   display: block;
@@ -223,67 +217,33 @@
   font-weight: 600;
 }
 .recent-list p {
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  margin-top: 4px;
+  font-size: var(--fs-xs);
+  margin-top: 2px;
 }
 .recent-list .badge {
   margin-left: auto;
 }
-.dash-lower .empty {
+.dash-card .empty {
   border: 0;
   margin: var(--sp-4);
 }
-.system-strip {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  flex-wrap: wrap;
-  padding: var(--sp-3) 0;
-  border-top: var(--bw) solid var(--c-border);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--c-muted);
-}
-.system-strip > span:first-child {
-  display: flex;
-  gap: var(--sp-2);
-  align-items: center;
-}
-.system-strip .text-button {
-  margin-left: auto;
-}
-@media (min-width: 1280px) {
-  .dash-main {
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  }
-  .dash-main .matrix {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-}
 @media (max-width: 1100px) {
-  .matrix {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-  .dash-lower {
+  .dash-pair {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 700px) {
   .hero {
+    padding: var(--sp-4);
+  }
+  .hero-play {
+    flex-wrap: wrap;
+  }
+  .hero-action {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .dash-card .matrix {
     grid-template-columns: minmax(0, 1fr) !important;
-  }
-  .hero-chips {
-    min-width: 0;
-  }
-  .matrix {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-  .boost-target {
-    flex-direction: column-reverse;
-    align-items: flex-start;
-  }
-  .system-strip .text-button {
-    margin-left: 0;
   }
 }

@@ -75,40 +75,39 @@ const elevatedMethods: ReadonlySet<Method> = new Set([
   "startupSet",
   "startupUndo",
 ]);
-// Eight rail entries; Presets and Activity sit under their parent so every page stays one click away.
+// Four labelled groups plus Settings: what to play, what to tune, what to watch, how to undo.
 const navigation: readonly RailItem<Page>[] = [
-  { page: "Dashboard", label: "Dashboard", icon: LayoutDashboard, index: "01" },
-  { page: "Game Mode", label: "Game Mode", icon: Play, index: "02" },
-  { page: "Game library", label: "Game library", icon: Gamepad2, index: "03" },
+  {
+    page: "Dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    group: "Play",
+  },
+  { page: "Game Mode", label: "Game Mode", icon: Play },
+  { page: "Game library", label: "Game library", icon: Gamepad2 },
   {
     page: "Optimizations",
     label: "Optimizations",
     icon: SlidersHorizontal,
-    index: "04",
+    group: "Tune",
   },
-  { page: "Presets", label: "Presets", icon: Layers, child: true },
+  { page: "Presets", label: "Presets", icon: Layers },
+  { page: "Health Check", label: "Health Check", icon: HeartPulse },
+  { page: "Startup", label: "Startup apps", icon: Power },
+  { page: "Monitor", label: "Monitor", icon: ActivityIcon, group: "Insights" },
+  { page: "System", label: "System", icon: Cpu },
+  { page: "Activity", label: "Activity", icon: History },
   {
     page: "Restore & backups",
     label: "Restore & backups",
     icon: Archive,
-    index: "05",
+    group: "Safety",
   },
-  { page: "Activity", label: "Activity", icon: History, child: true },
-  { page: "System", label: "System", icon: Cpu, index: "06" },
-  { page: "Monitor", label: "Monitor", icon: ActivityIcon, index: "07" },
-  {
-    page: "Health Check",
-    label: "Health Check",
-    icon: HeartPulse,
-    index: "08",
-  },
-  { page: "Startup", label: "Startup apps", icon: Power, index: "09" },
 ];
 const settingsItem: RailItem<Page> = {
   page: "Settings",
   label: "Settings",
   icon: SettingsIcon,
-  index: "SYS",
 };
 export default function App() {
   const [data, setData] = useState<Bootstrap | null>(null);
@@ -344,7 +343,7 @@ export default function App() {
       ? { text: "Recovery needed", tone: "error" as const }
       : data.boost.session
         ? { text: "Boost engaged", tone: "caution" as const }
-        : { text: "System state: nominal", tone: "ok" as const };
+        : { text: "Ready", tone: "ok" as const };
   const items = navigation.map((n) => ({
     ...n,
     badge:
@@ -367,15 +366,7 @@ export default function App() {
         onClose={() => setMobile(false)}
         bottomItem={settingsItem}
         version={data.version}
-        footer={
-          <div className="rail-chassis">
-            <div>
-              <span className="label">Local by design</span>
-              <strong>Private by default. No account.</strong>
-            </div>
-            <span className={`led ${data.mode === "demo" ? "warn" : ""}`} />
-          </div>
-        }
+        footer={<p className="rail-note">Runs on this PC. No account.</p>}
       />
       {mobile && (
         <button
@@ -388,15 +379,10 @@ export default function App() {
         <TopBar
           onMenu={() => setMobile(true)}
           status={status}
-          readouts={[
-            { label: "Memory", value: `${memoryUsed}%` },
-            { label: "Cores", value: String(data.hardware.cores) },
-          ]}
+          readouts={[{ label: "Memory", value: `${memoryUsed}%` }]}
         >
           {requestsPending > 0 && <Busy label="Working" />}
-          <Badge tone={data.mode === "demo" ? "amber" : "lime"}>
-            {data.mode === "demo" ? "Demo data" : "On this PC"}
-          </Badge>
+          {data.mode === "demo" && <Badge tone="amber">Demo data</Badge>}
           <button
             className="icon-button"
             title="Refresh system readings"
@@ -433,13 +419,12 @@ export default function App() {
           </PageTransition>
         </main>
         <footer>
-          <span>FRAMEFORGE</span>
           <span>
             {data.mode === "demo"
-              ? "Browser preview / Windows operations disabled"
-              : "Offline-ready / Windows changes are previewed and recorded"}
+              ? "Browser preview. Windows changes are turned off."
+              : "Every Windows change is previewed first and can be undone."}
           </span>
-          <span>v{data.version}</span>
+          <span>Frameforge v{data.version}</span>
         </footer>
       </div>
       {notice && (

@@ -1,4 +1,4 @@
-import { Brain, Gamepad2 } from "lucide-react";
+import { Gamepad2 } from "lucide-react";
 import { Badge, Button, Panel, Toggle } from "../../components/ui";
 import { request } from "../../api";
 import { kindLabel } from "../../../shared/smart";
@@ -88,20 +88,14 @@ export function SmartPanel({
   );
   const watching = smart.observing;
   return (
-    <Panel tone="accent" className="smart-panel" aria-label="Smart mode">
+    <Panel className="smart-panel" aria-label="Smart mode">
       <div>
-        <span className="label">
-          <Brain size={13} /> Adaptive
-        </span>
         <h2>Smart mode</h2>
         <p className="muted">
-          Works for any game, including one you just installed. For the first
-          minute Frameforge only watches (CPU, GPU, memory, clocks). Then it
-          works out what limits the game and applies only what helps that case,
-          restoring everything when the game exits. It remembers the result for
-          next time and watches again if your hardware or graphics driver
-          changes. It never claims an FPS gain, and it never changes Windows
-          Game Mode.
+          For the first minute Frameforge only watches the game (CPU, GPU,
+          memory, clocks). Then it applies only what helps and restores
+          everything when the game exits. It remembers the result for next time,
+          never claims an FPS gain and never changes Windows Game Mode.
         </p>
       </div>
       {watching && (

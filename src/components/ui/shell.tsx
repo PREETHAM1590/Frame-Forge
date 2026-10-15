@@ -4,11 +4,9 @@ export interface RailItem<P extends string> {
   page: P;
   label: string;
   icon?: ComponentType<{ size?: number }>;
-  /** Mono index shown on the right: 01, 02... */
-  index?: string;
   badge?: ReactNode;
-  /** Child entries sit under their parent and are always one click away. */
-  child?: boolean;
+  /** Heading shown above this entry; entries after it share the group until the next heading. */
+  group?: string;
 }
 export function NavRail<P extends string>({
   items,
@@ -32,20 +30,22 @@ export function NavRail<P extends string>({
   const row = (n: RailItem<P>) => (
     <button
       key={n.page}
-      className={`rail-item ${n.child ? "child" : ""} ${current === n.page ? "selected" : ""}`}
+      className={`rail-item ${current === n.page ? "selected" : ""}`}
       aria-current={current === n.page ? "page" : undefined}
       onClick={() => onNavigate(n.page)}
     >
       {n.icon && <n.icon size={18} />}
       <span>{n.label}</span>
       {n.badge}
-      {n.index && (
-        <span className="rail-index" aria-hidden="true">
-          {n.index}
-        </span>
-      )}
     </button>
   );
+  // Consecutive entries after a heading share one labelled group.
+  const groups: { name: string; items: RailItem<P>[] }[] = [];
+  for (const n of items) {
+    if (n.group || !groups.length)
+      groups.push({ name: n.group ?? "", items: [] });
+    groups.at(-1)!.items.push(n);
+  }
   return (
     <aside className={`rail ${open ? "open" : ""}`}>
       <div className="rail-brand">
@@ -53,7 +53,7 @@ export function NavRail<P extends string>({
           <Flame size={18} />
         </span>
         <span>Frameforge</span>
-        {version && <span className="tag">V{version}</span>}
+        {version && <span className="tag">v{version}</span>}
         <button
           className="icon-button rail-close"
           aria-label="Close navigation"
@@ -62,7 +62,23 @@ export function NavRail<P extends string>({
           <X size={18} />
         </button>
       </div>
-      <nav aria-label="Main navigation">{items.map(row)}</nav>
+      <nav aria-label="Main navigation">
+        {groups.map((g) => (
+          <div
+            key={g.name}
+            className="rail-group"
+            role="group"
+            aria-label={g.name || undefined}
+          >
+            {g.name && (
+              <span className="rail-heading" aria-hidden="true">
+                {g.name}
+              </span>
+            )}
+            {g.items.map(row)}
+          </div>
+        ))}
+      </nav>
       <div className="rail-bottom">
         {bottomItem && row(bottomItem)}
         {footer}
@@ -121,21 +137,19 @@ export function PageTransition({
     </div>
   );
 }
+/** The page heading: the title carries the page; the optional line says what it is for, in one sentence. */
 export function PageTitle({
   title,
   subtitle,
-  eyebrow,
   action,
 }: {
   title: string;
   subtitle?: string;
-  eyebrow?: string;
   action?: ReactNode;
 }) {
   return (
     <header className="page-title">
       <div>
-        {eyebrow && <div className="eyebrow">{eyebrow}</div>}
         <h1>{title}</h1>
         {subtitle && <p>{subtitle}</p>}
       </div>

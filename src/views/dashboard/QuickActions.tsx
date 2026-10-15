@@ -2,24 +2,14 @@ import {
   ArrowUpRight,
   Archive,
   FolderSearch,
-  Gamepad2,
-  Play,
   SlidersHorizontal,
 } from "lucide-react";
-import {
-  Badge,
-  SectionHeader,
-  statusTone,
-  formatTime,
-} from "../../components/ui";
-import { GameIcon } from "../../components/GameIcon";
+import { Badge, SectionHeader, formatTime } from "../../components/ui";
 import { protectionChip } from "../Recovery";
 import type { Bootstrap, RestoreStatus } from "../../../shared/contracts";
 import type { Page } from "../../types";
 
-const cap = (m: string) => m.charAt(0).toUpperCase() + m.slice(1);
-
-/** One row per thing a person does here; each row is a real, working control. */
+/** The three things people do from here besides playing; each row is a real, working control. */
 export function QuickActions({
   data,
   restore,
@@ -44,16 +34,13 @@ export function QuickActions({
   onScan: () => void;
   onNavigate: (page: Page) => void;
 }) {
-  const session = data.boost.session;
-  const sessionGame = data.state.games.find((g) => g.id === session?.gameId);
-  const booster = data.state.booster;
   const pointerReady = data.capabilities.includes("mouse-precision");
   const lastScan = data.scan.lastScanAt;
   const chip = protectionChip(restore, data.mode);
   return (
-    <section>
+    <section className="dash-card">
       <SectionHeader title="Quick actions" />
-      <div className="action-list stagger">
+      <div className="action-list">
         <button onClick={onPointer}>
           <span className="action-icon lime">
             <SlidersHorizontal />
@@ -62,22 +49,8 @@ export function QuickActions({
             <strong>Consistent pointer movement</strong>
             <p className="muted">
               {pointerReady
-                ? "Review a reversible input preference"
-                : "Preview only: applying requires the desktop app and its Windows helper"}
-            </p>
-          </div>
-          <ArrowUpRight size={19} />
-        </button>
-        <button onClick={() => onNavigate("Game library")}>
-          <span className="action-icon cyan">
-            <Gamepad2 />
-          </span>
-          <div>
-            <strong>Your game library</strong>
-            <p className="muted">
-              {data.state.games.length
-                ? `${data.state.games.length} games in your library`
-                : "Add a game and save a profile"}
+                ? "Turn off mouse acceleration. Reversible."
+                : "Preview only: applying needs the desktop app and its Windows helper."}
             </p>
           </div>
           <ArrowUpRight size={19} />
@@ -97,7 +70,7 @@ export function QuickActions({
                   ? `${scanProgress.launcher} (${scanProgress.done}/${scanProgress.total}), ${scanProgress.found} found so far`
                   : "Looking through your launchers in the background"
                 : data.mode === "demo"
-                  ? "Requires the desktop app"
+                  ? "Needs the desktop app"
                   : lastScan
                     ? `Find installed games. Last scan ${formatTime(lastScan)}`
                     : "Find installed games and add them to your library"}
@@ -124,30 +97,6 @@ export function QuickActions({
             </p>
           </div>
           <Badge tone={chip.tone}>{chip.text}</Badge>
-        </button>
-        <button onClick={() => onNavigate("Game Mode")}>
-          {sessionGame ? (
-            <GameIcon game={sessionGame} size={40} />
-          ) : (
-            <span className="action-icon lime">
-              <Play />
-            </span>
-          )}
-          <div>
-            <strong>Game Mode</strong>
-            <p className="muted">
-              {!data.boost.available
-                ? data.mode === "demo"
-                  ? "Requires the desktop app"
-                  : "Windows helper missing"
-                : session
-                  ? `${sessionGame?.name ?? "Boosted game"}: ${cap(session.mode)} mode, ${session.status}`
-                  : `Mode ${cap(booster.mode)}; auto-boost ${booster.autoBoost ? "on" : "off"}; no active session`}
-            </p>
-          </div>
-          <Badge tone={session ? statusTone(session.status) : "neutral"}>
-            {session ? session.status : "Idle"}
-          </Badge>
         </button>
       </div>
     </section>

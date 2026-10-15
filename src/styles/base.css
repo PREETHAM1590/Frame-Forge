@@ -92,7 +92,7 @@ th {
 }
 .label {
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: var(--track-label);
   color: var(--c-muted);

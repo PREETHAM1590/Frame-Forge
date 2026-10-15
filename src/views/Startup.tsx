@@ -118,7 +118,6 @@ export function Startup({ run, data }: ViewProps) {
   return (
     <>
       <PageTitle
-        eyebrow="Startup"
         title="Startup apps"
         subtitle="Programs that start when you sign in to Windows. Switching one off here is the same switch Task Manager uses, so both show the same state. Nothing is ever deleted."
         action={

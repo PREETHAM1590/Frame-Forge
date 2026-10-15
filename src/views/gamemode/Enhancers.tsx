@@ -443,16 +443,6 @@ export function Enhancers({
           );
         })}
       </ul>
-      <Toggle
-        label="Auto-boost when a library game starts"
-        description={
-          unavailable ||
-          `Starts a library game's mode when it launches, and ends it when the game exits, even with the window closed to the tray. Turn it off per game in the library.${status?.watching ? " Watching now." : ""}`
-        }
-        checked={config.autoBoost}
-        disabled={pending || !!unavailable}
-        onChange={(v) => void save({ autoBoost: v })}
-      />
     </div>
   );
 }

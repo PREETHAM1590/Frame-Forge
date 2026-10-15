@@ -162,6 +162,8 @@ async function openGameMode() {
   await screen.findByText("Your setup, in focus.");
   fireEvent.click(screen.getByRole("button", { name: "Game Mode" }));
   await screen.findByRole("heading", { name: "Game Mode", level: 1 });
+  // The advanced sections start collapsed; these tests exercise what is inside them.
+  document.querySelectorAll("details").forEach((d) => (d.open = true));
 }
 describe("I-3: a stuck launch setting can be forgotten", () => {
   it.each(["recovery-needed", "failed", "conflict"])(
@@ -432,7 +434,7 @@ describe("Game Bar capture blocked by policy", () => {
     const card = await screen.findByRole("article", {
       name: "Balanced on this PC",
     });
-    card.querySelectorAll("details").forEach((d) => (d.open = true));
+    document.querySelectorAll("details").forEach((d) => (d.open = true));
     await within(card).findByText("already off by policy");
     expect(within(card).queryByText("unavailable")).toBeNull();
     expect(within(card).queryByText("unsupported")).toBeNull();

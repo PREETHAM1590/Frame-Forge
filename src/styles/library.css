@@ -28,64 +28,46 @@
 }
 .lib-scan p {
   margin: 0 0 var(--sp-3);
-  font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
 .game-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-3);
 }
 .game-tile {
   background: var(--c-cell);
   border: var(--bw) solid var(--c-border);
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
   min-width: 0;
   transition: background var(--dur-base) var(--ease-out);
 }
 .game-tile:hover {
   background: var(--c-container);
 }
-.game-tile .game-art {
-  aspect-ratio: 2.4;
-  background: var(--c-canvas);
-  border-bottom: var(--bw) solid var(--c-border);
-}
 .game-tile .game-content {
-  padding: var(--sp-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
   flex: 1;
+  min-width: 0;
+  padding: 0;
 }
-.game-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-}
-.game-tile h2 {
-  margin: var(--sp-1) 0 0;
+.game-tile .game-content h2 {
+  margin: 0;
   font-size: var(--fs-md);
-  text-transform: uppercase;
   overflow-wrap: anywhere;
 }
 .game-tile .game-content p {
-  margin: 0;
-  font-size: var(--fs-xs);
-}
-.game-path {
-  font-family: var(--font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-sm);
 }
 .game-tile .card-bottom {
-  margin-top: auto;
-  padding-top: var(--sp-3);
+  margin-top: 0;
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: var(--sp-2);
+  flex: none;
 }
 .removed-games {
   margin-top: var(--sp-5);

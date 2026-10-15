@@ -19,12 +19,16 @@ export function HealthCard({
   return (
     <Panel className="health-card" aria-label="PC health">
       <div className="health-card-head">
-        <span className="label">
-          <HeartPulse size={13} /> PC health
-        </span>
+        <h2>
+          <HeartPulse size={18} /> PC health
+        </h2>
         {report && (
-          <strong aria-label={`Health score ${report.score} of 100`}>
-            {report.score} / 100
+          <strong
+            className="hc-score"
+            aria-label={`Health score ${report.score} of 100`}
+          >
+            {report.score}
+            <span> / 100</span>
           </strong>
         )}
       </div>
@@ -43,8 +47,11 @@ export function HealthCard({
           <ol aria-label="Top issues">
             {top.map((c) => (
               <li key={c.id}>
-                <StatusBadge status={c.status} /> <strong>{c.title}</strong>{" "}
-                <span className="muted">{c.summary}</span>
+                <StatusBadge status={c.status} />
+                <span>
+                  <strong>{c.title}</strong>{" "}
+                  <span className="muted">{c.summary}</span>
+                </span>
               </li>
             ))}
           </ol>

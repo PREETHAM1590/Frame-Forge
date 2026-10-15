@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { Monitor } from "lucide-react";
-import { LinkButton, formatTime } from "../components/ui";
 import { request } from "../api";
 import type { RestoreStatus } from "../../shared/contracts";
 import { catalogue, securityIds } from "../../shared/catalogue";
@@ -8,13 +6,10 @@ import type { ViewProps } from "../types";
 import { Hero } from "./dashboard/Hero";
 import type { DashboardState } from "./dashboard/Hero";
 import { Alerts } from "./dashboard/Alerts";
-import { BoostPanel } from "./dashboard/BoostPanel";
 import { Matrix } from "./dashboard/Matrix";
 import { QuickActions } from "./dashboard/QuickActions";
 import { RecentActivity } from "./dashboard/RecentActivity";
 import { HealthCard } from "./dashboard/HealthCard";
-
-const cap = (m: string) => m.charAt(0).toUpperCase() + m.slice(1);
 
 export function Dashboard({
   data,
@@ -96,19 +91,7 @@ export function Dashboard({
         : "nominal";
   return (
     <div className="dashboard">
-      <Hero
-        state={state}
-        modeLabel={cap(data.state.booster.mode)}
-        autoBoost={data.state.booster.autoBoost}
-        source={
-          h.source === "demo"
-            ? "Demo hardware"
-            : h.source === "windows"
-              ? "Windows readings"
-              : "Partial readings"
-        }
-        sourceTone={h.source === "demo" ? "amber" : "cyan"}
-      />
+      <Hero state={state} data={data} onOpen={() => navigate("Game Mode")} />
       <Alerts
         loweredNames={loweredNames}
         stoppedNote={stoppedNote}
@@ -117,12 +100,11 @@ export function Dashboard({
         busy={pending || restoring}
         onRestoreSecurity={() => void restoreSecurity()}
       />
-      <div className="dash-main">
-        <BoostPanel data={data} onOpen={() => navigate("Game Mode")} />
-        <Matrix h={h} />
+      <div className="dash-pair">
+        <HealthCard desktop={data.mode === "desktop"} navigate={navigate} />
+        <Matrix h={h} onDetails={() => navigate("System")} />
       </div>
-      <HealthCard desktop={data.mode === "desktop"} navigate={navigate} />
-      <div className="dash-lower">
+      <div className="dash-pair">
         <QuickActions
           data={data}
           restore={restore}
@@ -137,16 +119,6 @@ export function Dashboard({
           activity={data.activity}
           onViewAll={() => navigate("Activity")}
         />
-      </div>
-      <div className="system-strip">
-        <span>
-          <Monitor size={16} />
-          {h.os || "Windows version unavailable"}
-        </span>
-        <span>Read {formatTime(h.collectedAt)}</span>
-        <LinkButton onClick={() => navigate("System")}>
-          System details
-        </LinkButton>
       </div>
     </div>
   );

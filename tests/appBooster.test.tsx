@@ -204,10 +204,10 @@ describe("booster state across the app", () => {
     expect(
       await screen.findByText("Test Game: Performance mode, active"),
     ).toBeVisible();
-    // The Dashboard card links to Game Mode.
+    // The Dashboard hero links to Game Mode.
     fireEvent.click(
       await screen.findByRole("button", {
-        name: /Game Mode.*Idle|Game Mode.*Test Game/,
+        name: /Open (session in )?Game Mode/,
       }),
     );
     expect(

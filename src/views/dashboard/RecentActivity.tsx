@@ -17,14 +17,14 @@ export function RecentActivity({
   onViewAll: () => void;
 }) {
   return (
-    <section>
+    <section className="dash-card">
       <SectionHeader
         title="Recent activity"
         aside={<LinkButton onClick={onViewAll}>View all</LinkButton>}
       />
       {activity.length ? (
         <div className="recent-list stagger">
-          {activity.slice(0, 5).map((a) => (
+          {activity.slice(0, 4).map((a) => (
             <div key={a.id}>
               <ActivityIcon size={17} />
               <div>

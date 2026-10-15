@@ -11,7 +11,6 @@ import {
 import {
   PageTitle,
   Button,
-  Badge,
   Empty,
   Modal,
   Panel,
@@ -85,7 +84,7 @@ export function Games({
     <>
       <PageTitle
         title="Game library"
-        subtitle="Your local games and their booster modes."
+        subtitle="Games Frameforge looks after. Open one to change its boost mode or see settings for your PC."
         action={
           <Button
             variant="primary"
@@ -212,50 +211,39 @@ export function Games({
         <div className="game-grid stagger">
           {games.map((g) => (
             <article className="game-tile" key={g.id}>
-              <div className="game-art">
-                <GameIcon game={g} size={64} />
-              </div>
+              <GameIcon game={g} size={56} />
               <div className="game-content">
-                <div className="game-badges">
-                  <Badge tone="cyan">{sourceLabels[g.source]}</Badge>
-                  {g.boostMode !== "global" && (
-                    <Badge tone="lime">{modeNames[g.boostMode]}</Badge>
-                  )}
-                </div>
                 <h2>{g.name}</h2>
-                <p className="muted game-path">
-                  Booster: {modeNames[g.boostMode]}
+                <p className="muted" title={g.path}>
+                  {sourceLabels[g.source]} · Booster: {modeNames[g.boostMode]}
                 </p>
-                <p className="muted game-path" title={g.path}>
-                  {g.path}
-                </p>
-                <div className="card-bottom">
-                  <button
-                    className="icon-button"
-                    title={
-                      data.boost.session?.gameId === g.id
-                        ? "Stop Game Mode for this game before removing it."
-                        : "Remove game"
-                    }
-                    aria-label={`Remove ${g.name}`}
-                    disabled={data.boost.session?.gameId === g.id}
-                    onClick={() => setRemove(g)}
-                  >
-                    <Trash2 size={17} />
-                  </button>
-                  <Button
-                    onClick={() => {
-                      setSelected(g);
-                      setTab("details");
-                      setBoostMode(g.boostMode);
-                      setAutoBoost(g.autoBoost !== false);
-                      setNotes(g.notes);
-                    }}
-                  >
-                    Game details
-                    <ArrowUpRight size={16} />
-                  </Button>
-                </div>
+              </div>
+              <div className="card-bottom">
+                <button
+                  className="icon-button"
+                  title={
+                    data.boost.session?.gameId === g.id
+                      ? "Stop Game Mode for this game before removing it."
+                      : "Remove game"
+                  }
+                  aria-label={`Remove ${g.name}`}
+                  disabled={data.boost.session?.gameId === g.id}
+                  onClick={() => setRemove(g)}
+                >
+                  <Trash2 size={17} />
+                </button>
+                <Button
+                  onClick={() => {
+                    setSelected(g);
+                    setTab("details");
+                    setBoostMode(g.boostMode);
+                    setAutoBoost(g.autoBoost !== false);
+                    setNotes(g.notes);
+                  }}
+                >
+                  Game details
+                  <ArrowUpRight size={16} />
+                </Button>
               </div>
             </article>
           ))}
@@ -316,11 +304,9 @@ export function Games({
             <p className="setting-path">{selected.path}</p>
           </div>
           <p className="muted">
-            {selected.executablePath
-              ? `Executable: ${selected.executablePath}`
-              : "Matched by folder"}
+            {sourceLabels[selected.source]} ·{" "}
+            <span>{selected.executablePath ?? "Matched by folder"}</span>
           </p>
-          <p className="muted">Source: {sourceLabels[selected.source]}</p>
           <div className="tabs" role="group" aria-label="Game drawer sections">
             {(
               [
@@ -341,12 +327,6 @@ export function Games({
           </div>
           {tab === "recommended" && (
             <RecommendedSettings game={selected} hardware={data.hardware} />
-          )}
-          {tab === "details" && (
-            <>
-              <FpsHistory gameId={selected.id} />
-              <SessionHistory gameId={selected.id} />
-            </>
           )}
           <form
             hidden={tab !== "details"}
@@ -398,6 +378,8 @@ export function Games({
             <LinkButton onClick={() => navigate("Game Mode")}>
               Launch settings for this game
             </LinkButton>
+            <FpsHistory gameId={selected.id} />
+            <SessionHistory gameId={selected.id} />
             <div className="dialog-actions">
               <Button
                 type="button"
