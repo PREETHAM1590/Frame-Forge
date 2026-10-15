@@ -153,6 +153,7 @@ export const capabilitiesUnavailable = (detail: string): BoostCapabilities => ({
       "lowerBackground",
       "suspendBackground",
       "closeBackground",
+      "freeMemory",
       "timerResolution",
       "standbyPurge",
       "pauseServices",

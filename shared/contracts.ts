@@ -87,6 +87,10 @@ export const SettingsSchema = z
     keepRunning: z.boolean().default(true),
     /** Let auto-boost open a Windows administrator prompt in the background. Off: those steps are skipped. */
     autoBoostAdmin: z.boolean().default(false),
+    /** Boost start clean-up (close the picked apps, trim background memory). Missing means on. */
+    boostCleanup: z.boolean().optional(),
+    /** Reopen the apps the clean-up closed once the boost ends. Missing means off. */
+    relaunchClosed: z.boolean().optional(),
     /** What closing the window does: ask once (default), minimize to the tray, or quit. */
     closeAction: z.enum(["ask", "tray", "quit"]).default("ask"),
     /** Global hotkeys (registered by the main process, work from the tray). */
@@ -174,7 +178,7 @@ export const BackgroundListSchema = z
             (image) => !isProtectedImage(image),
             "Protected system, security and anti-cheat processes cannot be changed.",
           ),
-        action: z.enum(["lower", "suspend", "close"]),
+        action: z.enum(["lower", "suspend", "close", "end"]),
       })
       .strict(),
   )
@@ -187,6 +191,7 @@ export const MechanismId = z.enum([
   "lowerBackground",
   "suspendBackground",
   "closeBackground",
+  "freeMemory",
   "timerResolution",
   "standbyPurge",
   "pauseServices",
@@ -2084,6 +2089,8 @@ export const CapturedSchema = z
     setting: z.enum(["cpmincores", "cpmincores1", "usbsuspend"]).optional(),
     /** Prior and applied lists: paused service names, or CPU set ids (smartCores). */
     items: z.array(z.string().max(64)).max(256).optional(),
+    /** Full path of an app the clean-up closed, to reopen it afterwards when the person asked for that. */
+    launch: z.string().max(520).optional(),
     appliedItems: z.array(z.string().max(64)).max(256).optional(),
     /** Current-user registry values written by gameBarCapture. */
     regValues: z.array(CapturedRegValueSchema).min(1).max(8).optional(),

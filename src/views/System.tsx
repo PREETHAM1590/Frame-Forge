@@ -227,6 +227,20 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           onChange={(autoBoostAdmin) => update({ autoBoostAdmin })}
         />
         <Toggle
+          label="Clean up when a boost starts"
+          description="Close the apps you picked and trim the memory big background programs hold, before every boost."
+          checked={settings.boostCleanup !== false}
+          disabled={pending}
+          onChange={(boostCleanup) => update({ boostCleanup })}
+        />
+        <Toggle
+          label="Reopen closed apps after the boost"
+          description="Starts the apps the clean-up closed once the boost ends. Their old windows and tabs are not restored. Off by default."
+          checked={settings.relaunchClosed === true}
+          disabled={pending}
+          onChange={(relaunchClosed) => update({ relaunchClosed })}
+        />
+        <Toggle
           label="In-app notifications"
           description="Show success notifications for completed app actions. Errors are always shown."
           checked={settings.notifications}

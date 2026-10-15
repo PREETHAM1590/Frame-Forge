@@ -226,6 +226,7 @@ const mechanismNames: Record<string, string> = {
   lowerBackground: "lower background apps",
   suspendBackground: "pause background apps",
   closeBackground: "close background apps",
+  freeMemory: "free memory",
   timerResolution: "finer timer",
   pauseServices: "pause update and telemetry services",
   smartCores: "smart core targeting",

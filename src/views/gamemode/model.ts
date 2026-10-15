@@ -47,6 +47,7 @@ export const labels: Record<MechanismId, string> = {
   lowerBackground: "Lower background apps",
   suspendBackground: "Suspend background apps",
   closeBackground: "Close background apps",
+  freeMemory: "Free memory",
   timerResolution: "High timer resolution",
   standbyPurge: "Standby list purge",
   pauseServices: "Pause Windows services",

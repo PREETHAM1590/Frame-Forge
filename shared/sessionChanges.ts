@@ -42,6 +42,10 @@ const skipReasons: Record<string, string> = {
   policy: "already off by Windows policy",
   "admin-not-requested": "administrator approval not requested",
   managed: "managed by an optimization",
+  "never-touch":
+    "protected app: audio, voice chat, input, security or launcher",
+  "still-open": "the app did not close",
+  "no-change": "nothing measurable to free",
 };
 
 /** "from X to Y" or "X -> Y" style wording in a helper detail. */
@@ -161,6 +165,21 @@ export function summarizeSession(
       : failed
         ? `Nothing changed${bad}.`
         : "Nothing changed: this PC was already configured.";
+  // The start clean-up in a few words for the tray: apps closed and what memory really did.
+  const closed = items
+    .filter((i) => i.id === "closeBackground" && i.kind === "applied")
+    .reduce((n, i) => n + 1 + i.more, 0);
+  const memory = items.find((i) => i.id === "freeMemory");
+  const cleanup = [
+    closed ? `Closed ${plural(closed, "app")}.` : "",
+    memory?.kind === "applied"
+      ? (/^Freed [\d.]+ GB/.exec(memory.detail)?.[0] ?? "") + "."
+      : memory?.kind === "already"
+        ? "Memory was already fine."
+        : "",
+  ]
+    .filter((x) => x.length > 1)
+    .join(" ");
   return {
     items,
     restoreIssues,
@@ -171,6 +190,6 @@ export function summarizeSession(
     pending,
     material,
     headline,
-    tray,
+    tray: cleanup ? `${tray} ${cleanup}` : tray,
   };
 }
