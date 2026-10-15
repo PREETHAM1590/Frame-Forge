@@ -1,0 +1,247 @@
+/* PC Health Check, Dashboard health card, Smart mode and the apps-to-close list. Tokens only. */
+.health {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.health-summary-panel {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--sp-5);
+  align-items: center;
+}
+.health-score {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-family: var(--font-display);
+}
+.health-score strong {
+  font-size: var(--fs-3xl);
+  line-height: 1;
+  color: var(--c-primary);
+}
+.health-score span {
+  color: var(--c-muted);
+  font-size: var(--fs-md);
+}
+.health-top {
+  list-style: none;
+  margin: var(--sp-2) 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.health-filter {
+  display: flex;
+  justify-content: flex-end;
+}
+.health-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
+  gap: var(--sp-3);
+}
+.health-check {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: var(--bw) solid var(--c-border);
+  border-left: var(--bw-strong) solid var(--c-border-strong);
+  background: var(--c-cell);
+}
+.health-check.bad {
+  border-left-color: var(--c-error);
+}
+.health-check.warn {
+  border-left-color: var(--c-caution);
+}
+.health-check.good {
+  border-left-color: var(--c-primary);
+}
+.health-check header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.health-check h3 {
+  font-size: var(--fs-base);
+  text-transform: uppercase;
+  margin: 0;
+}
+.health-summary {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.health-check dl,
+.health-diff {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+.health-check dt,
+.health-diff dt {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--c-dim);
+  margin-top: var(--sp-2);
+}
+.health-check dd,
+.health-diff dd {
+  margin: 0;
+  color: var(--c-muted);
+  overflow-wrap: anywhere;
+}
+.health-steps {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-5);
+  font-size: var(--fs-sm);
+  color: var(--c-muted);
+}
+.health-check .button {
+  align-self: flex-start;
+  margin-top: auto;
+}
+/* Dashboard card */
+.health-card {
+  display: grid;
+  gap: var(--sp-3);
+}
+.health-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.health-card ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+/* Smart mode */
+.smart-panel {
+  display: grid;
+  gap: var(--sp-3);
+}
+.smart-panel h2,
+.smart-panel h3 {
+  margin: 0;
+}
+.smart-panel ul {
+  margin: 0;
+  padding-left: var(--sp-5);
+  font-size: var(--fs-sm);
+  color: var(--c-muted);
+}
+.smart-progress {
+  height: 6px;
+  background: var(--c-container);
+  border: var(--bw) solid var(--c-border);
+}
+.smart-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--c-primary);
+  transition: width var(--dur-meter) var(--ease-out);
+}
+.smart-verdict {
+  border-left: var(--bw-strong) solid var(--c-primary);
+  padding-left: var(--sp-3);
+}
+.smart-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+/* Apps to close or pause while gaming */
+.apps {
+  display: grid;
+  gap: var(--sp-3);
+}
+.apps-totals {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--c-muted);
+}
+.apps-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: var(--bw) solid var(--c-border);
+  max-height: 480px;
+  overflow: auto;
+}
+.apps-row {
+  display: grid;
+  grid-template-columns: auto 36px minmax(0, 1fr) auto auto;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: var(--bw) solid var(--c-border);
+  font-size: var(--fs-sm);
+}
+.apps-row:last-child {
+  border-bottom: 0;
+}
+.apps-row.selected {
+  background: var(--c-container);
+}
+.app-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+.app-icon.placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-container);
+  border: var(--bw) solid var(--c-border);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--c-primary);
+}
+.apps-name {
+  min-width: 0;
+}
+.apps-name strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.apps-name small {
+  display: block;
+  color: var(--c-dim);
+  font-size: var(--fs-xs);
+}
+.apps-usage {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--c-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .health-summary-panel {
+    grid-template-columns: 1fr;
+  }
+  .apps-row {
+    grid-template-columns: auto 32px minmax(0, 1fr);
+  }
+  .apps-row > .apps-usage,
+  .apps-row > select {
+    grid-column: 3;
+    text-align: left;
+  }
+}

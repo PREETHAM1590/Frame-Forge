@@ -14,6 +14,7 @@ import {
   ChevronRight,
   RefreshCw,
   AlertTriangle,
+  HeartPulse,
 } from "lucide-react";
 import { onEvent, request } from "./api";
 import { UpdateCard } from "./components/UpdatePanel";
@@ -57,6 +58,9 @@ const Settings = lazy(() =>
 const Monitor = lazy(() =>
   import("./views/Monitor").then((m) => ({ default: m.Monitor })),
 );
+const HealthCheck = lazy(() =>
+  import("./views/HealthCheck").then((m) => ({ default: m.HealthCheck })),
+);
 // These can sit behind a Windows administrator prompt for minutes, so they must not lock the rest of the app.
 const elevatedMethods: ReadonlySet<Method> = new Set([
   "createRestorePoint",
@@ -86,6 +90,12 @@ const navigation: readonly RailItem<Page>[] = [
   { page: "Activity", label: "Activity", icon: History, child: true },
   { page: "System", label: "System", icon: Cpu, index: "06" },
   { page: "Monitor", label: "Monitor", icon: ActivityIcon, index: "07" },
+  {
+    page: "Health Check",
+    label: "Health Check",
+    icon: HeartPulse,
+    index: "08",
+  },
 ];
 const settingsItem: RailItem<Page> = {
   page: "Settings",
@@ -299,6 +309,7 @@ export default function App() {
     "Restore & backups": <Backups {...props} />,
     System: <System {...props} />,
     Monitor: <Monitor {...props} />,
+    "Health Check": <HealthCheck {...props} />,
     Activity: <ActivityLog {...props} />,
     Settings: <Settings {...props} />,
   };

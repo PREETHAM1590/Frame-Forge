@@ -77,7 +77,12 @@ export function classify(
   const flags: SmartFlag[] = [];
   const enough = samples.length >= minSamples;
   if (!samples.length)
-    return { kind: "unknown", flags, reasons: ["No measurements yet."], enough };
+    return {
+      kind: "unknown",
+      flags,
+      reasons: ["No measurements yet."],
+      enough,
+    };
   const cpu = mean(samples.map((s) => s.cpuTotal));
   const core = mean(samples.map((s) => s.maxCore));
   const gpu = mean(samples.map((s) => s.gpu3d));
@@ -148,7 +153,10 @@ export function classify(
   }
 
   let kind: BottleneckKind;
-  if (heldBack && (thermalReasons / samples.length >= 0.4 || (clock ?? 100) < 60)) {
+  if (
+    heldBack &&
+    (thermalReasons / samples.length >= 0.4 || (clock ?? 100) < 60)
+  ) {
     kind = "thermal";
   } else if (gpu >= 90) {
     kind = "gpu-bound";
@@ -161,10 +169,7 @@ export function classify(
   } else if (flags.includes("memory-pressure") && gpu < 90) {
     kind = "memory";
     reasons.push("Neither chip is the limit, but memory is nearly full.");
-  } else if (
-    gpu >= 85 &&
-    !cpuHigh
-  ) {
+  } else if (gpu >= 85 && !cpuHigh) {
     kind = "gpu-bound";
     reasons.push("The GPU is close to its limit and the CPU has room.");
   } else if (
@@ -335,7 +340,9 @@ export function plan(
   }
   if (has("memory-pressure")) {
     background();
-    advice.push("Memory is tight: closing apps you do not need helps more than any setting.");
+    advice.push(
+      "Memory is tight: closing apps you do not need helps more than any setting.",
+    );
     if (ctx.gameWorkingSetGrowing) {
       m.standbyPurge = true;
       why.push(
@@ -345,7 +352,9 @@ export function plan(
   }
   if (has("background-load")) {
     background();
-    why.push("Background programs use noticeable CPU, so they are eased for the session.");
+    why.push(
+      "Background programs use noticeable CPU, so they are eased for the session.",
+    );
   }
   if (has("thermal-limited") && c.kind !== "thermal")
     advice.push(
@@ -412,7 +421,9 @@ export function fingerprintOf(parts: {
 }): string {
   return [
     parts.cpu.trim(),
-    ...parts.gpus.map((g) => `${g.name.trim()} ${g.driver ?? ""}`.trim()).sort(),
+    ...parts.gpus
+      .map((g) => `${g.name.trim()} ${g.driver ?? ""}`.trim())
+      .sort(),
     `${Math.round(parts.ramBytes / 1024 ** 3)}GB x${parts.sticks} @${parts.ramMTs ?? "?"}`,
   ]
     .join(" | ")

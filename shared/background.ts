@@ -32,7 +32,9 @@ export interface Suggestion {
 const imageOk = /^[\w .()-]{1,64}\.exe$/i;
 export const nameOf = (image: string) => image.replace(/\.exe$/i, "");
 
-export function groupProcesses(processes: readonly RunningProcess[]): AppGroup[] {
+export function groupProcesses(
+  processes: readonly RunningProcess[],
+): AppGroup[] {
   const map = new Map<string, AppGroup>();
   for (const p of processes) {
     const key = p.image.toLowerCase();
@@ -154,9 +156,10 @@ export function classifyApp(
   const helperOfLauncher =
     match?.[2] === "launcher web helper" &&
     ctx.gameSource &&
-    new RegExp(ctx.gameSource === "battlenet" ? "battle" : ctx.gameSource, "i").test(
-      name,
-    );
+    new RegExp(
+      ctx.gameSource === "battlenet" ? "battle" : ctx.gameSource,
+      "i",
+    ).test(name);
   if (blocked && match?.[2] !== "launcher web helper")
     return { suggested: false, ...base, reason: blocked, blocked };
   if (helperOfLauncher)
@@ -183,7 +186,9 @@ export function classifyApp(
     suggested: heavy,
     action,
     kind,
-    reason: heavy ? why : `${why} It is small right now, so it is not suggested.`,
+    reason: heavy
+      ? why
+      : `${why} It is small right now, so it is not suggested.`,
   };
 }
 
@@ -262,7 +267,10 @@ export function effectiveBackground(
   config: Pick<BoosterConfig, "background" | "backgroundChosen">,
   processes: readonly RunningProcess[],
   ctx: { gameImage?: string; gameSource?: Game["source"] } = {},
-): { rules: BoosterConfig["background"]; source: "game" | "saved" | "suggested" } {
+): {
+  rules: BoosterConfig["background"];
+  source: "game" | "saved" | "suggested";
+} {
   if (game?.background) return { rules: game.background, source: "game" };
   if (config.backgroundChosen || config.background.length)
     return { rules: config.background, source: "saved" };

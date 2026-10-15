@@ -144,7 +144,8 @@ function plan(f: HealthFacts): HealthCheck {
       ...base,
       status: "good",
       summary: name,
-      explanation: "A performance plan keeps the CPU from idling down mid-game.",
+      explanation:
+        "A performance plan keeps the CPU from idling down mid-game.",
       impact: "No action needed.",
     });
   if (/power saver/i.test(name))
@@ -241,7 +242,11 @@ function gpuRouting(f: HealthFacts, ctx: HealthContext): HealthCheck {
         "This PC has an integrated and a dedicated GPU. Windows picks one per game, and a wrong pick can leave a game on the weaker one.",
       impact:
         "If a game runs on the integrated GPU the loss is typically large.",
-      fix: { kind: "settings", page: "graphics", label: "Open graphics settings" },
+      fix: {
+        kind: "settings",
+        page: "graphics",
+        label: "Open graphics settings",
+      },
     });
   const missing = withExe.filter((g) => {
     const p = f.gpuPreferences.find((x) => x.gameId === g.id)?.preference;
@@ -272,7 +277,9 @@ function gpuRouting(f: HealthFacts, ctx: HealthContext): HealthCheck {
     },
     steps: missing
       .slice(1)
-      .map((g) => `Do the same for ${g.name} (Game library > Launch settings).`),
+      .map(
+        (g) => `Do the same for ${g.name} (Game library > Launch settings).`,
+      ),
   });
 }
 
@@ -497,7 +504,11 @@ function thermals(f: HealthFacts): HealthCheck {
       : null,
   ].filter(Boolean);
   const status: HealthStatus =
-    hot || thermal.length ? "warn" : nv.throttleReasons.length ? "warn" : "good";
+    hot || thermal.length
+      ? "warn"
+      : nv.throttleReasons.length
+        ? "warn"
+        : "good";
   return finish({
     ...base,
     status,
@@ -540,7 +551,9 @@ function storage(f: HealthFacts, ctx: HealthContext): HealthCheck {
   const gameDrives = new Set(
     ctx.games.map((g) => driveOf(g.executablePath)).filter(Boolean),
   );
-  const tight = f.drives.filter((d) => pct(d) < 15 && (d.system || gameDrives.has(d.name.toUpperCase())));
+  const tight = f.drives.filter(
+    (d) => pct(d) < 15 && (d.system || gameDrives.has(d.name.toUpperCase())),
+  );
   const hdd = f.drives.filter(
     (d) => d.mediaType === "hdd" && gameDrives.has(d.name.toUpperCase()),
   );
@@ -553,7 +566,8 @@ function storage(f: HealthFacts, ctx: HealthContext): HealthCheck {
       impact: "Unknown.",
     });
   const worst = tight.reduce((m, d) => Math.min(m, pct(d)), 100);
-  const status: HealthStatus = worst < 10 ? "bad" : tight.length || hdd.length ? "warn" : "good";
+  const status: HealthStatus =
+    worst < 10 ? "bad" : tight.length || hdd.length ? "warn" : "good";
   const lines = [
     ...tight.map(
       (d) => `${d.name} has ${gb(d.freeBytes)} free (${Math.round(pct(d))}%)`,
@@ -596,7 +610,8 @@ function ramPressure(f: HealthFacts): HealthCheck {
     .filter((p) => !/^frameforge/i.test(p.name))
     .slice(0, 4)
     .map((p) => `${stripName(p.name)} ${gb(p.workingSetBytes)}`);
-  const status: HealthStatus = used >= 90 ? "bad" : used >= 80 ? "warn" : "good";
+  const status: HealthStatus =
+    used >= 90 ? "bad" : used >= 80 ? "warn" : "good";
   return finish({
     id: "ram-pressure",
     title: "Memory use right now",
@@ -667,7 +682,11 @@ function gameMode(f: HealthFacts): HealthCheck {
     explanation:
       "Game Mode asks Windows to favour the game. Reported effects are small and differ between PCs, and can be negative on some. Frameforge's Smart mode never changes it.",
     impact: "Inform only.",
-    fix: { kind: "settings", page: "gameMode", label: "Open Game Mode settings" },
+    fix: {
+      kind: "settings",
+      page: "gameMode",
+      label: "Open Game Mode settings",
+    },
   });
 }
 
@@ -681,7 +700,11 @@ function hags(f: HealthFacts): HealthCheck {
     explanation:
       "HAGS moves some GPU scheduling onto the GPU. Measured effects are small (a few percent at best) and it is required for DLSS frame generation. Leave it as it is unless a game misbehaves.",
     impact: "Inform only.",
-    fix: { kind: "settings", page: "graphics", label: "Open graphics settings" },
+    fix: {
+      kind: "settings",
+      page: "graphics",
+      label: "Open graphics settings",
+    },
   });
 }
 
@@ -690,7 +713,8 @@ function vbs(f: HealthFacts): HealthCheck {
   return finish({
     id: "vbs",
     title: "Memory Integrity / VBS",
-    status: f.vbs === null && f.hvci === null ? "unknown" : on ? "warn" : "good",
+    status:
+      f.vbs === null && f.hvci === null ? "unknown" : on ? "warn" : "good",
     summary:
       f.vbs === null && f.hvci === null
         ? "Not reported"
@@ -728,9 +752,15 @@ function reboot(f: HealthFacts): HealthCheck {
     explanation: real.length
       ? "Windows has changes that finish only after a restart. Until then installers or drivers may run in a half-updated state."
       : "Nothing is waiting for a restart.",
-    impact: real.length ? "Can cause odd behaviour or background work." : "No action needed.",
+    impact: real.length
+      ? "Can cause odd behaviour or background work."
+      : "No action needed.",
     fix: real.length
-      ? { kind: "settings", page: "windowsUpdate", label: "Open Windows Update" }
+      ? {
+          kind: "settings",
+          page: "windowsUpdate",
+          label: "Open Windows Update",
+        }
       : null,
     steps: real.length ? ["Save your work and restart the PC."] : [],
   });
@@ -748,7 +778,10 @@ function startup(f: HealthFacts): HealthCheck {
       status === "good"
         ? "A modest number of startup apps."
         : "Many programs start with Windows and keep running, using memory and CPU while you play.",
-    impact: status === "good" ? "No action needed." : "Less free memory and more background work.",
+    impact:
+      status === "good"
+        ? "No action needed."
+        : "Less free memory and more background work.",
     fix:
       status === "good"
         ? null
@@ -766,7 +799,9 @@ function overlays(f: HealthFacts): HealthCheck {
     explanation: list.length
       ? "Overlays hook into games to show chat, FPS or recording tools. They can add small frame-time spikes. Frameforge does not close them, because you may be using them."
       : "No common overlay programs are running.",
-    impact: list.length ? "Usually small; worth knowing about if you see stutter." : "No action needed.",
+    impact: list.length
+      ? "Usually small; worth knowing about if you see stutter."
+      : "No action needed.",
     steps: list.length
       ? [
           "Turn off the overlay in its own settings if you do not use it (Discord: User settings > Game overlay; Steam: Settings > In Game; NVIDIA App: Settings > In-game overlay).",
@@ -786,7 +821,8 @@ function abBaseline(ctx: HealthContext): HealthCheck {
     explanation: ctx.hasAbPair
       ? "You can compare the numbers on the Monitor page."
       : "Without a capture with Game Mode off and one with it on, nobody (including Frameforge) can say what helped on this PC.",
-    impact: "Honesty check: gains are only real if they show up in your own numbers.",
+    impact:
+      "Honesty check: gains are only real if they show up in your own numbers.",
     fix: ctx.hasAbPair
       ? null
       : {

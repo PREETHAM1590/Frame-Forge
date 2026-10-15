@@ -171,6 +171,14 @@ if (!app.requestSingleInstanceLock()) {
         },
         track: (event, props) => analytics.track(event, props),
         gameIcon: (game) => icons.dataUrl(game),
+        fileIcon: async (file) => {
+          try {
+            const image = await app.getFileIcon(file, { size: "normal" });
+            return image.isEmpty() ? null : image.toDataURL();
+          } catch {
+            return null;
+          }
+        },
         pruneIcons: (games) => icons.prune(games),
         startupSupported: app.isPackaged,
         setStartup: (enabled) => {
@@ -233,6 +241,21 @@ if (!app.requestSingleInstanceLock()) {
           if (window && !window.isDestroyed())
             window.webContents.send("frameforge:event", event);
           if (event.type === "boost") onBoost(event.session);
+          // A game that is not in the library: a notification that opens the window. Adding it is the user's decision there.
+          if (
+            event.type === "smart" &&
+            event.status.candidate &&
+            repo.state().settings.notifications &&
+            Notification.isSupported() &&
+            !(window?.isVisible() && window.isFocused())
+          ) {
+            const toast = new Notification({
+              title: "Frameforge",
+              body: `${event.status.candidate.name} looks like a game. Add it to your library?`,
+            });
+            toast.on("click", () => showWindow());
+            toast.show();
+          }
         },
         pickExecutable: async (game) => {
           if (!window) return null;

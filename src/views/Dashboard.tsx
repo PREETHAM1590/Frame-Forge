@@ -12,6 +12,7 @@ import { BoostPanel } from "./dashboard/BoostPanel";
 import { Matrix } from "./dashboard/Matrix";
 import { QuickActions } from "./dashboard/QuickActions";
 import { RecentActivity } from "./dashboard/RecentActivity";
+import { HealthCard } from "./dashboard/HealthCard";
 
 const cap = (m: string) => m.charAt(0).toUpperCase() + m.slice(1);
 
@@ -120,6 +121,7 @@ export function Dashboard({
         <BoostPanel data={data} onOpen={() => navigate("Game Mode")} />
         <Matrix h={h} />
       </div>
+      <HealthCard desktop={data.mode === "desktop"} navigate={navigate} />
       <div className="dash-lower">
         <QuickActions
           data={data}

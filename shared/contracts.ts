@@ -367,7 +367,7 @@ export const defaultState: AppState = {
   presets: [],
   gameMode: { active: false, gameId: null },
   booster: {
-    mode: "off",
+    mode: "smart",
     autoBoost: false,
     custom: noMechanisms,
     overrides: {},
@@ -1371,6 +1371,10 @@ export const requests = {
     .object({ confirmed: z.literal(true), dismiss: z.boolean().optional() })
     .strict(),
   runningProcesses: Empty,
+  // Icon of a running program, by image name; the main process finds the path from the last process list.
+  appIcon: z
+    .object({ image: z.string().regex(/^[\w .()-]{1,64}\.exe$/i) })
+    .strict(),
   // Diagnostics only: pings the host; nothing on the PC is changed.
   networkCheck: z
     .object({
@@ -1496,6 +1500,7 @@ export const responses = {
   boostStop: BoostSessionSchema.nullable(),
   boostRecover: BoostSessionSchema.nullable(),
   runningProcesses: z.array(RunningProcessSchema).max(500),
+  appIcon: z.string().max(400000).nullable(),
   networkCheck: NetworkCheckSchema,
   launchSettings: LaunchStatusSchema,
   launchSettingPreview: LaunchPreviewSchema,

@@ -57,6 +57,8 @@ export interface DesktopServices {
   openSettings?: (page: Request<"openSettings">["page"]) => Promise<boolean>;
   /** PNG data URL for a library game's icon, or null. */
   gameIcon?: (game: Game) => Promise<string | null>;
+  /** PNG data URL for the icon of a running program's executable (path from the last process list), or null. */
+  fileIcon?: (file: string) => Promise<string | null>;
   /** Deletes cached icons that no library game uses any more. */
   pruneIcons?: (games: Game[]) => Promise<void>;
   /** Auto-update controller; absent in dev, test mode and the browser demo. */
@@ -77,6 +79,7 @@ export class AppService {
   readonly fps: FpsService;
   readonly smart: SmartEngine;
   private finder: GameFinder | undefined;
+  private processPaths = new Map<string, string>();
   private restorePoints: RestorePointService;
   private launch: LaunchSettingsService;
   private hardware: Hardware = fallbackHardware();
@@ -142,7 +145,9 @@ export class AppService {
           (p) =>
             this.repo
               .state()
-              .games.some((g) => g.executablePath && exe(g.executablePath) === exe(p)),
+              .games.some(
+                (g) => g.executablePath && exe(g.executablePath) === exe(p),
+              ),
           (p) => this.smart.dismissed().includes(exe(p)),
         ),
         (found) => {
@@ -155,7 +160,8 @@ export class AppService {
       );
     }
     this.booster.attachSmart(this.smart, () => {
-      const on = this.platform.boostAvailable && this.repo.state().booster.autoBoost;
+      const on =
+        this.platform.boostAvailable && this.repo.state().booster.autoBoost;
       if (on) this.finder?.start();
       else this.finder?.stop();
     });
@@ -452,7 +458,20 @@ export class AppService {
         noRestoreInFlight();
         return this.booster.recover(dismiss ?? false);
       },
-      runningProcesses: async () => this.platform.backgroundProcesses(),
+      runningProcesses: async () => {
+        const list = await this.platform.backgroundProcesses();
+        // The renderer asks for icons by image name; the paths stay here.
+        this.processPaths = new Map(
+          list.flatMap((p) =>
+            p.path ? [[p.image.toLowerCase(), p.path] as const] : [],
+          ),
+        );
+        return list;
+      },
+      appIcon: async ({ image }) => {
+        const file = this.processPaths.get(image.toLowerCase());
+        return (file && (await this.desktop.fileIcon?.(file))) || null;
+      },
       launchSettings: async ({ gameId }) => this.launch.status(gameId),
       launchSettingPreview: async ({ gameId, setting, action }) =>
         this.launch.preview(gameId, setting, action),
@@ -561,7 +580,14 @@ export class AppService {
         const game = this.repo.state().games.find((g) => g.id === id);
         return (game && (await this.desktop.gameIcon?.(game))) || null;
       },
-      profile: async ({ id, profile, boostMode, autoBoost, notes }) => {
+      profile: async ({
+        id,
+        profile,
+        boostMode,
+        autoBoost,
+        notes,
+        background,
+      }) => {
         guard();
         const state = this.repo.state();
         if (!state.games.some((g) => g.id === id))
@@ -576,6 +602,12 @@ export class AppService {
                   boostMode,
                   autoBoost: autoBoost ?? g.autoBoost,
                   notes,
+                  // null removes the per-game list; missing leaves it as it is.
+                  ...(background === null
+                    ? { background: undefined }
+                    : background
+                      ? { background }
+                      : {}),
                 }
               : g,
           ),
@@ -652,7 +684,10 @@ export class AppService {
             boostMode: "smart",
           };
           this.repo.updateState({ ...state, games: [...state.games, game] });
-          this.log("Game added", `${found.name} was added to the library (Smart mode).`);
+          this.log(
+            "Game added",
+            `${found.name} was added to the library (Smart mode).`,
+          );
         }
         this.booster.configure();
         return this.smart.status();

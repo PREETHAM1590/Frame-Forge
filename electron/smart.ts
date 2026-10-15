@@ -64,13 +64,20 @@ const smiPath = () =>
       "NVSMI",
       "nvidia-smi.exe",
     ),
-    path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "nvidia-smi.exe"),
+    path.join(
+      process.env.SystemRoot ?? "C:\\Windows",
+      "System32",
+      "nvidia-smi.exe",
+    ),
   ].find((p) => existsSync(p));
 function runSmi(exe: string, field: string): Promise<Smi> {
   return new Promise((resolve) => {
     execFile(
       exe,
-      [`--query-gpu=clocks.gr,clocks.max.gr,temperature.gpu,${field}`, "--format=csv,noheader,nounits"],
+      [
+        `--query-gpu=clocks.gr,clocks.max.gr,temperature.gpu,${field}`,
+        "--format=csv,noheader,nounits",
+      ],
       { timeout: 4000, windowsHide: true },
       (error, stdout) => resolve(error ? null : parseSmi(stdout)),
     );
@@ -110,7 +117,9 @@ export function toSmartSample(
     gpu3d: busy?.engine3d ?? 0,
     // The integrated GPU shares system memory: little dedicated memory next to a real dedicated card.
     busyAdapterIntegrated:
-      !!busy && busy.dedicatedBytes < 1.5 * 1024 ** 3 && biggest >= 2 * 1024 ** 3,
+      !!busy &&
+      busy.dedicatedBytes < 1.5 * 1024 ** 3 &&
+      biggest >= 2 * 1024 ** 3,
     memUsedPercent:
       ms.memory.totalBytes > 0
         ? (1 - ms.memory.availableBytes / ms.memory.totalBytes) * 100
@@ -147,7 +156,9 @@ export class SmartEngine {
     private platform: Platform,
     private hooks: SmartHooks,
   ) {
-    setBottleneckSource((gameId) => this.profile(gameId)?.classification ?? null);
+    setBottleneckSource(
+      (gameId) => this.profile(gameId)?.classification ?? null,
+    );
   }
   private now() {
     return (this.hooks.now ?? Date.now)();
@@ -177,7 +188,10 @@ export class SmartEngine {
     return this.all()[gameId] ?? null;
   }
   private save(profile: SmartProfile) {
-    this.repo.setMeta(profilesKey, { ...this.all(), [profile.gameId]: profile });
+    this.repo.setMeta(profilesKey, {
+      ...this.all(),
+      [profile.gameId]: profile,
+    });
   }
   forget(gameId: string) {
     const all = this.all();
@@ -198,7 +212,10 @@ export class SmartEngine {
             gameName: o.game.name.slice(0, 80),
             elapsedSeconds: Math.min(
               this.seconds,
-              Math.max(o.samples.length, Math.floor((this.now() - o.startedAt) / 1000)),
+              Math.max(
+                o.samples.length,
+                Math.floor((this.now() - o.startedAt) / 1000),
+              ),
             ),
             totalSeconds: this.seconds,
           }
@@ -224,7 +241,10 @@ export class SmartEngine {
       if (facts) {
         value = fingerprintOf({
           cpu: facts.cpuName,
-          gpus: facts.gpus.map((g) => ({ name: g.name, driver: g.driverVersion })),
+          gpus: facts.gpus.map((g) => ({
+            name: g.name,
+            driver: g.driverVersion,
+          })),
           ramBytes: facts.memory.totalBytes,
           sticks: facts.memory.sticks.length,
           ramMTs: facts.memory.sticks[0]?.configuredMTs ?? null,
@@ -245,7 +265,9 @@ export class SmartEngine {
     } catch {
       /* Without a process list the suggested set is empty; saved lists still apply. */
     }
-    const image = game.executablePath ? path.win32.basename(game.executablePath) : undefined;
+    const image = game.executablePath
+      ? path.win32.basename(game.executablePath)
+      : undefined;
     return effectiveBackground(game, config, processes, {
       gameImage: image,
       gameSource: game.source,
@@ -321,9 +343,14 @@ export class SmartEngine {
       done,
     };
     this.obs = obs;
-    this.hooks.log("Smart mode", `Watching ${game.name} for ${this.seconds} seconds to find what limits it. Nothing is changed during this time.`);
+    this.hooks.log(
+      "Smart mode",
+      `Watching ${game.name} for ${this.seconds} seconds to find what limits it. Nothing is changed during this time.`,
+    );
     this.emit();
-    const image = path.win32.basename(game.executablePath ?? target.executablePath);
+    const image = path.win32.basename(
+      game.executablePath ?? target.executablePath,
+    );
     const channel = this.platform.spawnMonitor?.() ?? null;
     obs.channel = channel;
     const readSmi = this.hooks.readSmi ?? readNvidiaSmi;
@@ -337,7 +364,12 @@ export class SmartEngine {
     void poll();
     obs.timers.push(setInterval(() => void poll(), 5000));
     // The channel is the only source of samples; if it never delivers, finish with what exists.
-    obs.timers.push(setTimeout(() => void this.finish(obs, config), (this.seconds + 30) * 1000));
+    obs.timers.push(
+      setTimeout(
+        () => void this.finish(obs, config),
+        (this.seconds + 30) * 1000,
+      ),
+    );
     for (const t of obs.timers) t.unref?.();
     if (!channel) {
       void this.finish(obs, config);
@@ -352,12 +384,18 @@ export class SmartEngine {
       this.feed(obs, parsed.data, image, config);
     });
     channel.on("exit", () => {
-      if (this.obs === obs && obs.samples.length < this.seconds) void this.finish(obs, config);
+      if (this.obs === obs && obs.samples.length < this.seconds)
+        void this.finish(obs, config);
     });
   }
 
   /** One monitor reading arrives. Exported through the class so tests can drive it without a helper. */
-  feed(obs: Observation, ms: MonitorSample, image: string, config: BoosterConfig) {
+  feed(
+    obs: Observation,
+    ms: MonitorSample,
+    image: string,
+    config: BoosterConfig,
+  ) {
     obs.samples.push(toSmartSample(ms, image, obs.smi));
     // The game is the thing being measured: stop when it is gone.
     if (obs.samples.length % 5 === 0 && !this.alive(obs.target)) {
@@ -449,12 +487,17 @@ export class SmartEngine {
   // ---- games that are not in the library ----
   dismissed(): string[] {
     const raw = this.repo.meta(dismissedKey);
-    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
+    return Array.isArray(raw)
+      ? raw.filter((x): x is string => typeof x === "string")
+      : [];
   }
   /** A game-like program was found. The person decides; nothing is added or boosted by itself. */
   offer(app: { name: string; path: string }) {
     if (this.dismissed().includes(app.path.toLowerCase())) return false;
-    this.candidate = { name: app.name.slice(0, 80), path: app.path.slice(0, 2048) };
+    this.candidate = {
+      name: app.name.slice(0, 80),
+      path: app.path.slice(0, 2048),
+    };
     this.emit();
     return true;
   }
@@ -519,7 +562,8 @@ export class CandidateTracker {
     gpu3d: number | null,
     nowMs: number,
   ): { name: string; path: string } | null {
-    const heavy = this.eligible(app) && (gpu3d ?? 0) >= (this.opts.gpuMin ?? 50);
+    const heavy =
+      this.eligible(app) && (gpu3d ?? 0) >= (this.opts.gpuMin ?? 50);
     if (!heavy || !app) {
       this.pid = 0;
       return null;
@@ -590,7 +634,10 @@ export class GameFinder {
             if (event !== "sample") return;
             const parsed = MonitorSampleSchema.safeParse(fields);
             if (!parsed.success) return;
-            const gpu = Math.max(0, ...parsed.data.gpu.adapters.map((a) => a.engine3d));
+            const gpu = Math.max(
+              0,
+              ...parsed.data.gpu.adapters.map((a) => a.engine3d),
+            );
             const hit = this.tracker.feed(this.last, gpu, Date.now());
             if (hit) this.found(hit);
           });

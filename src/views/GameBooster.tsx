@@ -19,7 +19,7 @@ import {
   type MechanismId,
 } from "../../shared/contracts";
 import type { ViewProps } from "../types";
-import { labels, modes, stateText, statusTones } from "./gamemode/model";
+import { labels, stateText, statusTones } from "./gamemode/model";
 import type { Status } from "./gamemode/model";
 import { ModeSelector } from "./gamemode/ModeSelector";
 import { ModeCards } from "./gamemode/ModeCards";
@@ -33,6 +33,8 @@ import {
   SessionPanel,
 } from "./gamemode/SessionPanel";
 import { StartBoost } from "./gamemode/StartBoost";
+import { SmartOffer, SmartPanel } from "./gamemode/SmartPanel";
+import { useSmart } from "../useSmart";
 import { HowItWorks } from "./gamemode/HowItWorks";
 
 let lastPicked = "";
@@ -45,6 +47,7 @@ export function GameMode({
   navigate,
 }: ViewProps) {
   const [status, setStatus] = useState<Status | null>(null);
+  const smart = useSmart();
   const [log, setLog] = useState<string[]>([]);
   const [outcome, setOutcome] = useState<{
     text: string;
@@ -142,8 +145,21 @@ export function GameMode({
   const save = (next: Partial<BoosterConfig>) =>
     run("boostConfig", { ...config, ...next }, "Game booster settings saved.");
   const mechanisms = effectiveMechanisms(config);
-  const modeName = (id: BoostMode) =>
-    modes.find((m) => m.id === id)?.label ?? id;
+  const saveGame = (background: BoosterConfig["background"] | null) =>
+    game
+      ? run(
+          "profile",
+          {
+            id: game.id,
+            boostMode: game.boostMode,
+            notes: game.notes,
+            background,
+          },
+          background
+            ? `Apps list saved for ${game.name}.`
+            : `${game.name} uses the all-games list again.`,
+        )
+      : Promise.resolve(undefined);
   const game = data.state.games.find((g) => g.id === gameId);
   const gameMode = game
     ? game.boostMode === "global"
@@ -235,6 +251,12 @@ export function GameMode({
           setOutcome={setOutcome}
         />
       )}
+      <SmartOffer
+        smart={smart.status}
+        setSmart={smart.set}
+        run={run}
+        pending={pending}
+      />
       <div className="gm-grid">
         <aside className="gm-side">
           <HowItWorks />
@@ -276,6 +298,17 @@ export function GameMode({
               setOutcome={setOutcome}
             />
           )}
+          {gameMode === "smart" && (
+            <SmartPanel
+              game={game}
+              settings={data.state.settings}
+              smart={smart.status}
+              setSmart={smart.set}
+              run={run}
+              pending={pending}
+              unavailable={unavailable}
+            />
+          )}
           <StartBoost
             games={data.state.games}
             game={game}
@@ -303,15 +336,18 @@ export function GameMode({
             pending={pending}
             onSelect={(mode) => void save({ mode })}
           />
-          <Disclosure title="Background apps" hint="Advanced">
+          <Disclosure
+            title="Close or pause apps while gaming"
+            hint={config.backgroundChosen ? "Your list" : "Suggested"}
+          >
             <BackgroundApps
               config={config}
-              mechanisms={mechanisms}
-              modeName={modeName}
+              game={game}
               save={save}
-              run={run}
+              saveGame={saveGame}
               pending={pending}
               unavailable={unavailable}
+              desktop={data.mode === "desktop"}
             />
           </Disclosure>
           <Disclosure title="Launch settings" hint="Advanced">

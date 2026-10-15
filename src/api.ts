@@ -267,7 +267,9 @@ async function demoDispatch(method: Method, input: unknown): Promise<unknown> {
     case "smartStatus":
       return { observing: null, profiles: [], candidate: null };
     case "healthCheck":
-      throw new Error("The PC Health Check reads this PC and requires the desktop app.");
+      throw new Error(
+        "The PC Health Check reads this PC and requires the desktop app.",
+      );
     case "boostStart":
     case "boostStop":
     case "boostRecover":

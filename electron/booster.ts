@@ -505,7 +505,9 @@ export class BoostEngine {
       throw new Error("Smart mode needs the Windows helper, which is missing.");
     if (smart.observing)
       throw Object.assign(
-        new Error("Smart mode is already watching a game. Wait for it to finish."),
+        new Error(
+          "Smart mode is already watching a game. Wait for it to finish.",
+        ),
         { logged: true },
       );
     const result = await smart.prepare(game, target, config, (decision) => {
@@ -546,7 +548,9 @@ export class BoostEngine {
       await this.exclusive(async () => {
         if (this.live || this.repo.boostSession()) return;
         // The game may have closed while it was being watched; the helper checks the identity again, this avoids a failed start.
-        const still = (await this.platform.runningGames([game]).catch(() => []))[0];
+        const still = (
+          await this.platform.runningGames([game]).catch(() => [])
+        )[0];
         if (!still || still.target.pid !== target.pid) return;
         this.smart?.used(game.id);
         await this.run(
@@ -938,7 +942,8 @@ export class BoostEngine {
   async stop(): Promise<BoostSession | null> {
     const live = this.live;
     if (!live) {
-      if (this.smart?.cancel("Stopped by you; nothing was changed.")) return null;
+      if (this.smart?.cancel("Stopped by you; nothing was changed."))
+        return null;
       return this.recover();
     }
     this.seen.add(key(live.session.target));

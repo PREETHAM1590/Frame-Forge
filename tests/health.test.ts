@@ -31,15 +31,33 @@ const healthy = (): HealthFacts => ({
     availableBytes: 20 * GB,
     usedPercent: 38,
     sticks: [
-      { capacityBytes: 16 * GB, speedMTs: 6000, configuredMTs: 6000, bank: "A", slot: "A1" },
-      { capacityBytes: 16 * GB, speedMTs: 6000, configuredMTs: 6000, bank: "B", slot: "B1" },
+      {
+        capacityBytes: 16 * GB,
+        speedMTs: 6000,
+        configuredMTs: 6000,
+        bank: "A",
+        slot: "A1",
+      },
+      {
+        capacityBytes: 16 * GB,
+        speedMTs: 6000,
+        configuredMTs: 6000,
+        bank: "B",
+        slot: "B1",
+      },
     ],
     slots: 2,
   },
   cpuName: "CPU",
   cpuPerformancePercent: 100,
   drives: [
-    { name: "C:", totalBytes: 1000 * GB, freeBytes: 500 * GB, system: true, mediaType: "ssd" },
+    {
+      name: "C:",
+      totalBytes: 1000 * GB,
+      freeBytes: 500 * GB,
+      system: true,
+      mediaType: "ssd",
+    },
   ],
   gameMode: true,
   hags: 2,
@@ -83,11 +101,24 @@ describe("health checks", () => {
 
   it("explains that the power mode slider does not apply under another plan", () => {
     const f = healthy();
-    f.powerMode = { overlay: "balanced", planGuid: "x", planName: "Frameforge High performance" };
-    expect(check(f, "power-mode").explanation).toMatch(/only applies with the Balanced plan/);
-    f.powerMode = { overlay: "best-efficiency", planGuid: "y", planName: "Balanced" };
+    f.powerMode = {
+      overlay: "balanced",
+      planGuid: "x",
+      planName: "Frameforge High performance",
+    };
+    expect(check(f, "power-mode").explanation).toMatch(
+      /only applies with the Balanced plan/,
+    );
+    f.powerMode = {
+      overlay: "best-efficiency",
+      planGuid: "y",
+      planName: "Balanced",
+    };
     expect(check(f, "power-mode").status).toBe("warn");
-    expect(check(f, "power-plan").fix).toMatchObject({ kind: "optimization", ids: ["power-plan"] });
+    expect(check(f, "power-plan").fix).toMatchObject({
+      kind: "optimization",
+      ids: ["power-plan"],
+    });
     f.powerMode.planName = "Power saver";
     expect(check(f, "power-plan").status).toBe("bad");
   });
@@ -108,13 +139,31 @@ describe("health checks", () => {
 
   it("finds a library game that is not set to the high-performance GPU on a hybrid laptop", () => {
     const f = healthy();
-    f.gpus.push({ name: "Intel(R) UHD Graphics", vendor: "intel", driverVersion: "1", driverDate: "2025-01-01", integrated: true });
-    const games = [{ id: gameId, name: "VALORANT", executablePath: "C:\\Riot\\VALORANT.exe" }];
+    f.gpus.push({
+      name: "Intel(R) UHD Graphics",
+      vendor: "intel",
+      driverVersion: "1",
+      driverDate: "2025-01-01",
+      integrated: true,
+    });
+    const games = [
+      {
+        id: gameId,
+        name: "VALORANT",
+        executablePath: "C:\\Riot\\VALORANT.exe",
+      },
+    ];
     f.gpuPreferences = [{ gameId, exe: "VALORANT.exe", preference: null }];
     const c = check(f, "gpu-routing", ctx({ games }));
     expect(c.status).toBe("bad");
-    expect(c.fix).toMatchObject({ kind: "launchSetting", gameId, setting: "gpuPreference" });
-    f.gpuPreferences = [{ gameId, exe: "VALORANT.exe", preference: "high-performance" }];
+    expect(c.fix).toMatchObject({
+      kind: "launchSetting",
+      gameId,
+      setting: "gpuPreference",
+    });
+    f.gpuPreferences = [
+      { gameId, exe: "VALORANT.exe", preference: "high-performance" },
+    ];
     expect(check(f, "gpu-routing", ctx({ games })).status).toBe("good");
     expect(check(f, "gpu-routing").status).toBe("unknown");
     expect(check(healthy(), "gpu-routing").status).toBe("good");
@@ -146,7 +195,11 @@ describe("health checks", () => {
 
   it("only advises XMP on desktops, not on laptops whose CPU limits memory speed", () => {
     const f = healthy();
-    f.memory.sticks = f.memory.sticks.map((s) => ({ ...s, speedMTs: 5600, configuredMTs: 5200 }));
+    f.memory.sticks = f.memory.sticks.map((s) => ({
+      ...s,
+      speedMTs: 5600,
+      configuredMTs: 5200,
+    }));
     expect(check(f, "ram-speed").status).toBe("warn");
     expect(check(f, "ram-speed").steps.join(" ")).toMatch(/XMP/);
     f.battery = { present: true, onAc: true, saver: false, percent: 100 };
@@ -157,7 +210,17 @@ describe("health checks", () => {
 
   it("reads GPU throttling and temperature", () => {
     const f = healthy();
-    f.nvidia = { name: "RTX", driverVersion: "1", temperatureC: 88, clockMHz: 1200, maxClockMHz: 3000, powerDrawW: 80, powerLimitW: null, pState: "P0", throttleReasons: ["thermal slowdown"] };
+    f.nvidia = {
+      name: "RTX",
+      driverVersion: "1",
+      temperatureC: 88,
+      clockMHz: 1200,
+      maxClockMHz: 3000,
+      powerDrawW: 80,
+      powerLimitW: null,
+      pState: "P0",
+      throttleReasons: ["thermal slowdown"],
+    };
     const c = check(f, "thermals");
     expect(c.status).toBe("warn");
     expect(c.summary).toMatch(/88 C/);
@@ -171,8 +234,20 @@ describe("health checks", () => {
   it("flags a nearly full system drive and a game on a hard disk", () => {
     const f = healthy();
     f.drives = [
-      { name: "C:", totalBytes: 500 * GB, freeBytes: 60 * GB, system: true, mediaType: "ssd" },
-      { name: "D:", totalBytes: 500 * GB, freeBytes: 300 * GB, system: false, mediaType: "hdd" },
+      {
+        name: "C:",
+        totalBytes: 500 * GB,
+        freeBytes: 60 * GB,
+        system: true,
+        mediaType: "ssd",
+      },
+      {
+        name: "D:",
+        totalBytes: 500 * GB,
+        freeBytes: 300 * GB,
+        system: false,
+        mediaType: "hdd",
+      },
     ];
     expect(check(f, "storage").status).toBe("warn");
     f.drives[0]!.freeBytes = 40 * GB;
@@ -229,7 +304,9 @@ describe("health checks", () => {
   });
 
   it("asks for a baseline until an FPS capture pair exists", () => {
-    expect(check(healthy(), "ab-baseline", ctx({ hasAbPair: false })).status).toBe("warn");
+    expect(
+      check(healthy(), "ab-baseline", ctx({ hasAbPair: false })).status,
+    ).toBe("warn");
     expect(check(healthy(), "ab-baseline").status).toBe("good");
   });
 

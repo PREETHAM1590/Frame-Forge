@@ -39,7 +39,7 @@ export function ModeSelector({
         max={scale.length - 1}
         value={Math.max(0, intensity[mode])}
         valueText={current?.label}
-        disabled={pending || mode === "custom"}
+        disabled={pending || mode === "custom" || mode === "smart"}
         onChange={(v) => onSelect(scale[v]!)}
       />
       <div className="tabs gm-steps" role="group" aria-label="Boost mode">
