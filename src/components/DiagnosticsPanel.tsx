@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FileArchive, FolderOpen, Bug } from "lucide-react";
-import { Button } from "./ui";
+import { Button, Disclosure } from "./ui";
 import type { ViewProps } from "../types";
 import type { DiagnosticsGroup, Response } from "../../shared/contracts";
 type Preview = Response<"diagnosticsPreview">;
@@ -9,7 +9,11 @@ export function DiagnosticsPanel({
   run,
   pending,
   desktop,
-}: Pick<ViewProps, "run" | "pending"> & { desktop: boolean }) {
+  defaultOpen = true,
+}: Pick<ViewProps, "run" | "pending"> & {
+  desktop: boolean;
+  defaultOpen?: boolean;
+}) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [chosen, setChosen] = useState<Set<DiagnosticsGroup>>(new Set());
   const open = async () => {
@@ -29,11 +33,12 @@ export function DiagnosticsPanel({
     if (result?.saved) setPreview(null);
   };
   return (
-    <section className="settings-section" aria-label="Diagnostics">
-      <h2>
-        <FileArchive size={20} />
-        Diagnostics
-      </h2>
+    <Disclosure
+      heading
+      icon={<FileArchive size={20} />}
+      title="Diagnostics and logs"
+      defaultOpen={defaultOpen}
+    >
       <div className="setting-row">
         <div>
           <strong>Export diagnostics</strong>
@@ -140,6 +145,6 @@ export function DiagnosticsPanel({
           Open logs folder
         </Button>
       </div>
-    </section>
+    </Disclosure>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Keyboard } from "lucide-react";
-import { Badge, Button, Toggle } from "../components/ui";
+import { Badge, Button, Disclosure, Toggle } from "../components/ui";
 import { request } from "../api";
 import {
   acceleratorFromEvent,
@@ -17,10 +17,12 @@ export function HotkeysSection({
   hotkeys,
   pending,
   save,
+  defaultOpen = true,
 }: {
   hotkeys: Hotkeys;
   pending: boolean;
   save: (next: Hotkeys) => void;
+  defaultOpen?: boolean;
 }) {
   const [recording, setRecording] = useState<HotkeyId | null>(null);
   const [problem, setProblem] = useState("");
@@ -60,22 +62,24 @@ export function HotkeysSection({
   };
   if (!status.supported)
     return (
-      <section className="settings-section">
-        <h2>
-          <Keyboard size={20} />
-          Hotkeys
-        </h2>
+      <Disclosure
+        heading
+        icon={<Keyboard size={20} />}
+        title="Hotkeys"
+        defaultOpen={defaultOpen}
+      >
         <p className="muted">
           Global hotkeys are available in the desktop app.
         </p>
-      </section>
+      </Disclosure>
     );
   return (
-    <section className="settings-section">
-      <h2>
-        <Keyboard size={20} />
-        Hotkeys
-      </h2>
+    <Disclosure
+      heading
+      icon={<Keyboard size={20} />}
+      title="Hotkeys"
+      defaultOpen={defaultOpen}
+    >
       <Toggle
         label="Enable global hotkeys"
         description="Work anywhere in Windows, including while Frameforge is in the tray. Off: nothing is registered with Windows."
@@ -137,6 +141,6 @@ export function HotkeysSection({
           Reset to defaults
         </Button>
       </div>
-    </section>
+    </Disclosure>
   );
 }

@@ -290,14 +290,14 @@
   border-bottom: var(--bw) solid var(--c-border);
   background: var(--c-rail);
 }
-.section-header h2 {
+.section-header :is(h2, h3) {
   font-size: var(--fs-md);
   text-transform: uppercase;
   display: flex;
   align-items: center;
   gap: var(--sp-3);
 }
-.section-header h2 > svg {
+.section-header :is(h2, h3) > svg {
   color: var(--c-primary);
 }
 .section-header .index {
@@ -1030,4 +1030,8 @@ progress::-webkit-progress-value {
 }
 .recommended h3 {
   margin: 16px 0 4px;
+}
+/* A section header at the top of a padded panel runs edge to edge instead of sitting in a box. */
+.panel:not(.flush) > .section-header:first-child {
+  margin: calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
 }

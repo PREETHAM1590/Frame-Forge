@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import {
   Badge,
+  Disclosure,
   ErrorState,
   Meter,
   PageTitle,
@@ -74,10 +75,10 @@ export function Monitor({ data }: ViewProps) {
   const { samples, status, error, retry } = useMonitorFeed();
   const last = samples.at(-1);
   return (
-    <>
+    <div className="monitor-page">
       <PageTitle
         title="System monitor"
-        subtitle="Windows performance counters, read once a second while this page is open. Nothing is saved or sent anywhere."
+        subtitle="Live Windows counters, read once a second while this page is open. Nothing is saved or sent."
         action={
           <Badge
             tone={
@@ -173,159 +174,6 @@ export function Monitor({ data }: ViewProps) {
             />
           </section>
 
-          <Panel>
-            <SectionHeader
-              title="CPU cores"
-              icon={<Cpu size={18} />}
-              level={3}
-            />
-            <ul className="core-grid">
-              {last.cpu.cores.map((v, i) => (
-                <li key={i}>
-                  <span className="label">C{i}</span>
-                  <Meter value={v} label={`Core ${i} load`} tone={tone(v)} />
-                  <span className="mono">{percent(v)}</span>
-                </li>
-              ))}
-            </ul>
-          </Panel>
-
-          <div className="mon-two">
-            <Panel>
-              <SectionHeader
-                title="GPU"
-                icon={<Activity size={18} />}
-                level={3}
-              />
-              {!last.gpu.available && (
-                <p className="muted">{last.gpu.detail}</p>
-              )}
-              {last.gpu.adapters.map((a, i) => (
-                <div className="mon-block" key={a.id}>
-                  <strong>
-                    GPU {i}
-                    <span className="muted">
-                      {" "}
-                      /{" "}
-                      {a.dedicatedBytes > 0
-                        ? "dedicated memory"
-                        : "shared memory only"}
-                    </span>
-                  </strong>
-                  {(
-                    [
-                      ["3D", a.engine3d],
-                      ["Compute", a.compute],
-                      ["Copy", a.copy],
-                      ["Video", a.video],
-                    ] as const
-                  ).map(([name, v]) => (
-                    <div className="mon-row" key={name}>
-                      <span className="label">{name}</span>
-                      <Meter
-                        value={v}
-                        label={`GPU ${i} ${name} engine`}
-                        tone={tone(v)}
-                      />
-                      <span className="mono">{percent(v)}</span>
-                    </div>
-                  ))}
-                  <p className="mon-note">
-                    Memory in use: {formatSize(a.dedicatedBytes)} dedicated,{" "}
-                    {formatSize(a.sharedBytes)} shared
-                  </p>
-                </div>
-              ))}
-            </Panel>
-            <Panel>
-              <SectionHeader
-                title="Temperatures"
-                icon={<Thermometer size={18} />}
-                level={3}
-              />
-              {last.temperatures.gpu.map((g) => (
-                <div className="mon-row simple" key={g.name}>
-                  <span>{g.name}</span>
-                  <span className="mono">{Math.round(g.celsius)} &deg;C</span>
-                </div>
-              ))}
-              {last.temperatures.cpuCelsius !== null && (
-                <div className="mon-row simple">
-                  <span>ACPI thermal zone</span>
-                  <span className="mono">
-                    {Math.round(last.temperatures.cpuCelsius)} &deg;C
-                  </span>
-                </div>
-              )}
-              {last.temperatures.note && (
-                <p className="mon-note">
-                  CPU and board temperatures: {last.temperatures.note} GPU
-                  temperature appears when the NVIDIA driver provides it.
-                </p>
-              )}
-            </Panel>
-          </div>
-
-          <div className="mon-two">
-            <Panel>
-              <SectionHeader
-                title="Drives"
-                icon={<HardDrive size={18} />}
-                level={3}
-              />
-              {last.disks.length === 0 && (
-                <p className="muted">No drive counters on this PC.</p>
-              )}
-              {last.disks.map((d) => (
-                <div className="mon-block" key={d.name}>
-                  <div className="mon-row simple">
-                    <strong>{d.name}</strong>
-                    <span className="mono">
-                      {percent(d.activePercent)} active
-                    </span>
-                  </div>
-                  <Meter
-                    value={d.activePercent}
-                    label={`${d.name} active time`}
-                    tone={tone(d.activePercent)}
-                  />
-                  <p className="mon-note">
-                    Read {formatRate(d.readBytesPerSec)} / Write{" "}
-                    {formatRate(d.writeBytesPerSec)}
-                  </p>
-                </div>
-              ))}
-            </Panel>
-            <Panel>
-              <SectionHeader
-                title="Network"
-                icon={<Network size={18} />}
-                level={3}
-              />
-              {last.network.length === 0 && (
-                <p className="muted">No active network adapter.</p>
-              )}
-              {last.network.map((n) => (
-                <div className="mon-block" key={n.name}>
-                  <strong>{n.name}</strong>
-                  <div className="mon-row simple">
-                    <span className="label">Down</span>
-                    <span className="mono">
-                      {formatRate(n.downBytesPerSec)}
-                    </span>
-                  </div>
-                  <div className="mon-row simple">
-                    <span className="label">Up</span>
-                    <span className="mono">{formatRate(n.upBytesPerSec)}</span>
-                  </div>
-                  <p className="mon-note">
-                    Link speed {formatLink(n.linkBitsPerSec)}
-                  </p>
-                </div>
-              ))}
-            </Panel>
-          </div>
-
           <div className="mon-two">
             {(
               [
@@ -367,6 +215,169 @@ export function Monitor({ data }: ViewProps) {
       )}
       <GameMonitor data={data} />
       <Benchmark data={data} />
-    </>
+      {last && (
+        <Disclosure
+          title="Detailed readings"
+          hint="Cores, GPU, drives, network"
+        >
+          <div className="monitor">
+            <Panel>
+              <SectionHeader
+                title="CPU cores"
+                icon={<Cpu size={18} />}
+                level={3}
+              />
+              <ul className="core-grid">
+                {last.cpu.cores.map((v, i) => (
+                  <li key={i}>
+                    <span className="label">C{i}</span>
+                    <Meter value={v} label={`Core ${i} load`} tone={tone(v)} />
+                    <span className="mono">{percent(v)}</span>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+
+            <div className="mon-two">
+              <Panel>
+                <SectionHeader
+                  title="GPU"
+                  icon={<Activity size={18} />}
+                  level={3}
+                />
+                {!last.gpu.available && (
+                  <p className="muted">{last.gpu.detail}</p>
+                )}
+                {last.gpu.adapters.map((a, i) => (
+                  <div className="mon-block" key={a.id}>
+                    <strong>
+                      GPU {i}
+                      <span className="muted">
+                        {" "}
+                        /{" "}
+                        {a.dedicatedBytes > 0
+                          ? "dedicated memory"
+                          : "shared memory only"}
+                      </span>
+                    </strong>
+                    {(
+                      [
+                        ["3D", a.engine3d],
+                        ["Compute", a.compute],
+                        ["Copy", a.copy],
+                        ["Video", a.video],
+                      ] as const
+                    ).map(([name, v]) => (
+                      <div className="mon-row" key={name}>
+                        <span className="label">{name}</span>
+                        <Meter
+                          value={v}
+                          label={`GPU ${i} ${name} engine`}
+                          tone={tone(v)}
+                        />
+                        <span className="mono">{percent(v)}</span>
+                      </div>
+                    ))}
+                    <p className="mon-note">
+                      Memory in use: {formatSize(a.dedicatedBytes)} dedicated,{" "}
+                      {formatSize(a.sharedBytes)} shared
+                    </p>
+                  </div>
+                ))}
+              </Panel>
+              <Panel>
+                <SectionHeader
+                  title="Temperatures"
+                  icon={<Thermometer size={18} />}
+                  level={3}
+                />
+                {last.temperatures.gpu.map((g) => (
+                  <div className="mon-row simple" key={g.name}>
+                    <span>{g.name}</span>
+                    <span className="mono">{Math.round(g.celsius)} &deg;C</span>
+                  </div>
+                ))}
+                {last.temperatures.cpuCelsius !== null && (
+                  <div className="mon-row simple">
+                    <span>ACPI thermal zone</span>
+                    <span className="mono">
+                      {Math.round(last.temperatures.cpuCelsius)} &deg;C
+                    </span>
+                  </div>
+                )}
+                {last.temperatures.note && (
+                  <p className="mon-note">
+                    CPU and board temperatures: {last.temperatures.note} GPU
+                    temperature appears when the NVIDIA driver provides it.
+                  </p>
+                )}
+              </Panel>
+            </div>
+
+            <div className="mon-two">
+              <Panel>
+                <SectionHeader
+                  title="Drives"
+                  icon={<HardDrive size={18} />}
+                  level={3}
+                />
+                {last.disks.length === 0 && (
+                  <p className="muted">No drive counters on this PC.</p>
+                )}
+                {last.disks.map((d) => (
+                  <div className="mon-block" key={d.name}>
+                    <div className="mon-row simple">
+                      <strong>{d.name}</strong>
+                      <span className="mono">
+                        {percent(d.activePercent)} active
+                      </span>
+                    </div>
+                    <Meter
+                      value={d.activePercent}
+                      label={`${d.name} active time`}
+                      tone={tone(d.activePercent)}
+                    />
+                    <p className="mon-note">
+                      Read {formatRate(d.readBytesPerSec)} / Write{" "}
+                      {formatRate(d.writeBytesPerSec)}
+                    </p>
+                  </div>
+                ))}
+              </Panel>
+              <Panel>
+                <SectionHeader
+                  title="Network"
+                  icon={<Network size={18} />}
+                  level={3}
+                />
+                {last.network.length === 0 && (
+                  <p className="muted">No active network adapter.</p>
+                )}
+                {last.network.map((n) => (
+                  <div className="mon-block" key={n.name}>
+                    <strong>{n.name}</strong>
+                    <div className="mon-row simple">
+                      <span className="label">Down</span>
+                      <span className="mono">
+                        {formatRate(n.downBytesPerSec)}
+                      </span>
+                    </div>
+                    <div className="mon-row simple">
+                      <span className="label">Up</span>
+                      <span className="mono">
+                        {formatRate(n.upBytesPerSec)}
+                      </span>
+                    </div>
+                    <p className="mon-note">
+                      Link speed {formatLink(n.linkBitsPerSec)}
+                    </p>
+                  </div>
+                ))}
+              </Panel>
+            </div>
+          </div>
+        </Disclosure>
+      )}
+    </div>
   );
 }

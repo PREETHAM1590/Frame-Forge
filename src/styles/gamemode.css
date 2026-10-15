@@ -383,3 +383,21 @@
   outline: 2px solid var(--c-primary);
   outline-offset: 2px;
 }
+/* Settings groups: a Disclosure whose title is an h2 with an icon. */
+.disclosure.group + .disclosure.group,
+.disclosure.group {
+  margin-bottom: var(--sp-3);
+}
+.disclosure summary h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.disclosure summary h2 svg {
+  color: var(--c-primary);
+}
+.disclosure.group .disclosure-body .setting-row:first-child {
+  padding-top: 0;
+}

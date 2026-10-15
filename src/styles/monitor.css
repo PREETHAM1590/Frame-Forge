@@ -219,3 +219,12 @@
 .mon-table {
   min-width: 0;
 }
+
+.monitor-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+.monitor-page .page-title {
+  margin-bottom: 0;
+}

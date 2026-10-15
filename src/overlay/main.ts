@@ -16,7 +16,7 @@ function draw(times: number[] | null) {
   if (!times || times.length < 2) return;
   // 0..50 ms, newest on the right; a taller line is a slower frame.
   const step = graph.width / (times.length - 1);
-  ctx.strokeStyle = "#bfff50";
+  ctx.strokeStyle = "#ff5500";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   times.forEach((t, i) => {

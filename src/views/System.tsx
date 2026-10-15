@@ -1,13 +1,11 @@
 import { useState } from "react";
 import {
-  Play,
   Cpu,
   Monitor,
   MemoryStick,
   HardDrive,
   RefreshCw,
   Settings2,
-  Archive,
   Info,
   ShieldCheck,
 } from "lucide-react";
@@ -15,6 +13,8 @@ import {
   PageTitle,
   Button,
   Badge,
+  Disclosure,
+  LinkButton,
   Toggle,
   Busy,
   formatBytes,
@@ -28,7 +28,7 @@ import { useUpdate } from "../useUpdate";
 import { DriverCheck } from "./system/DriverCheck";
 import { HotkeysSection } from "./HotkeysSection";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
-export function System({ data, run, pending }: ViewProps) {
+export function System({ data, run, pending, navigate }: ViewProps) {
   const h = data.hardware;
   const [refreshing, setRefreshing] = useState(false);
   return (
@@ -62,86 +62,86 @@ export function System({ data, run, pending }: ViewProps) {
           {w}
         </div>
       ))}
-      <section className="system-section">
-        <h2>
-          <Cpu size={20} />
-          Processor
-        </h2>
-        <dl>
-          <dt>Model</dt>
-          <dd>{h.cpu || "Unavailable"}</dd>
-          <dt>Logical processors</dt>
-          <dd>{h.cores || "Unavailable"}</dd>
-          <dt>Live CPU utilization & temperature</dt>
-          <dd>
-            Open Monitor for live CPU use and temperature readings when Windows
-            exposes them. Frameforge does not install a sensor driver.
-          </dd>
-        </dl>
-      </section>
-      <section className="system-section">
-        <h2>
-          <Monitor size={20} />
-          Graphics & display
-        </h2>
-        <dl>
-          <dt>Adapters</dt>
-          <dd>{h.gpu.join(" / ") || "Unavailable"}</dd>
-          <dt>Driver information</dt>
-          <dd>{h.drivers.join(" / ") || "Unavailable"}</dd>
-          <dt>Displays</dt>
-          <dd>{h.displays.join(" / ") || "Unavailable"}</dd>
-          <dt>Temperature, live GPU use & FPS</dt>
-          <dd>
-            Open Monitor for live GPU use, available temperature readings and
-            optional DirectX FPS capture. FPS capture needs administrator
-            approval; Vulkan, OpenGL and some anti-cheat games are not measured.
-          </dd>
-        </dl>
-      </section>
-      <section className="system-section">
-        <h2>
-          <MemoryStick size={20} />
-          Memory
-        </h2>
-        <dl>
-          <dt>Installed / visible</dt>
-          <dd>{formatBytes(h.memoryBytes)}</dd>
-          <dt>Available</dt>
-          <dd>{formatBytes(h.freeMemoryBytes)}</dd>
-          <dt>Used</dt>
-          <dd>{formatBytes(h.memoryBytes - h.freeMemoryBytes)}</dd>
-        </dl>
-      </section>
-      <section className="system-section">
-        <h2>
-          <HardDrive size={20} />
-          Drives & operating system
-        </h2>
-        <dl>
-          {h.drives.map((d) => (
-            <div className="dl-row" key={d.name}>
-              <dt>{d.name}</dt>
-              <dd>
-                {formatBytes(d.freeBytes)} free of {formatBytes(d.totalBytes)}
-              </dd>
-            </div>
-          ))}
-          <dt>Operating system</dt>
-          <dd>{h.os || "Unavailable"}</dd>
-          <dt>Data source</dt>
-          <dd>
-            <Badge tone={h.source === "demo" ? "amber" : "cyan"}>
-              {h.source}
-            </Badge>
-          </dd>
-        </dl>
-      </section>
+      <div className="system-grid">
+        <section className="system-section">
+          <h2>
+            <Cpu size={20} />
+            Processor
+          </h2>
+          <dl>
+            <dt>Model</dt>
+            <dd>{h.cpu || "Unavailable"}</dd>
+            <dt>Logical processors</dt>
+            <dd>{h.cores || "Unavailable"}</dd>
+          </dl>
+        </section>
+        <section className="system-section">
+          <h2>
+            <Monitor size={20} />
+            Graphics & display
+          </h2>
+          <dl>
+            <dt>Adapters</dt>
+            <dd>{h.gpu.join(" / ") || "Unavailable"}</dd>
+            <dt>Driver information</dt>
+            <dd>{h.drivers.join(" / ") || "Unavailable"}</dd>
+            <dt>Displays</dt>
+            <dd>{h.displays.join(" / ") || "Unavailable"}</dd>
+          </dl>
+        </section>
+        <section className="system-section">
+          <h2>
+            <MemoryStick size={20} />
+            Memory
+          </h2>
+          <dl>
+            <dt>Installed / visible</dt>
+            <dd>{formatBytes(h.memoryBytes)}</dd>
+            <dt>Available</dt>
+            <dd>{formatBytes(h.freeMemoryBytes)}</dd>
+            <dt>Used</dt>
+            <dd>{formatBytes(h.memoryBytes - h.freeMemoryBytes)}</dd>
+          </dl>
+        </section>
+        <section className="system-section">
+          <h2>
+            <HardDrive size={20} />
+            Drives & operating system
+          </h2>
+          <dl>
+            {h.drives.map((d) => (
+              <div className="dl-row" key={d.name}>
+                <dt>{d.name}</dt>
+                <dd>
+                  {formatBytes(d.freeBytes)} free of {formatBytes(d.totalBytes)}
+                </dd>
+              </div>
+            ))}
+            <dt>Operating system</dt>
+            <dd>{h.os || "Unavailable"}</dd>
+            <dt>Data source</dt>
+            <dd>
+              <Badge tone={h.source === "demo" ? "amber" : "cyan"}>
+                {h.source}
+              </Badge>
+            </dd>
+          </dl>
+        </section>
+      </div>
+      <p className="muted system-live">
+        Open Monitor for live CPU use and temperature readings when Windows
+        exposes them, live GPU use and optional DirectX FPS capture. FPS capture
+        needs administrator approval; Vulkan, OpenGL and some anti-cheat games
+        are not measured. Frameforge does not install a sensor driver.{" "}
+        <LinkButton onClick={() => navigate("Monitor")}>
+          Open Monitor
+        </LinkButton>
+      </p>
       <DriverCheck />
     </>
   );
 }
-export function Settings({ data, run, pending, navigate }: ViewProps) {
+export function Settings({ data, run, pending }: ViewProps) {
   const settings = data.state.settings;
   const analyticsAvailable = useUpdate().status?.analyticsAvailable === true;
   const update = (patch: Partial<typeof settings>) =>
@@ -152,11 +152,12 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
         title="Settings"
         subtitle="A local app, configured your way."
       />
-      <section className="settings-section">
-        <h2>
-          <Settings2 size={20} />
-          Preferences
-        </h2>
+      <Disclosure
+        heading
+        icon={<Settings2 size={20} />}
+        title="General"
+        defaultOpen
+      >
         <div className="setting-row">
           <div>
             <label htmlFor="theme">Appearance</label>
@@ -232,13 +233,6 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           onChange={(notifications) => update({ notifications })}
         />
         <Toggle
-          label="Local diagnostics"
-          description="Record request timing in the local activity log. Nothing is uploaded."
-          checked={settings.diagnostics}
-          disabled={pending}
-          onChange={(diagnostics) => update({ diagnostics })}
-        />
-        <Toggle
           label="Scan for games automatically on startup"
           description="Look for newly installed games in the background and add them to your library. Games you remove are not added back."
           checked={settings.autoScan}
@@ -280,38 +274,35 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
             </select>
           </div>
         )}
-      </section>
-      <section className="settings-section">
-        <h2>
-          <Play size={20} />
-          Booster
-        </h2>
-        <div className="setting-row">
-          <div>
-            <strong>Game Mode</strong>
-            <p className="muted">
-              Booster options and sessions live on the Game Mode page.
-            </p>
-          </div>
-          <Button onClick={() => navigate("Game Mode")}>Open Game Mode</Button>
-        </div>
-      </section>
+      </Disclosure>
       <HotkeysSection
         hotkeys={settings.hotkeys}
         pending={pending}
         save={(hotkeys) => update({ hotkeys })}
+        defaultOpen={false}
       />
       <OverlaySettings
         saved={settings.overlay}
         disabled={pending}
         save={(overlay) => update({ overlay })}
+        defaultOpen={false}
       />
-      <AdminAccess disabled={pending || data.mode === "demo"} />
-      <section className="settings-section">
-        <h2>
-          <ShieldCheck size={20} />
-          Privacy and updates
-        </h2>
+      <AdminAccess
+        disabled={pending || data.mode === "demo"}
+        defaultOpen={false}
+      />
+      <Disclosure
+        heading
+        icon={<ShieldCheck size={20} />}
+        title="Privacy and updates"
+      >
+        <Toggle
+          label="Local diagnostics"
+          description="Record request timing in the local activity log. Nothing is uploaded."
+          checked={settings.diagnostics}
+          disabled={pending}
+          onChange={(diagnostics) => update({ diagnostics })}
+        />
         <Toggle
           label="Check for updates automatically"
           description="At start and every 6 hours. Contacts github.com only. Nothing is downloaded or installed until you choose."
@@ -338,43 +329,14 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
           onChange={(analytics) => update({ analytics })}
         />
         <UpdateCard always />
-      </section>
-      <section className="settings-section">
-        <h2>
-          <Archive size={20} />
-          Data management
-        </h2>
-        <div className="setting-row">
-          <div>
-            <strong>Configuration backups</strong>
-            <p className="muted">
-              Save or restore app settings, profiles and presets.
-            </p>
-          </div>
-          <Button onClick={() => navigate("Restore & backups")}>
-            Manage backups
-          </Button>
-        </div>
-        <div className="setting-row">
-          <div>
-            <strong>Activity and recovery records</strong>
-            <p className="muted">
-              Inspect operations and clear completed logs.
-            </p>
-          </div>
-          <Button onClick={() => navigate("Activity")}>Open activity</Button>
-        </div>
-      </section>
+      </Disclosure>
       <DiagnosticsPanel
         run={run}
         pending={pending}
         desktop={data.mode === "desktop"}
+        defaultOpen={false}
       />
-      <section className="settings-section">
-        <h2>
-          <Info size={20} />
-          About Frameforge
-        </h2>
+      <Disclosure heading icon={<Info size={20} />} title="About Frameforge">
         <dl>
           <dt>Version</dt>
           <dd>{data.version}</dd>
@@ -395,7 +357,7 @@ export function Settings({ data, run, pending, navigate }: ViewProps) {
               : "Unavailable; desktop helper required"}
           </dd>
         </dl>
-      </section>
+      </Disclosure>
     </>
   );
 }

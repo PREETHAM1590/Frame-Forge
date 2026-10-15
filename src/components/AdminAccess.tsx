@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { KeyRound } from "lucide-react";
-import { Badge, Busy, Button } from "./ui";
+import { Badge, Busy, Button, Disclosure } from "./ui";
 import { request } from "../api";
 import type { BrokerStatus } from "../../shared/contracts";
 const tones = {
@@ -18,7 +18,13 @@ const labels: Record<BrokerStatus["state"], string> = {
   unsupported: "Unavailable",
 };
 /** Settings > Administrator access: "approve admin once" through the optional FrameforgeBroker service. */
-export function AdminAccess({ disabled = false }: { disabled?: boolean }) {
+export function AdminAccess({
+  disabled = false,
+  defaultOpen = true,
+}: {
+  disabled?: boolean;
+  defaultOpen?: boolean;
+}) {
   const [status, setStatus] = useState<BrokerStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -49,11 +55,12 @@ export function AdminAccess({ disabled = false }: { disabled?: boolean }) {
   const state = status?.state ?? "unsupported";
   const installed = state !== "not-installed" && state !== "unsupported";
   return (
-    <section className="settings-section" aria-labelledby="admin-access">
-      <h2 id="admin-access">
-        <KeyRound size={20} />
-        Administrator access
-      </h2>
+    <Disclosure
+      heading
+      icon={<KeyRound size={20} />}
+      title="Administrator access"
+      defaultOpen={defaultOpen}
+    >
       <div className="setting-row">
         <div>
           <strong>
@@ -102,6 +109,6 @@ export function AdminAccess({ disabled = false }: { disabled?: boolean }) {
           )}
         </div>
       </div>
-    </section>
+    </Disclosure>
   );
 }

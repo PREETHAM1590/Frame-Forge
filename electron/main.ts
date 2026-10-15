@@ -450,7 +450,7 @@ if (!app.requestSingleInstanceLock()) {
           title: "Frameforge",
           message: "Check for updates automatically?",
           detail:
-            "Update checks contact github.com only. You choose when to download and install. You can change this in Settings > Privacy." +
+            "Update checks contact github.com only. You choose when to download and install. You can change this in Settings > Privacy and updates." +
             (analytics.available
               ? "\n\nAnonymous usage statistics are never sent unless you tick the box below."
               : ""),

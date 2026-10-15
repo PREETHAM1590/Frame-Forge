@@ -1,5 +1,5 @@
 import { Gauge } from "lucide-react";
-import { SegmentedControl, Slider, Toggle } from "./ui";
+import { Disclosure, SegmentedControl, Slider, Toggle } from "./ui";
 import {
   overlayCorners,
   resolveOverlay,
@@ -26,19 +26,22 @@ export function OverlaySettings({
   saved,
   disabled,
   save,
+  defaultOpen = true,
 }: {
   saved: unknown;
   disabled: boolean;
   save: (overlay: OverlayConfig) => void;
+  defaultOpen?: boolean;
 }) {
   const config = resolveOverlay(saved);
   const set = (patch: Partial<OverlayConfig>) => save({ ...config, ...patch });
   return (
-    <section className="settings-section">
-      <h2>
-        <Gauge size={20} />
-        Overlay
-      </h2>
+    <Disclosure
+      heading
+      icon={<Gauge size={20} />}
+      title="Overlay"
+      defaultOpen={defaultOpen}
+    >
       <Toggle
         label="Show overlay"
         description="Show FPS and system readings over your game while a boost session is active. The tray menu has Toggle overlay for showing it by hand."
@@ -115,6 +118,6 @@ export function OverlaySettings({
         and windowed games. Exclusive-fullscreen DirectX games may hide it:
         switch the game to borderless to see it.
       </p>
-    </section>
+    </Disclosure>
   );
 }

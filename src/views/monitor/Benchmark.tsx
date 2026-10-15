@@ -170,7 +170,7 @@ export function Benchmark({ data }: { data: Bootstrap }) {
         runs as administrator. Frameforge reports only what it measures.
       </p>
       <div className="fps-controls">
-        <label>
+        <label className="field">
           Game{" "}
           <select
             value={gameId}
@@ -185,7 +185,7 @@ export function Benchmark({ data }: { data: Bootstrap }) {
             ))}
           </select>
         </label>
-        <label>
+        <label className="field">
           Run length{" "}
           <select
             value={seconds}
@@ -199,7 +199,7 @@ export function Benchmark({ data }: { data: Bootstrap }) {
             ))}
           </select>
         </label>
-        <label>
+        <label className="field">
           Next run{" "}
           <select
             value={want}

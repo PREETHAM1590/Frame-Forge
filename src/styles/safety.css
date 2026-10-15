@@ -11,7 +11,6 @@
 .settings-section h2,
 .system-section h2 {
   font-size: var(--fs-md);
-  text-transform: uppercase;
   margin: 0 0 var(--sp-4);
 }
 .settings-section h2 > svg,
@@ -32,7 +31,7 @@
 }
 th {
   font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: var(--track-label);
   color: var(--c-muted);
@@ -76,15 +75,14 @@ tbody tr:hover {
 }
 .activity-list h3 {
   font-size: var(--fs-md);
-  text-transform: uppercase;
+}
+.activity-list article {
+  justify-content: space-between;
 }
 .activity-list time {
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-sm);
   display: block;
   margin-top: var(--sp-2);
-  text-transform: uppercase;
-  letter-spacing: var(--track-label);
 }
 .activity-list p {
   margin: var(--sp-2) 0 0;
@@ -100,4 +98,40 @@ tbody tr:hover {
   .restore-strip {
     grid-template-columns: 1fr !important;
   }
+}
+/* System information: short reference cards side by side. */
+.system-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+  align-items: start;
+}
+.system-grid .system-section {
+  margin: 0;
+}
+.system-grid dl {
+  grid-template-columns: minmax(0, 120px) minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+.system-live {
+  margin: var(--sp-4) 0;
+  font-size: var(--fs-sm);
+}
+@media (max-width: 1000px) {
+  .system-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.driver-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-4) 0;
+  border-top: var(--bw) solid var(--c-border);
+}
+.driver-row dl,
+.driver-row h3,
+.driver-row p {
+  margin: 0;
 }

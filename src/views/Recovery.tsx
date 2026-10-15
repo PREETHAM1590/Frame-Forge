@@ -6,7 +6,6 @@ import {
   ArrowUpRight,
   AlertTriangle,
   Trash2,
-  History,
   ShieldCheck,
   Info,
 } from "lucide-react";
@@ -15,8 +14,6 @@ import {
   Button,
   Busy,
   Badge,
-  CellGrid,
-  StatCell,
   Chips,
   Empty,
   Modal,
@@ -447,93 +444,68 @@ export function Backups(props: ViewProps) {
     <>
       <PageTitle
         title="Restore & backups"
-        subtitle="Windows whole-PC recovery and Frameforge configuration backups, kept separate."
+        subtitle="Two ways back: a Windows restore point for the whole PC, and a backup of Frameforge's own settings."
       />
-      <CellGrid columns="repeat(3, minmax(0, 1fr))" className="restore-strip">
-        <StatCell
-          label="App backups"
-          count={data.backups.length}
-          hint="Frameforge settings only"
-        />
-        <StatCell
-          label="Latest backup"
-          value={data.backups.length ? formatTime(data.backups[0]!.at) : "None"}
-          hint="Windows restore points are listed below"
-        />
-        <StatCell
-          label="Needs recovery"
-          count={
-            data.activity.filter((a) => a.status === "recovery-needed").length
-          }
-          status={
-            data.activity.some((a) => a.status === "recovery-needed")
-              ? { text: "Action needed", tone: "red" }
-              : { text: "Clear", tone: "lime" }
-          }
-          hint="Interrupted operations"
-        />
-      </CellGrid>
       <WindowsRestore {...props} />
       <section className="settings-section">
         <h2>
           <Archive size={19} />
           App configuration backups
         </h2>
+        <p className="muted">
+          These are app configuration backups, not Windows System Restore
+          points. They only cover Frameforge settings. Windows preferences are
+          restored from their operation snapshots in Activity.
+        </p>
         <div className="restore-actions">
           <Button variant="primary" onClick={() => setCreating(true)}>
             <Plus size={17} />
             Create backup
           </Button>
         </div>
-      </section>
-      <div className="notice">
-        <Archive size={19} />
-        These are app configuration backups, not Windows System Restore points.
-        They only cover Frameforge settings. Windows preferences are restored
-        from their operation snapshots in Activity.
-      </div>
-      {data.backups.length ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Backup</th>
-                <th>Created</th>
-                <th>Contents</th>
-                <th>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.backups.map((b) => (
-                <tr key={b.id}>
-                  <td>
-                    <strong>{b.name}</strong>
-                    <p className="muted">Configuration v{b.state.version}</p>
-                  </td>
-                  <td>{formatTime(b.at)}</td>
-                  <td>
-                    {b.state.games.length} games / {b.state.presets.length}{" "}
-                    presets
-                  </td>
-                  <td>
-                    <Button onClick={() => setSelected(b)}>
-                      Inspect
-                      <ArrowUpRight size={16} />
-                    </Button>
-                  </td>
+        {data.backups.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Backup</th>
+                  <th>Created</th>
+                  <th>Contents</th>
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <Empty
-          title="No configuration backups yet"
-          description="A named backup saves your app settings, game profiles and custom presets."
-        />
-      )}
+              </thead>
+              <tbody>
+                {data.backups.map((b) => (
+                  <tr key={b.id}>
+                    <td>
+                      <strong>{b.name}</strong>
+                      <p className="muted">Configuration v{b.state.version}</p>
+                    </td>
+                    <td>{formatTime(b.at)}</td>
+                    <td>
+                      {b.state.games.length} games / {b.state.presets.length}{" "}
+                      presets
+                    </td>
+                    <td>
+                      <Button onClick={() => setSelected(b)}>
+                        Inspect
+                        <ArrowUpRight size={16} />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty
+            title="No configuration backups yet"
+            description="A named backup saves your app settings, game profiles and custom presets."
+          />
+        )}
+      </section>
       {creating && (
         <Modal
           title="Create configuration backup"
@@ -662,7 +634,7 @@ export function ActivityLog({
     <>
       <PageTitle
         title="Activity"
-        subtitle="Local operations, their results, and a way to recover."
+        subtitle="What Frameforge changed on this PC, with a way to undo it."
         action={
           <Button onClick={() => setClear(true)} disabled={pending}>
             <Trash2 size={16} />
@@ -698,11 +670,6 @@ export function ActivityLog({
         <div className="activity-list">
           {list.map((a) => (
             <article key={a.id} className={`ledger-${statusTone(a.status)}`}>
-              <span
-                className={`action-icon ${a.status === "recovery-needed" ? "red" : "cyan"}`}
-              >
-                <History size={21} />
-              </span>
               <div>
                 <div className="inline-title">
                   <h3>{a.label}</h3>
