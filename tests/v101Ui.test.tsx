@@ -470,7 +470,13 @@ describe("Game Bar capture blocked by policy", () => {
     h.install();
     await openGameMode();
     expect(
-      await screen.findByText("Game Bar capture off: already off by policy"),
+      await screen.findByText(
+        (_, el) =>
+          el?.tagName === "LI" &&
+          /Game Bar capture off: already off by Windows policy/.test(
+            el.textContent ?? "",
+          ),
+      ),
     ).toBeVisible();
   });
 });
@@ -515,7 +521,11 @@ describe("a boost that waits for administrator approval", () => {
     await openGameMode();
     expect(
       await screen.findByText(
-        "Pause Windows services: waiting for admin approval",
+        (_, el) =>
+          el?.tagName === "LI" &&
+          /waiting\s*Pause Windows services: waiting for administrator approval/.test(
+            el.textContent ?? "",
+          ),
       ),
     ).toBeVisible();
     const stop = await screen.findByRole("button", {
@@ -537,9 +547,15 @@ describe("a boost that waits for administrator approval", () => {
     h.model.session = answered;
     await h.emit({ type: "boost", session: answered });
     expect(
-      await screen.findByText("Pause Windows services: applied"),
+      await screen.findByText(
+        (_, el) =>
+          el?.tagName === "LI" &&
+          /applied\s*Pause Windows services: Paused 2 service\(s\)\./.test(
+            el.textContent ?? "",
+          ),
+      ),
     ).toBeVisible();
-    expect(screen.queryByText(/waiting for admin approval/)).toBeNull();
+    expect(screen.queryByText(/waiting for administrator approval/)).toBeNull();
     fireEvent.click(stop);
     await waitFor(() =>
       expect(h.calls.some((c) => c.method === "boostStop")).toBe(true),
