@@ -26,6 +26,8 @@ import { MonitorService } from "./monitor.js";
 import { FpsService } from "./fps.js";
 import { evaluateHealth } from "../shared/health.js";
 import { CandidateTracker, GameFinder, SmartEngine } from "./smart.js";
+import { benchCsv, benchMarkdown } from "../shared/benchmark.js";
+import { formatBytes } from "../shared/cleanup.js";
 import { within, type DetectionResult } from "./games.js";
 import { fallbackHardware, type Platform } from "./platform.js";
 import { brokerUnsupported } from "./broker.js";
@@ -56,6 +58,12 @@ export interface DesktopServices {
   openSystemRestore?: () => Promise<boolean>;
   notify?: (event: AppEvent) => void;
   openSettings?: (page: Request<"openSettings">["page"]) => Promise<boolean>;
+  /** Opens the vendor driver page from a fixed list. */
+  openDriverPage?: (
+    vendor: Request<"openDriverPage">["vendor"],
+  ) => Promise<boolean>;
+  /** Save dialog and write; the path the user chose, or null when cancelled. */
+  saveFile?: (suggestedName: string, text: string) => Promise<string | null>;
   /** PNG data URL for a library game's icon, or null. */
   gameIcon?: (game: Game) => Promise<string | null>;
   /** PNG data URL for the icon of a running program's executable (path from the last process list), or null. */
@@ -664,7 +672,8 @@ export class AppService {
       monitorStart: async () => this.monitor.start(),
       monitorStop: async () => this.monitor.stop(),
       fpsStatus: async () => this.fps.status(),
-      fpsStart: async ({ gameId }) => this.fps.start(gameId),
+      fpsStart: async ({ gameId, benchmarkSeconds }) =>
+        this.fps.start(gameId, benchmarkSeconds),
       fpsStop: async () => this.fps.stop(),
       fpsHistory: async ({ gameId }) => this.fps.history(gameId),
       healthCheck: async () => {
@@ -722,6 +731,53 @@ export class AppService {
       smartForget: async ({ gameId }) => {
         this.smart.forget(gameId);
         return this.smart.status();
+      },
+      benchData: async ({ gameId }) => this.fps.benchData(gameId),
+      benchSave: async ({ gameId }) => this.fps.benchSave(gameId),
+      benchDiscard: async ({ gameId }) => this.fps.benchDiscard(gameId),
+      benchExport: async ({ reportId, format }) => {
+        const report = this.fps.findReport(reportId);
+        if (!report) throw new Error("That benchmark report no longer exists.");
+        const text = format === "md" ? benchMarkdown(report) : benchCsv(report);
+        const safe = report.gameName.replace(/[^\w.-]+/g, "_").slice(0, 40);
+        const saved = await this.desktop.saveFile?.(
+          `frameforge-benchmark-${safe}.${format}`,
+          text,
+        );
+        return saved ?? null;
+      },
+      boostHistory: async ({ gameId }) => {
+        const live = this.booster.liveSession ?? this.repo.boostSession();
+        const ended = this.repo.endedBoostSessions(gameId, 20);
+        return (
+          live && (!gameId || live.gameId === gameId) ? [live, ...ended] : ended
+        ).slice(0, 20);
+      },
+      cleanupPreview: async () => {
+        if (!this.platform.cleanupPreview)
+          throw new Error("Cleanup needs the Windows helper.");
+        return this.platform.cleanupPreview();
+      },
+      cleanupRun: async ({ ids }) => {
+        guard();
+        if (!this.platform.cleanupRun)
+          throw new Error("Cleanup needs the Windows helper.");
+        const result = await this.platform.cleanupRun([...new Set(ids)]);
+        this.log(
+          "Cleanup",
+          `Freed ${formatBytes(result.freedBytes)} (${result.deleted} files deleted, ${result.skipped} in use or protected and skipped) from: ${result.categories.map((c) => c.label).join(", ")}.`,
+        );
+        return result;
+      },
+      gpuDrivers: async () => {
+        if (!this.platform.gpuDrivers)
+          throw new Error("The driver check needs the Windows helper.");
+        return this.platform.gpuDrivers();
+      },
+      openDriverPage: async ({ vendor }) => {
+        if (!(await this.desktop.openDriverPage?.(vendor)))
+          throw new Error("The driver page could not be opened.");
+        return true;
       },
     };
   }
@@ -1038,6 +1094,9 @@ export class AppService {
             "fpsStatus",
             "fpsHistory",
             "brokerStatus",
+            "benchData",
+            "boostHistory",
+            "gpuDrivers",
           ].includes(key)
         )
           this.log(

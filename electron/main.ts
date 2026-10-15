@@ -30,6 +30,7 @@ import {
 } from "./games.js";
 import { EventSchema, type BoostSession } from "../shared/contracts.js";
 import { settingsTarget } from "./settingsPages.js";
+import { driverPages } from "../shared/drivers.js";
 import { userDataOverride } from "./userData.js";
 import { GameIcons, maxIconBytes } from "./icons.js";
 import { UpdateManager } from "./updater.js";
@@ -214,6 +215,21 @@ if (!app.requestSingleInstanceLock()) {
             return (await shell.openPath(target.file)) === "";
           await shell.openExternal(target.uri);
           return true;
+        },
+        // The URL comes from a fixed table keyed by vendor name, never from the window.
+        openDriverPage: async (vendor) => {
+          await shell.openExternal(driverPages[vendor]);
+          return true;
+        },
+        saveFile: async (suggestedName, text) => {
+          if (!window) return null;
+          const result = await dialog.showSaveDialog(window, {
+            title: "Save benchmark report",
+            defaultPath: suggestedName,
+          });
+          if (result.canceled || !result.filePath) return null;
+          writeFileSync(result.filePath, text, "utf8");
+          return result.filePath;
         },
         detectGames: () =>
           detectInstalledGames({}, (progress) => {

@@ -24,6 +24,8 @@ import type { ViewProps } from "../types";
 import { UpdateCard } from "../components/UpdatePanel";
 import { AdminAccess } from "../components/AdminAccess";
 import { useUpdate } from "../useUpdate";
+import { Cleanup } from "./system/Cleanup";
+import { DriverCheck } from "./system/DriverCheck";
 export function System({ data, run, pending }: ViewProps) {
   const h = data.hardware;
   const [refreshing, setRefreshing] = useState(false);
@@ -133,6 +135,8 @@ export function System({ data, run, pending }: ViewProps) {
           </dd>
         </dl>
       </section>
+      <DriverCheck />
+      <Cleanup />
     </>
   );
 }

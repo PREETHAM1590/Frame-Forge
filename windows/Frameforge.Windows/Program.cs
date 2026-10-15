@@ -64,6 +64,10 @@ try
         "timer-global" when request.Timer is not null => new { ok = true, message = "Timer setting checked.", timerGlobal = TimerGlobalSetting.Run(request.Timer, Environment.OSVersion.Version.Build, new WindowsKernelTimerSetting()) },
         "launch-setting" when request.Launch is not null => new { ok = true, message = "Launch setting checked.", launch = LaunchSettings.Run(request.Launch, new WindowsRegistryAccess(), new WindowsGpuInfo()) },
         "network-check" when request.Host is not null => new { ok = true, message = "Network check completed.", network = NetworkCheck.Run(request.Host, request.Count, new WindowsPinger(), new WindowsResolver()) },
+        // Cleanup: ids are category names from a fixed table, never paths. Preview deletes nothing.
+        "cleanup-preview" when ids.Length == 0 && request.Snapshot is null => new { ok = true, message = "Cleanup preview read. Nothing was deleted.", cleanup = Cleanup.Preview(CleanupFacts.FromEnvironment(), RestoreCommands.IsElevated(), DateTime.UtcNow) },
+        "cleanup-run" when ids.Length is > 0 and <= 8 && request.Snapshot is null => new { ok = true, message = "Cleanup finished.", cleanup = Cleanup.Run(ids, CleanupFacts.FromEnvironment(), RestoreCommands.IsElevated(), DateTime.UtcNow) },
+        "gpu-drivers" when ids.Length == 0 && request.Snapshot is null => new { ok = true, message = "GPU drivers read.", gpuDrivers = GpuDrivers.Collect() },
         // Frameforge records the destination GUID before asking, so a created plan is never left unrecorded.
         "power-create-plan" when owned is { } destination => CreatePlan(destination),
         "power-list-plans" => new { ok = true, message = "Power plans read.", powerPlans = BoostSessionEngine.SameNamePlans(new WindowsPowerStore()) },

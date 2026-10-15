@@ -250,7 +250,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         if (mechanisms.PowerPlan && UsbSuspendOff() is { } usb) emit(new(usb.State, usb.Id, usb.Detail, Code: usb.Code));
         if (mechanisms.TimerResolution) Run("timerResolution", Timer);
         if (mechanisms.Priority != "Normal") Run("priority", () => Rank(game.Priority) >= Rank(mechanisms.Priority)
-            ? new("priority", "skipped", $"{game.Name} already runs at {game.Priority}; not lowered.")
+            ? new("priority", "skipped", $"{game.Name} already runs at {game.Priority}; not lowered.", Code: "already-set")
             : SetPriority("priority", game, mechanisms.Priority));
         if (mechanisms.Affinity is { Length: > 0 } cpus) Run("affinity", () => Affinity(game, cpus));
         if (mechanisms.GameBarCapture) Run("gameBarCapture", GameBarCapture);
@@ -308,7 +308,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         // Re-read at session start; never assumed from an earlier capability check.
         var snapshot = gameBar.Capture(GameModeIds);
         if (GameModeOn(snapshot))
-            return new("gameMode", "skipped", snapshot.Values.Any(v => !v.Existed) ? "Windows Game Mode is already on (Windows default)." : "Windows Game Mode is already on.");
+            return new("gameMode", "skipped", snapshot.Values.Any(v => !v.Existed) ? "Windows Game Mode is already on (Windows default)." : "Windows Game Mode is already on.", Code: "already-set");
         Capture(new("gameMode", Registry: snapshot));
         gameBar.Apply(GameModeIds, snapshot);
         return gameBar.Verify(GameModeIds) ? new("gameMode", "applied", "Windows Game Mode was off; turned on and verified.") : new("gameMode", "failed", "Windows did not keep the Game Mode values.");
@@ -317,11 +317,11 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
     {
         if (PlanTarget(power, ownedPlan) is not { } target) return new("powerPlan", "unavailable", "High performance plan not present");
         var prior = power.Active();
-        if (PerformancePlan(prior)) return new("powerPlan", "skipped", "A performance power plan is already active.");
+        if (PerformancePlan(prior)) return new("powerPlan", "skipped", "A performance power plan is already active.", Code: "already-set");
         Capture(new("powerPlan", Prior: prior.ToString(), Applied: target.ToString()));
         power.SetActive(target);
         return power.Active() == target
-            ? new("powerPlan", "applied", $"{PlanName(target)} power plan active and verified.")
+            ? new("powerPlan", "applied", $"Power plan changed from your previous non-performance plan to {PlanName(target)} and verified.")
             : new("powerPlan", "failed", "Windows did not keep the power plan.");
     }
     // Plan-only: while Frameforge's own plan is the active one, its plugged-in USB selective suspend is turned off, so USB devices
@@ -373,7 +373,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         Capture(new(id, process, process.Priority, priority));
         processes.SetPriority(process, priority);
         return processes.Read(process)?.Priority == priority
-            ? new(id, "applied", $"{Label(process)}: {priority} priority verified.")
+            ? new(id, "applied", $"{Label(process)}: {priority} priority verified (was {process.Priority}).")
             : new(id, "failed", $"{Label(process)}: Windows did not keep {priority} priority.");
     }
     private MechanismResult Affinity(ProcessTarget game, int[] cpus)
@@ -383,7 +383,7 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
         if (cpus.Length > 64 || cpus.Any(c => c < 0 || c >= limit)) return new("affinity", "failed", $"Only CPUs 0 to {limit - 1} exist on this PC.");
         var mask = cpus.Aggregate(0UL, (m, c) => m | 1UL << c);
         var prior = processes.GetAffinity(game);
-        if (prior == mask) return new("affinity", "skipped", "The game already uses exactly these CPUs.");
+        if (prior == mask) return new("affinity", "skipped", "The game already uses exactly these CPUs.", Code: "already-set");
         Capture(new("affinity", game, prior.ToString(CultureInfo.InvariantCulture), mask.ToString(CultureInfo.InvariantCulture)));
         processes.SetAffinity(game, mask);
         return processes.GetAffinity(game) == mask ? new("affinity", "applied", $"Game limited to {cpus.Length} CPUs and verified.") : new("affinity", "failed", "Windows did not keep the CPU affinity.");
@@ -418,11 +418,11 @@ public sealed partial class BoostSessionEngine(IProcessControl processes, IPower
             {
                 if (id == "lowerBackground")
                     return Rank(process.Priority) <= Rank("BelowNormal") || process.Priority == "RealTime"
-                        ? new(id, "skipped", $"{Label(process)}: already at {process.Priority}; not changed.")
+                        ? new(id, "skipped", $"{Label(process)}: already at {process.Priority}; not changed.", Code: "already-set")
                         : SetPriority(id, process, "BelowNormal");
                 // Already frozen (Windows suspends packaged apps; other tools can too): not ours to change or resume.
                 var (suspended, total) = processes.Threads(process);
-                if (total > 0 && suspended == total) return new(id, "skipped", $"{Label(process)}: already suspended by Windows or another program; not changed.");
+                if (total > 0 && suspended == total) return new(id, "skipped", $"{Label(process)}: already suspended by Windows or another program; not changed.", Code: "already-set");
                 var item = new Captured(id, process);
                 Capture(item);
                 bool verified;

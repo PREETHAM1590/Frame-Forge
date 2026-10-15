@@ -2,7 +2,7 @@ using System.Management;
 namespace Frameforge.Windows;
 public static class HardwareDiscovery
 {
-    private static List<Dictionary<string, object?>> Query(string query, List<string> warnings, string scope = @"root\CIMV2")
+    internal static List<Dictionary<string, object?>> Query(string query, List<string> warnings, string scope = @"root\CIMV2")
     {
         try
         {

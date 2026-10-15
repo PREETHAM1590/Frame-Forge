@@ -165,7 +165,7 @@ public sealed partial class BoostSessionEngine
         if (pending.Count == 0)
             return new("gameBarCapture", "skipped", policyOff
                 ? $"Already off by policy: capture and background recording are turned off by policy (AllowGameDVR=0) and the overlay hook is off. Nothing changed. {notes}".Trim()
-                : $"Game Bar capture and the overlay hook are already off. {notes}".Trim(), policyOff ? "policy" : null);
+                : $"Game Bar capture and the overlay hook are already off. {notes}".Trim(), policyOff ? "policy" : "already-set");
         var item = new Captured("gameBarCapture", RegValues: [.. pending.Select(p => new RegCapture(p.Path, p.Name, "DWord", p.Current.Existed, p.Current.Value, 0))]);
         Capture(item);
         foreach (var (path, name, _) in pending) registry.Write(path, name, "DWord", 0);
@@ -195,7 +195,7 @@ public sealed partial class BoostSessionEngine
         if (extras?.Throttling is not { } throttling) return Unsupported("powerThrottling", "Power throttling control is not available in this build.");
         if (extras.Build is > 0 and < PowerThrottlingBuild) return Unsupported("powerThrottling", "Needs Windows 10 version 1709 or later.");
         if (throttling.Get(game) is not { } prior) return Unsupported("powerThrottling", "Windows did not report this process's power throttling state, so the prior state cannot be saved.");
-        if ((prior.Control & ExecutionSpeed) != 0 && (prior.State & ExecutionSpeed) == 0) return new("powerThrottling", "skipped", "The game already opted out of power throttling.");
+        if ((prior.Control & ExecutionSpeed) != 0 && (prior.State & ExecutionSpeed) == 0) return new("powerThrottling", "skipped", "The game already opted out of power throttling.", Code: "already-set");
         Capture(new("powerThrottling", game, $"{prior.Control}:{prior.State}", $"{ExecutionSpeed}:0"));
         throttling.Set(game, ExecutionSpeed, 0);
         return throttling.Get(game) is { } now && now.Control == ExecutionSpeed && now.State == 0
@@ -227,7 +227,7 @@ public sealed partial class BoostSessionEngine
         try { prior = gpu.Get(game); }
         catch (Exception error) when (error is Win32Exception or InvalidOperationException or DllNotFoundException or EntryPointNotFoundException) { return Unsupported("gpuPriority", $"Windows would not report this game's GPU priority ({Describe(error)})."); }
         if (prior is not { } before) return Unsupported("gpuPriority", "Windows did not report this game's GPU priority (it may not be using the GPU yet), so the prior value cannot be saved.");
-        if (before >= GpuHigh) return new("gpuPriority", "skipped", $"{Label(game)} already has {GpuName(before)} GPU priority; not lowered.");
+        if (before >= GpuHigh) return new("gpuPriority", "skipped", $"{Label(game)} already has {GpuName(before)} GPU priority; not lowered.", Code: "already-set");
         Capture(new("gpuPriority", game, before.ToString(CultureInfo.InvariantCulture), GpuHigh.ToString(CultureInfo.InvariantCulture)));
         gpu.Set(game, GpuHigh);
         return gpu.Get(game) == GpuHigh
@@ -265,7 +265,7 @@ public sealed partial class BoostSessionEngine
         if (skip is not null) return Unsupported("smartCores", skip);
         if (preset && extras.Build >= ThreadDirectorBuild) return new("smartCores", "skipped", ThreadDirectorNote);
         var prior = sets.Get(game);
-        if (prior.Length > 0) return new("smartCores", "skipped", $"{Label(game)} already has its own CPU set; not changed.");
+        if (prior.Length > 0) return new("smartCores", "skipped", $"{Label(game)} already has its own CPU set; not changed.", Code: "already-set");
         Capture(new("smartCores", game, Items: [], AppliedItems: [.. ids.Select(i => i.ToString(CultureInfo.InvariantCulture))]));
         sets.Set(game, ids);
         return sets.Get(game).Order().SequenceEqual(ids)
@@ -308,7 +308,7 @@ public sealed partial class BoostSessionEngine
             try
             {
                 if (settings.ReadAc(scheme, setting) is not { } current) { parts.Add(Unsupported("coreParking", $"{name}: this power plan does not expose the setting.")); continue; }
-                if (current >= 100) { parts.Add(new("coreParking", "skipped", $"{name}: already {current}%; parking is already off.")); continue; }
+                if (current >= 100) { parts.Add(new("coreParking", "skipped", $"{name}: already {current}%; parking is already off.", Code: "already-set")); continue; }
                 Capture(new("coreParking", Prior: current.ToString(CultureInfo.InvariantCulture), Applied: "100", Scheme: scheme.ToString(), Setting: name));
                 settings.WriteAc(scheme, setting, 100);
                 if (power.Active() == scheme) power.SetActive(scheme);

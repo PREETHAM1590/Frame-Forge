@@ -362,6 +362,38 @@ export class Repository {
         : CapturedSchema.array().parse(captured),
     };
   }
+  /** Ended sessions (newest first), for "This session changed" history. Rows that no longer parse are skipped. */
+  endedBoostSessions(gameId?: string, limit = 20): BoostSession[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM boost_sessions WHERE status='ended'${gameId ? " AND game_id=?" : ""} ORDER BY started_at DESC, rowid DESC LIMIT ?`,
+      )
+      .all(...(gameId ? [gameId, limit] : [limit]));
+    const out: BoostSession[] = [];
+    for (const row of rows) {
+      try {
+        const payload = stripLegacyIds(
+          JSON.parse(String(row.payload)) as Record<string, unknown>,
+        ).payload;
+        if ("pid" in payload) continue;
+        const { captured: _captured, ...rest } = payload;
+        void _captured;
+        out.push(
+          BoostSessionSchema.parse({
+            ...rest,
+            id: row.id,
+            gameId: row.game_id,
+            startedAt: row.started_at,
+            status: row.status,
+            message: row.message,
+          }),
+        );
+      } catch {
+        /* an old or damaged row is not history */
+      }
+    }
+    return out;
+  }
   saveBoostSession(session: BoostSession, captured: Captured[]): void {
     const s = BoostSessionSchema.parse(session);
     const { id, gameId, startedAt, status, message, ...rest } = s;

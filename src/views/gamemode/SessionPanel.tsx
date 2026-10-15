@@ -1,10 +1,11 @@
 import { RotateCcw, Square } from "lucide-react";
-import { Badge, Button, Panel, StatCell } from "../../components/ui";
+import { Button, Panel, StatCell } from "../../components/ui";
 import { GameIcon } from "../../components/GameIcon";
 import type { BoostSession, Game } from "../../../shared/contracts";
 import type { ViewProps } from "../../types";
-import { labels, modes, stateText, tones } from "./model";
+import { modes } from "./model";
 import { Verdict } from "./SmartPanel";
+import { SessionChanges } from "./SessionChanges";
 
 type Outcome = { text: string; error: boolean };
 
@@ -129,16 +130,7 @@ export function SessionPanel({
             }
           />
         )}
-        <h3 className="gm-sub-title">This session changed</h3>
-        <ul className="booster-chips" aria-label="Mechanism results">
-          {session.mechanisms.map((m, i) => (
-            <li key={i} title={m.detail}>
-              <Badge tone={tones[m.state]}>
-                {labels[m.id]}: {stateText(m)}
-              </Badge>
-            </li>
-          ))}
-        </ul>
+        <SessionChanges session={session} />
         <Button
           variant="primary"
           disabled={pending || waiting}
