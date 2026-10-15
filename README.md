@@ -17,7 +17,7 @@ Privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md)
 - **Verify the download** (compare with the line in `SHA256SUMS.txt`):
 
   ```powershell
-  Get-FileHash .\Frameforge-Setup-1.4.0.exe -Algorithm SHA256
+  Get-FileHash .\Frameforge-Setup-1.4.1.exe -Algorithm SHA256
   ```
 
 - Pausing background services during a boost, and creating or listing Windows restore points, need administrator approval. Windows shows a UAC prompt for each of those actions. Declining the prompt changes nothing.
