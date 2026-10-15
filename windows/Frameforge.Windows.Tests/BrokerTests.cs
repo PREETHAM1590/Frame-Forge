@@ -274,12 +274,12 @@ public class BrokerTests
         public readonly Log Log = new();
         public readonly Executor Executor;
         private readonly Task loop;
-        public Rig(Func<BrokerJob, Action<string>, CancellationToken, BrokerOutcome> run, string? image = null)
+        public Rig(Func<BrokerJob, Action<string>, CancellationToken, BrokerOutcome> run, string? image = null, TimeSpan? busyWait = null)
         {
             Executor = new(run);
             var me = WindowsIdentity.GetCurrent().User!;
             var config = new BrokerConfig(me.Value, image ?? Environment.ProcessPath!, "1.4.0", "x");
-            var server = new BrokerServer(config, Executor, Log);
+            var server = new BrokerServer(config, Executor, Log, busyWait: busyWait);
             var security = BrokerPipeSecurity.Build(me);
             // In the service the creator is SYSTEM (full control); here the creator is the unelevated test user.
             security.AddAccessRule(new PipeAccessRule(me, PipeAccessRights.FullControl, AccessControlType.Allow));
@@ -529,5 +529,151 @@ public class BrokerTests
         }
         Assert.ThrowsAsync<InvalidDataException>(() => BrokerProtocol.ReadAsync(new MemoryStream([5, 0, 0, 0, 1]), 1000)).GetAwaiter().GetResult();
         Assert.Null(BrokerProtocol.Parse<BrokerRequest>(Encoding.UTF8.GetBytes("{\"v\":1,\"type\":\"request\",\"extra\":1}")));
+    }
+
+    // ---- security-lowering items never use the broker ----
+    private static string OptimizeJson(string command, params string[] ids) => JsonSerializer.Serialize(new AdminRequest(command, ids, null), HelperJson.Options);
+
+    [Fact]
+    public void EverySecurityItemIsRefusedByTheBrokerForEveryCommand()
+    {
+        Assert.NotEmpty(OptimizationTable.Security);
+        foreach (var id in OptimizationTable.Security)
+        {
+            foreach (var command in BrokerAllowlist.OptimizeCommands)
+            {
+                Assert.Equal("not-allowed", BrokerAllowlist.Reject("--elevated-optimize", "run", [OptimizeJson(command, id)]));
+                // One security item inside an otherwise fine batch taints the whole request.
+                Assert.Equal("not-allowed", BrokerAllowlist.Reject("--elevated-optimize", "run", [OptimizeJson(command, "sysmain-off", id)]));
+            }
+        }
+        Assert.Null(BrokerAllowlist.Reject("--elevated-optimize", "run", [OptimizeJson("apply", "sysmain-off")]));
+    }
+
+    [Fact]
+    public void ABrokerChildRefusesSecurityItemsAgain()
+    {
+        foreach (var id in OptimizationTable.Security)
+        {
+            var result = ResultFile();
+            try
+            {
+                var code = WindowsAdminGateway.RunChild(["run", result, OptimizeJson("apply", id)], v => JsonSerializer.Serialize(v, HelperJson.Options), viaBroker: true);
+                Assert.Equal(0, code);
+                var reply = JsonSerializer.Deserialize<AdminReply>(File.ReadAllText(result), HelperJson.Options)!;
+                Assert.False(reply.Ok);
+                Assert.Contains("own Windows approval", reply.Message);
+            }
+            finally { ElevationRequest.Withdraw(result); File.Delete(result); }
+        }
+    }
+
+    [Fact]
+    public void SecurityItemsGoToTheWindowsPromptEvenWhenTheBrokerIsReady()
+    {
+        var connected = 0;
+        var uac = new Uac();
+        var launcher = ElevatedLaunchers.ForOptimize(["sysmain-off", "uac-off"], () => { connected++; return null; }, uac);
+        launcher.Start(["--elevated-optimize", "run", "x.json", "{}"]);
+        Assert.Equal((1, 0), (uac.Starts, connected));
+        // Other items still try the broker first.
+        ElevatedLaunchers.ForOptimize(["sysmain-off"], () => { connected++; return null; }, uac).Start(["--elevated-optimize", "run", "x.json", "{}"]);
+        Assert.Equal(1, connected);
+    }
+
+    [Fact]
+    public void SecurityItemsDoNothingInBackgroundBrokerOnlyMode()
+    {
+        ElevatedLaunchers.BrokerOnly = true;
+        try
+        {
+            var uac = new Uac();
+            Assert.Null(ElevatedLaunchers.ForOptimize(["defender-off"], () => null, uac).Start(["--elevated-optimize", "run", "x.json", "{}"]));
+            Assert.Equal(0, uac.Starts);
+        }
+        finally { ElevatedLaunchers.BrokerOnly = false; }
+    }
+
+    // ---- rate and replay are tracked per client ----
+    [Fact]
+    public void OneNoisyProcessCannotStarveAnother()
+    {
+        var now = new DateTime(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc);
+        var guard = new RequestGuard(() => now, perMinute: 2);
+        ClientInfo Client(int pid) => new(pid, 1, "x", Sid);
+        string? Ask(int pid) => guard.Check(BrokerProtocol.NewNonce(), RequestGuard.Stamp(now), Client(pid));
+        Assert.Null(Ask(10));
+        Assert.Null(Ask(10));
+        Assert.Equal("rate-limited", Ask(10));
+        Assert.Null(Ask(11));
+        Assert.Null(Ask(11));
+        // The account as a whole is capped at four times the per-process limit.
+        Assert.Null(Ask(12));
+        Assert.Null(Ask(12));
+        Assert.Null(Ask(13));
+        Assert.Null(Ask(13));
+        Assert.Equal("rate-limited", Ask(14));
+    }
+
+    [Fact]
+    public void ANonceIsAReplayEvenFromAnotherProcessOfTheSameAccountAndTheMemoryIsCapped()
+    {
+        var now = new DateTime(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc);
+        var guard = new RequestGuard(() => now, perMinute: 100000);
+        var nonce = BrokerProtocol.NewNonce();
+        Assert.Null(guard.Check(nonce, RequestGuard.Stamp(now), new(10, 1, "x", Sid)));
+        Assert.Equal("replay", guard.Check(nonce, RequestGuard.Stamp(now), new(11, 1, "x", Sid)));
+        for (var i = 0; i < RequestGuard.MaxRemembered + 50; i++)
+        {
+            now = now.AddMilliseconds(1);
+            Assert.Null(guard.Check(BrokerProtocol.NewNonce(), RequestGuard.Stamp(now), new(10, 1, "x", Sid)));
+        }
+        // The oldest nonces fell out of the capped memory; this is bounded, not unbounded growth.
+        Assert.Null(guard.Check(nonce, RequestGuard.Stamp(now), new(10, 1, "x", Sid)));
+    }
+
+    // ---- log retention ----
+    [Fact]
+    public void TheLogKeepsThreeRotations()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ff-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = Path.Combine(dir, "broker.log");
+            var log = new BrokerFileLog(path) { MaxBytes = 100 };
+            for (var round = 1; round <= 6; round++) log.Write($"round-{round} " + new string('x', 120));
+            Assert.Contains("round-6", File.ReadAllText(path));
+            Assert.Contains("round-5", File.ReadAllText(path + ".1"));
+            Assert.Contains("round-4", File.ReadAllText(path + ".2"));
+            Assert.Contains("round-3", File.ReadAllText(path + ".3"));
+            Assert.False(File.Exists(path + ".4"));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    // ---- a busy broker never leaks a stale result to a background caller ----
+    [Fact]
+    public async Task ABusyBrokerGivesBackgroundWorkARefusalAndNeverAResultFileRead()
+    {
+        var release = new ManualResetEventSlim();
+        using var rig = new Rig((_, _, _) => { release.Wait(10000); return new("ok", "{\"ok\":true,\"message\":\"first\"}"); }, busyWait: TimeSpan.FromMilliseconds(200));
+        await using var first = rig.Connect();
+        await BrokerProtocol.WriteAsync(first, Request("--elevated", "restore-list"));
+        SpinWait.SpinUntil(() => rig.Executor.Jobs.Count == 1, 5000);
+        ElevatedLaunchers.BrokerOnly = true;
+        try
+        {
+            var uac = new Uac();
+            var launcher = new BrokerAwareLauncher(rig.Connect, uac, () => true);
+            var outcome = ElevatedCall.Run(launcher, "--elevated", "restore-list", [], TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), default);
+            // Refused before anything ran: not "Done", no text from the (empty) result file, and no prompt.
+            Assert.Equal(ElevationStatus.Rejected, outcome.Status);
+            Assert.Null(outcome.Text);
+            Assert.Equal(0, uac.Starts);
+            Assert.Single(rig.Executor.Jobs);
+        }
+        finally { ElevatedLaunchers.BrokerOnly = false; release.Set(); }
+        Assert.Contains("first", (await Read(first)).Text);
     }
 }

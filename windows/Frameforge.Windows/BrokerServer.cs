@@ -18,6 +18,8 @@ public interface IBrokerLog { void Write(string line); }
 public sealed class BrokerFileLog(string path) : IBrokerLog
 {
     private readonly object gate = new();
+    public const int Rotations = 3;
+    public long MaxBytes { get; init; } = 1024 * 1024;
     public void Write(string line)
     {
         lock (gate)
@@ -25,7 +27,12 @@ public sealed class BrokerFileLog(string path) : IBrokerLog
             try
             {
                 var info = new FileInfo(path);
-                if (info.Exists && info.Length > 1024 * 1024) File.Move(path, path + ".1", true);
+                if (info.Exists && info.Length > MaxBytes)
+                {
+                    // Three older files are kept: broker.log.1 is the newest of them.
+                    for (var n = Rotations; n > 1; n--) if (File.Exists($"{path}.{n - 1}")) File.Move($"{path}.{n - 1}", $"{path}.{n}", true);
+                    File.Move(path, path + ".1", true);
+                }
                 File.AppendAllText(path, $"{DateTime.UtcNow:O} {line}{Environment.NewLine}", Encoding.UTF8);
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException) { /* Logging never stops a request. */ }
@@ -118,11 +125,12 @@ public static class BrokerPipe
 
 // One conversation per connection: any number of pings (at most three), then one request. The broker runs one mutating operation at a
 // time (the same one-at-a-time rule the app's elevation gate keeps) and one frame capture at a time.
-public sealed class BrokerServer(BrokerConfig config, IBrokerExecutor executor, IBrokerLog log, RequestGuard? guard = null)
+public sealed class BrokerServer(BrokerConfig config, IBrokerExecutor executor, IBrokerLog log, RequestGuard? guard = null, TimeSpan? busyWait = null)
 {
     private readonly RequestGuard guard = guard ?? new RequestGuard();
     private readonly SemaphoreSlim mutating = new(1, 1), capture = new(1, 1);
-    public static readonly TimeSpan FirstFrameWait = TimeSpan.FromSeconds(5), BusyWait = TimeSpan.FromSeconds(15);
+    public static readonly TimeSpan FirstFrameWait = TimeSpan.FromSeconds(5);
+    private readonly TimeSpan BusyWait = busyWait ?? TimeSpan.FromSeconds(15);
 
     // Anything the executor does not finish in time is reported as a timeout; the operation's own process is killed by the executor.
     public async Task HandleAsync(Stream pipe, ClientInfo client, CancellationToken cancel)
@@ -156,7 +164,7 @@ public sealed class BrokerServer(BrokerConfig config, IBrokerExecutor executor, 
                 await BrokerProtocol.WriteAsync(pipe, new BrokerReply(BrokerProtocol.Version, "pong", request.Nonce, Pid: Environment.ProcessId, Version: BrokerProtocol.AppVersion), cancel).ConfigureAwait(false);
             }
             if (request is not { Type: "request" }) { await Fail("bad-request", request?.Nonce).ConfigureAwait(false); return; }
-            var rejected = guard.Check(request.Nonce, request.Ts) ?? BrokerAllowlist.Reject(request.Op, request.Action, request.Args);
+            var rejected = guard.Check(request.Nonce, request.Ts, client) ?? BrokerAllowlist.Reject(request.Op, request.Action, request.Args);
             if (rejected is not null)
             {
                 log.Write($"pid={client.Pid} sid={client.Sid} op={Clip(request.Op)} action={Clip(request.Action)} refused: {rejected}");
@@ -249,6 +257,7 @@ public sealed class BrokerServer(BrokerConfig config, IBrokerExecutor executor, 
 // creates under a directory only SYSTEM and Administrators can write. Nothing the client sent is used as a path.
 public sealed class ChildExecutor(string exe, string runDirectory, IBrokerLog log) : IBrokerExecutor
 {
+    public const string ViaBrokerVariable = "FRAMEFORGE_VIA_BROKER";
     private static readonly Dictionary<string, TimeSpan> Budgets = new()
     {
         ["--elevated"] = TimeSpan.FromSeconds(140), ["--elevated-services"] = TimeSpan.FromSeconds(190), ["--elevated-timer"] = TimeSpan.FromSeconds(25),
@@ -262,6 +271,8 @@ public sealed class ChildExecutor(string exe, string runDirectory, IBrokerLog lo
         {
             ElevationRequest.Create(resultPath, TimeSpan.FromSeconds(30));
             var info = new ProcessStartInfo { FileName = exe, UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden };
+            // The child enforces the broker's narrower rules too (for example: no security-lowering items) when it sees this.
+            info.Environment[ViaBrokerVariable] = "1";
             info.ArgumentList.Add(job.Op);
             info.ArgumentList.Add(job.Action);
             info.ArgumentList.Add(resultPath);

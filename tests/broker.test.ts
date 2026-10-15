@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { catalogue } from "../shared/catalogue";
 import { BrokerController, brokerUnsupported } from "../electron/broker";
 import {
   ElevationGate,
@@ -138,5 +140,46 @@ describe("Windows platform and the admin service", () => {
       });
     await windows.brokerRemove();
     expect(windows.elevation.route).toBe("uac");
+  });
+});
+describe("security-lowering items and the admin service", () => {
+  const helperSecurity = () => {
+    const source = readFileSync(
+      "windows/Frameforge.Windows/OptimizationTable.cs",
+      "utf8",
+    );
+    const list = /Security = \[([^\]]*)\]/.exec(source)![1]!;
+    return [...list.matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]!).sort();
+  };
+  it("the helper's never-through-the-service list is exactly the catalogue's security tier", () => {
+    const tier = catalogue
+      .filter((o) => o.tier === "security")
+      .map((o) => o.id as string)
+      .sort();
+    expect(tier.length).toBeGreaterThan(5);
+    expect(helperSecurity()).toEqual(tier);
+  });
+  it("still sends them to the helper (which opens its own Windows prompt for them) under the gate while the service is ready", async () => {
+    const windows = new WindowsPlatform("C:\\nowhere\\Frameforge.Windows.exe");
+    const sent: { command: string; ids?: string[] }[] = [];
+    let during: string | null = null;
+    (
+      windows as unknown as { call: (request: unknown) => Promise<unknown> }
+    ).call = async (request) => {
+      const r = request as { command: string; ids?: string[] };
+      sent.push(r);
+      if (r.command === "broker-status")
+        return { ok: true, message: "x", broker: ready };
+      during = windows.elevation.current;
+      return { ok: true, message: "x", verified: true };
+    };
+    await windows.brokerStatus();
+    expect(windows.elevation.silent).toBe(true);
+    await windows.apply(["uac-off"] as never, new AbortController().signal, {
+      values: [],
+    } as never);
+    // One serialized administrator step carrying the item's own id, so the helper can tell it must use a prompt.
+    expect(sent.at(-1)).toMatchObject({ command: "apply", ids: ["uac-off"] });
+    expect(during).toBe("optimize");
   });
 });

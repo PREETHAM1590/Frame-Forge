@@ -15,6 +15,12 @@ public static class ElevatedLaunchers
     // instead of falling back to a prompt the person did not ask for.
     public static volatile bool BrokerOnly;
     public static IElevatedLauncher Default() => new BrokerAwareLauncher(BrokerLocal.ConnectReady, new WindowsElevatedLauncher(), () => BrokerOnly);
+    // Machine optimizations: items that lower Windows security (and any request that includes one) never use the broker, whether the
+    // request captures, applies, verifies or restores. They always open their own Windows prompt (or, for background work, do nothing).
+    public static IElevatedLauncher ForOptimize(IEnumerable<string> ids, Func<Stream?>? connect = null, IElevatedLauncher? uac = null) =>
+        ids.Any(OptimizationTable.IsSecurity)
+            ? new BrokerAwareLauncher(() => null, uac ?? new WindowsElevatedLauncher(), () => BrokerOnly)
+            : new BrokerAwareLauncher(connect ?? BrokerLocal.ConnectReady, uac ?? new WindowsElevatedLauncher(), () => BrokerOnly);
 }
 
 public sealed class BrokerAwareLauncher(Func<Stream?> connect, IElevatedLauncher uac, Func<bool> brokerOnly, Func<DateTime>? clock = null) : IElevatedLauncher

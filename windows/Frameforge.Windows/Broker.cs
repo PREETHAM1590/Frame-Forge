@@ -78,6 +78,9 @@ public static class BrokerAllowlist
         if (args is null || args.Length > MaxArgs || args.Any(a => a is null || a.Length > MaxArg || a.Contains('\0'))) return "invalid-arguments";
         try
         {
+            // Items that lower Windows security (Defender, UAC, SmartScreen, mitigations ...) never go through the broker, whatever the
+            // command: they always need their own interactive Windows prompt on top of the in-app acknowledgement.
+            if (op == "--elevated-optimize" && NamesSecurityItem(args)) return "not-allowed";
             var valid = op switch
             {
                 "--elevated" => RestoreCommands.Parse(new ElevatedRequest(action, args)) is not null,
@@ -96,6 +99,11 @@ public static class BrokerAllowlist
         int? value = args[1] == "-" ? null : TimerGlobalSetting.ParseDword(args[1]);
         return args[0] == "1" ? value is not null : value is null;
     }
+    public static bool NamesSecurityItem(string[] args)
+    {
+        try { return args.Length == 1 && JsonSerializer.Deserialize<AdminRequest>(args[0], HelperJson.Options) is { Ids: { } ids } && ids.Any(OptimizationTable.IsSecurity); }
+        catch (JsonException) { return false; }
+    }
     private static bool OptimizeArguments(string action, string[] args)
     {
         if (action != "run" || args.Length != 1) return false;
@@ -110,13 +118,15 @@ public static class BrokerAllowlist
 }
 
 // Per-request nonce (base64 of 16 to 32 random bytes), a timestamp within a minute of the broker's clock, no nonce twice within
-// five minutes (replay), and a ceiling on requests per minute.
+// five minutes (replay, remembered per account and capped), and a ceiling on requests per minute per client process (and four
+// times that per account), so one busy or hostile process cannot starve the others.
 public sealed class RequestGuard(Func<DateTime>? clock = null, int perMinute = 30)
 {
-    private static readonly TimeSpan Skew = TimeSpan.FromSeconds(60), Remember = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan Skew = TimeSpan.FromSeconds(60), Remember = TimeSpan.FromMinutes(5), Window = TimeSpan.FromMinutes(1);
+    public const int MaxRemembered = 2048;
     private readonly Func<DateTime> now = clock ?? (() => DateTime.UtcNow);
-    private readonly Dictionary<string, DateTime> seen = [];
-    private readonly Queue<DateTime> recent = [];
+    private readonly Dictionary<string, Dictionary<string, DateTime>> seen = [];
+    private readonly Dictionary<string, Queue<DateTime>> recent = [];
     private readonly object gate = new();
     public static bool ValidNonce(string? nonce)
     {
@@ -125,20 +135,33 @@ public sealed class RequestGuard(Func<DateTime>? clock = null, int perMinute = 3
     }
     public static long Stamp(DateTime utc) => new DateTimeOffset(utc, TimeSpan.Zero).ToUnixTimeMilliseconds();
     // Null when the request may proceed; otherwise "bad-nonce", "stale", "replay" or "rate-limited".
-    public string? Check(string? nonce, long timestampMs)
+    public string? Check(string? nonce, long timestampMs, ClientInfo? client = null)
     {
         if (!ValidNonce(nonce)) return "bad-nonce";
         lock (gate)
         {
             var at = now();
             if (Math.Abs(Stamp(at) - timestampMs) > Skew.TotalMilliseconds) return "stale";
-            foreach (var old in seen.Where(p => at - p.Value > Remember).Select(p => p.Key).ToList()) seen.Remove(old);
-            if (!seen.TryAdd(nonce!, at)) return "replay";
-            while (recent.Count > 0 && at - recent.Peek() > TimeSpan.FromMinutes(1)) recent.Dequeue();
-            if (recent.Count >= perMinute) return "rate-limited";
-            recent.Enqueue(at);
+            var sid = client?.Sid ?? "";
+            if (!seen.TryGetValue(sid, out var known)) seen[sid] = known = [];
+            foreach (var old in known.Where(p => at - p.Value > Remember).Select(p => p.Key).ToList()) known.Remove(old);
+            if (known.ContainsKey(nonce!)) return "replay";
+            if (known.Count >= MaxRemembered) known.Remove(known.MinBy(p => p.Value).Key);
+            known[nonce!] = at;
+            var process = Pressure("pid:" + (client?.Pid ?? 0), at);
+            var account = Pressure("sid:" + sid, at);
+            if (process.Count >= perMinute || account.Count >= perMinute * 4) return "rate-limited";
+            process.Enqueue(at);
+            account.Enqueue(at);
+            foreach (var idle in recent.Where(p => p.Value.Count == 0 || at - p.Value.Peek() > Window && at - p.Value.ToArray()[^1] > Window).Select(p => p.Key).ToList()) recent.Remove(idle);
             return null;
         }
+    }
+    private Queue<DateTime> Pressure(string key, DateTime at)
+    {
+        if (!recent.TryGetValue(key, out var queue)) recent[key] = queue = [];
+        while (queue.Count > 0 && at - queue.Peek() > Window) queue.Dequeue();
+        return queue;
     }
 }
 
