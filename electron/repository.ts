@@ -394,6 +394,29 @@ export class Repository {
     }
     return out;
   }
+  /** The newest boost sessions for diagnostics: outcomes only, never the captured prior values. */
+  boostSessions(limit: number): BoostSession[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM boost_sessions ORDER BY started_at DESC, rowid DESC LIMIT ?",
+      )
+      .all(limit)
+      .flatMap((row) => {
+        const { payload } = stripLegacyIds(
+          JSON.parse(String(row.payload)) as Record<string, unknown>,
+        );
+        if ("pid" in payload) return [];
+        const parsed = BoostSessionSchema.safeParse({
+          ...payload,
+          id: row.id,
+          gameId: row.game_id,
+          startedAt: row.started_at,
+          status: row.status,
+          message: row.message,
+        });
+        return parsed.success ? [parsed.data] : [];
+      });
+  }
   saveBoostSession(session: BoostSession, captured: Captured[]): void {
     const s = BoostSessionSchema.parse(session);
     const { id, gameId, startedAt, status, message, ...rest } = s;

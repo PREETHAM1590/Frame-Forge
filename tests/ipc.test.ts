@@ -128,6 +128,10 @@ const inputs: { [M in Method]: () => Request<M> } = {
   gpuDrivers: () => ({}),
   openDriverPage: () => ({ vendor: "nvidia" }),
   hotkeyStatus: () => ({}),
+  diagnosticsPreview: () => ({}),
+  diagnosticsExport: () => ({ groups: ["app"] }),
+  reportProblem: () => ({}),
+  openLogsFolder: () => ({}),
 };
 describe("IPC surface", () => {
   it("has identical request, response and handler sets", () => {
@@ -191,6 +195,10 @@ describe("IPC surface", () => {
       "cleanupRun",
       "gpuDrivers",
       "openDriverPage",
+      "diagnosticsPreview",
+      "diagnosticsExport",
+      "reportProblem",
+      "openLogsFolder",
       "updateCheck",
       "updateDownload",
       "updateInstall",
